@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://213.171.4.47:5432/postgres
+    username: postgres
+    password: wb9Analize9db!1
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql:  ${show_sql:false}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+server:
+  port: 8080
+
+# Настройки JWT (добавим позже)
+jwt:
+  secret: your-jwt-secret-key-minimum-32-chars
+  expiration: 86400000 # 24 hours
