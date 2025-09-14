@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://213.171.4.47:5432/postgres
-    username: postgres
-    password: wb9Analize9db!1
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   jpa:
