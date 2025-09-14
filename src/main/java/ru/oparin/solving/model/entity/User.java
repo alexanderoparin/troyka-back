@@ -23,7 +23,10 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
+    @Column(name = "username",unique = true, nullable = false)
+    private String username;
+
+    @Column(name = "email", unique = true, nullable = false)
     @Email(message = "Email should be valid")
     private String email;
 
@@ -37,7 +40,8 @@ public class User {
     private String lastName;
 
     @Enumerated(EnumType.STRING)
-    private Role role;
+    @Column(name = "role")
+    private Role role = Role.USER;
 
     @CreationTimestamp
     @Column(name = "created_at")
