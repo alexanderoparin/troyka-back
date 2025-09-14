@@ -4,18 +4,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.oparin.solving.repository.UserRepository;
+import ru.oparin.solving.service.UserService;
 
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/test")
 public class TestController {
 
-    private final UserRepository userRepository;
+    private final UserService userService;
 
     @GetMapping("/db/userCount")
     public String testConnection() {
-        long count = userRepository.count();
-        return "Database connection successful! Users count: " + count;
+        long count = userService.allUserCount();
+        return "Подключение к базе данных успешно! Всего пользователей  в БД: " + count;
     }
 }
