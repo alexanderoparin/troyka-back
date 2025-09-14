@@ -14,9 +14,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
-                .csrf(AbstractHttpConfigurer::disable) // Отключаем CSRF для API
+                .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .anyRequest().permitAll() // Разрешаем все запросы без аутентификации
+                        .requestMatchers("/api/test/**").permitAll()
+                        .anyRequest().authenticated()
                 )
                 .build();
     }
