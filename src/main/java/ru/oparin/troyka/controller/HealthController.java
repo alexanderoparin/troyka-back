@@ -1,5 +1,6 @@
 package ru.oparin.troyka.controller;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,6 +10,7 @@ import ru.oparin.troyka.service.HealthService;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/health")
 public class HealthController {
@@ -42,6 +44,7 @@ public class HealthController {
 
     @GetMapping("/full")
     public ResponseEntity<Map<String, Object>> fullHealthCheck() {
+        log.debug("Запрос состояния сервера");
         Map<String, Object> fullHealth = new HashMap<>();
 
         fullHealth.put("basic", healthService.getBasicHealth());
@@ -52,6 +55,7 @@ public class HealthController {
         boolean allHealthy = !fullHealth.containsValue("ERROR") && !fullHealth.containsValue("DISCONNECTED");
         fullHealth.put("overallStatus", allHealthy ? "HEALTHY" : "DEGRADED");
 
+        log.debug("{}", fullHealth);
         return allHealthy ?
                 ResponseEntity.ok(fullHealth) :
                 ResponseEntity.status(503).body(fullHealth);
