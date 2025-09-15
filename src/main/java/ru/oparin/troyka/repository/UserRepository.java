@@ -1,7 +1,7 @@
-package ru.oparin.solving.repository;
+package ru.oparin.troyka.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import ru.oparin.solving.model.entity.User;
+import ru.oparin.troyka.model.entity.User;
 
 import java.util.Optional;
 

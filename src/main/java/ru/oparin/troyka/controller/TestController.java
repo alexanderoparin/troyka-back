@@ -1,10 +1,10 @@
-package ru.oparin.solving.controller;
+package ru.oparin.troyka.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.oparin.solving.service.UserService;
+import ru.oparin.troyka.service.UserService;
 
 @RequiredArgsConstructor
 @RestController

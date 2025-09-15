@@ -1,4 +1,4 @@
-package ru.oparin.solving.controller;
+package ru.oparin.troyka.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -7,10 +7,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.oparin.solving.model.dto.AuthResponse;
-import ru.oparin.solving.model.dto.LoginRequest;
-import ru.oparin.solving.model.dto.RegisterRequest;
-import ru.oparin.solving.service.AuthService;
+import ru.oparin.troyka.model.dto.AuthResponse;
+import ru.oparin.troyka.model.dto.LoginRequest;
+import ru.oparin.troyka.model.dto.RegisterRequest;
+import ru.oparin.troyka.service.AuthService;
 
 @RestController
 @RequestMapping("/api/auth")

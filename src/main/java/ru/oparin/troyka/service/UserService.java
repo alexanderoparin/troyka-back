@@ -1,8 +1,8 @@
-package ru.oparin.solving.service;
+package ru.oparin.troyka.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import ru.oparin.solving.repository.UserRepository;
+import ru.oparin.troyka.repository.UserRepository;
 
 @Service
 @RequiredArgsConstructor

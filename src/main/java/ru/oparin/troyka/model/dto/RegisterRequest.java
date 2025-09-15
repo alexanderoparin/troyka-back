@@ -1,4 +1,4 @@
-package ru.oparin.solving.model.dto;
+package ru.oparin.troyka.model.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

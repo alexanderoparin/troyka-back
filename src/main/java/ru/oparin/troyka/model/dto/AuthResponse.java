@@ -1,4 +1,4 @@
-package ru.oparin.solving.model.dto;
+package ru.oparin.troyka.model.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

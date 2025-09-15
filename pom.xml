@@ -9,10 +9,10 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>ru.oparin</groupId>
-    <artifactId>solving</artifactId>
+    <artifactId>troyka-back</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>solving</name>
-    <description>solving</description>
+    <name>troyka</name>
+    <description>troyka-backend</description>
     <url/>
     <licenses>
         <license/>

@@ -1,11 +1,11 @@
-package ru.oparin.solving.service;
+package ru.oparin.troyka.service;
 
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import ru.oparin.solving.model.entity.User;
+import ru.oparin.troyka.model.entity.User;
 
 import java.util.Date;
 import java.util.HashMap;

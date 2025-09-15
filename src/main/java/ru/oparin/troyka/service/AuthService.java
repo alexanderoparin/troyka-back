@@ -1,14 +1,14 @@
-package ru.oparin.solving.service;
+package ru.oparin.troyka.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import ru.oparin.solving.model.dto.AuthResponse;
-import ru.oparin.solving.model.dto.LoginRequest;
-import ru.oparin.solving.model.dto.RegisterRequest;
-import ru.oparin.solving.model.entity.User;
-import ru.oparin.solving.model.enums.Role;
-import ru.oparin.solving.repository.UserRepository;
+import ru.oparin.troyka.model.dto.AuthResponse;
+import ru.oparin.troyka.model.dto.LoginRequest;
+import ru.oparin.troyka.model.dto.RegisterRequest;
+import ru.oparin.troyka.model.entity.User;
+import ru.oparin.troyka.model.enums.Role;
+import ru.oparin.troyka.repository.UserRepository;
 
 import java.time.LocalDateTime;
 

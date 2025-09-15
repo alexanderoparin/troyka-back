@@ -1,4 +1,4 @@
-package ru.oparin.solving.service;
+package ru.oparin.troyka.service;
 
 import org.springframework.stereotype.Service;
 
@@ -23,7 +23,7 @@ public class HealthService {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("timestamp", LocalDateTime.now());
-        health.put("service", "solving-backend");
+        health.put("service", "troyka-backend");
         health.put("version", "1.0.0");
         return health;
     }

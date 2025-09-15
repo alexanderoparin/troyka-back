@@ -1,13 +1,13 @@
-package ru.oparin.solving;
+package ru.oparin.troyka;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class SolvingApplication {
+public class TroykaApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(SolvingApplication.class, args);
+        SpringApplication.run(TroykaApplication.class, args);
     }
 
 }
