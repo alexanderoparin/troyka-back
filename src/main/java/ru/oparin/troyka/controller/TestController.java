@@ -1,21 +1,22 @@
 package ru.oparin.troyka.controller;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.oparin.troyka.service.UserService;
+import reactor.core.publisher.Mono;
 
-@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/test")
 public class TestController {
 
-    private final UserService userService;
+    @GetMapping("/webflux")
+    public Mono<ResponseEntity<String>> testWebFlux() {
+        return Mono.just(ResponseEntity.ok("WebFlux is working!"));
+    }
 
-    @GetMapping("/db/userCount")
-    public String testConnection() {
-        long count = userService.allUserCount();
-        return "Подключение к базе данных успешно! Всего пользователей  в БД: " + count;
+    @GetMapping("/blocking")
+    public ResponseEntity<String> testBlocking() {
+        return ResponseEntity.ok("Blocking endpoint is also working!");
     }
 }

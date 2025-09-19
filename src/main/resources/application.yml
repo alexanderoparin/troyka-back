@@ -16,6 +16,12 @@ spring:
 #        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: ${show_sql:false}
 
+  webflux:
+    client:
+      connect-timeout: 5000
+      response-timeout: 10000
+
+
 server:
   port: 8080
 
@@ -32,3 +38,11 @@ logging:
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}
+
+# Fal.ai API configuration
+fal:
+  ai:
+    api:
+      key: ${FAL_AI_API_KEY:your_fal_ai_api_key}
+      url: https://queue.fal.run/fal-ai
+    model: fal-ai/llava

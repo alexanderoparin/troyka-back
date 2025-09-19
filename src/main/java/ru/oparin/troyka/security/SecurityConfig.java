@@ -29,8 +29,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/health/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/test/**").permitAll()
-                        .anyRequest().permitAll()
+//                        .requestMatchers("/api/fal/**").authenticated() // Добавляем защиту для Fal.ai
+                        .requestMatchers("/api/fal/**").permitAll() // временно
+                        .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
