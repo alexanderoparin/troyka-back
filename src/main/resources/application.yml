@@ -9,7 +9,6 @@ spring:
   sql:
     init:
       platform: postgres
-
   webflux:
     client:
       connect-timeout: 5000

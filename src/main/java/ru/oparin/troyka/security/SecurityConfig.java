@@ -2,6 +2,7 @@ package ru.oparin.troyka.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -22,17 +23,12 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+    @Profile("!dev") // PROD режим - с security
+    public SecurityWebFilterChain securityWebFilterChainProd(ServerHttpSecurity http) {
         return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeExchange(auth -> auth
-                        .pathMatchers(
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/v3/api-docs/**",
-                                "/webjars/**",
-                                "/api-docs/**"
-                        ).permitAll()
+                        .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .pathMatchers("/api/health/**").permitAll()
                         .pathMatchers("/api/auth/**").permitAll()
                         .pathMatchers("/api/fal/**").authenticated()
@@ -40,6 +36,15 @@ public class SecurityConfig {
                 )
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
                 .addFilterAt(jwtAuthenticationFilter(), SecurityWebFiltersOrder.AUTHENTICATION)
+                .build();
+    }
+
+    @Bean
+    @Profile("dev") // DEV режим - без security
+    public SecurityWebFilterChain securityWebFilterChainDev(ServerHttpSecurity http) {
+        return http
+                .csrf(csrf -> csrf.disable())
+                .authorizeExchange(auth -> auth.anyExchange().permitAll())
                 .build();
     }
 
