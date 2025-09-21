@@ -25,12 +25,14 @@ public class AuthController {
 
     @PostMapping("/register")
     public Mono<ResponseEntity<AuthResponse>> register(@RequestBody RegisterRequest request) {
+        log.info("Получен запрос на регистрацию нового пользователя: {}", request);
         return authService.register(request)
                 .map(ResponseEntity::ok);
     }
 
     @PostMapping("/login")
     public Mono<ResponseEntity<AuthResponse>> login(@RequestBody LoginRequest request) {
+        log.info("Получен запрос на авторизацию пользователя с логином: {}", request.getUsername());
         return authService.login(request)
                 .map(ResponseEntity::ok);
     }

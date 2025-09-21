@@ -21,4 +21,15 @@ public class RegisterRequest {
     private String firstName;
 
     private String lastName;
+
+    @Override
+    public String toString() {
+        return "RegisterRequest{" +
+                "username='" + username + '\'' +
+                ", email='" + email + '\'' +
+                ", password='" + "***" + '\'' +
+                ", firstName='" + firstName + '\'' +
+                ", lastName='" + lastName + '\'' +
+                '}';
+    }
 }
