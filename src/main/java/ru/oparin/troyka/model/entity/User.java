@@ -7,9 +7,9 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.relational.core.mapping.Table;
 import ru.oparin.troyka.model.enums.Role;
 
-import java.time.ZonedDateTime;
+import java.time.LocalDateTime;
 
-@Table("user")
+@Table(value = "user", schema = "troyka")
 @Getter
 @Setter
 @EqualsAndHashCode
@@ -34,8 +34,8 @@ public class User {
     private Role role = Role.USER;
 
     @CreatedDate
-    private ZonedDateTime createdAt;
+    private LocalDateTime createdAt;
 
     @LastModifiedDate
-    private ZonedDateTime updatedAt;
+    private LocalDateTime updatedAt;
 }
