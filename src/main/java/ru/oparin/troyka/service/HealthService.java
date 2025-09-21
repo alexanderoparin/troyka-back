@@ -1,10 +1,9 @@
 package ru.oparin.troyka.service;
 
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -12,11 +11,11 @@ import java.util.Map;
 @Service
 public class HealthService {
 
-    private final DataSource dataSource;
+    private final DatabaseClient databaseClient;
     private final long appStart = System.currentTimeMillis();
 
-    public HealthService(DataSource dataSource) {
-        this.dataSource = dataSource;
+    public HealthService(DatabaseClient databaseClient) {
+        this.databaseClient = databaseClient;
     }
 
     public Map<String, Object> getBasicHealth() {
@@ -43,24 +42,23 @@ public class HealthService {
         return health;
     }
 
-    public Map<String, Object> getDatabaseHealth() {
+    public Mono<Map<String, Object>> getDatabaseHealth() {
         Map<String, Object> health = new HashMap<>();
 
-        try (Connection connection = dataSource.getConnection()) {
-            if (connection.isValid(2)) { // 2 second timeout
-                health.put("status", "CONNECTED");
-                health.put("database", "PostgreSQL");
-                health.put("isValid", true);
-            } else {
-                health.put("status", "DISCONNECTED");
-                health.put("error", "Database connection is not valid");
-            }
-        } catch (SQLException e) {
-            health.put("status", "ERROR");
-            health.put("error", e.getMessage());
-            health.put("database", "PostgreSQL");
-        }
-
-        return health;
+        return databaseClient.sql("SELECT 1")
+                .fetch()
+                .first()
+                .map(result -> {
+                    health.put("status", "CONNECTED");
+                    health.put("database", "PostgreSQL");
+                    health.put("isValid", true);
+                    return health;
+                })
+                .onErrorResume(e -> {
+                    health.put("status", "ERROR");
+                    health.put("error", e.getMessage());
+                    health.put("database", "PostgreSQL");
+                    return Mono.just(health);
+                });
     }
 }

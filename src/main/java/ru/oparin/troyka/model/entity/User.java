@@ -1,16 +1,15 @@
 package ru.oparin.troyka.model.entity;
 
-import jakarta.persistence.*;
-import jakarta.validation.constraints.Email;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.relational.core.mapping.Table;
 import ru.oparin.troyka.model.enums.Role;
 
 import java.time.ZonedDateTime;
 
-@Entity
-@Table(name = "user", schema = "troyka")
+@Table("user")
 @Getter
 @Setter
 @EqualsAndHashCode
@@ -20,34 +19,23 @@ import java.time.ZonedDateTime;
 public class User {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "username",unique = true, nullable = false)
     private String username;
 
-    @Column(name = "email", unique = true, nullable = false)
-    @Email(message = "Email should be valid")
     private String email;
 
-    @Column(nullable = false)
     private String password;
 
-    @Column(name = "first_name")
     private String firstName;
 
-    @Column(name = "last_name")
     private String lastName;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role")
     private Role role = Role.USER;
 
-    @CreationTimestamp
-    @Column(name = "created_at")
+    @CreatedDate
     private ZonedDateTime createdAt;
 
-    @UpdateTimestamp
-    @Column(name = "updated_at")
+    @LastModifiedDate
     private ZonedDateTime updatedAt;
 }

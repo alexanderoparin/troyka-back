@@ -24,39 +24,44 @@ public class HealthController {
 
     @GetMapping
     public Mono<ResponseEntity<Map<String, Object>>> healthCheck() {
-        return Mono.fromCallable(() -> ResponseEntity.ok(healthService.getBasicHealth()));
+        return Mono.just(ResponseEntity.ok(healthService.getBasicHealth()));
     }
 
     @GetMapping("/system")
     public Mono<ResponseEntity<Map<String, Object>>> systemHealth() {
-        return Mono.fromCallable(() -> ResponseEntity.ok(healthService.getSystemHealth()));
+        return Mono.just(ResponseEntity.ok(healthService.getSystemHealth()));
     }
 
     @GetMapping("/database")
     public Mono<ResponseEntity<Map<String, Object>>> databaseHealth() {
-        return Mono.fromCallable(() -> {
-            Map<String, Object> dbHealth = healthService.getDatabaseHealth();
-
-            if ("ERROR".equals(dbHealth.get("status")) || "DISCONNECTED".equals(dbHealth.get("status"))) {
-                return ResponseEntity.status(503).body(dbHealth);
-            }
-
-            return ResponseEntity.ok(dbHealth);
-        });
+        return healthService.getDatabaseHealth()
+                .map(dbHealth -> {
+                    if ("ERROR".equals(dbHealth.get("status")) || "DISCONNECTED".equals(dbHealth.get("status"))) {
+                        return ResponseEntity.status(503).body(dbHealth);
+                    }
+                    return ResponseEntity.ok(dbHealth);
+                });
     }
 
     @GetMapping("/full")
     public Mono<ResponseEntity<Map<String, Object>>> fullHealthCheck() {
-        return Mono.fromCallable(() -> {
-            log.debug("Запрос состояния сервера");
-            Map<String, Object> fullHealth = new HashMap<>();
+        return Mono.zip(
+                Mono.just(healthService.getBasicHealth()),
+                Mono.just(healthService.getSystemHealth()),
+                healthService.getDatabaseHealth()
+        ).map(tuple -> {
+            Map<String, Object> basicHealth = tuple.getT1();
+            Map<String, Object> systemHealth = tuple.getT2();
+            Map<String, Object> databaseHealth = tuple.getT3();
 
-            fullHealth.put("basic", healthService.getBasicHealth());
-            fullHealth.put("system", healthService.getSystemHealth());
-            fullHealth.put("database", healthService.getDatabaseHealth());
+            Map<String, Object> fullHealth = new HashMap<>();
+            fullHealth.put("basic", basicHealth);
+            fullHealth.put("system", systemHealth);
+            fullHealth.put("database", databaseHealth);
 
             // Проверяем общий статус
-            boolean allHealthy = !fullHealth.containsValue("ERROR") && !fullHealth.containsValue("DISCONNECTED");
+            boolean allHealthy = !"ERROR".equals(databaseHealth.get("status")) &&
+                    !"DISCONNECTED".equals(databaseHealth.get("status"));
             fullHealth.put("overallStatus", allHealthy ? "HEALTHY" : "DEGRADED");
 
             log.debug("{}", fullHealth);
