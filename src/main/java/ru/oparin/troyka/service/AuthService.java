@@ -1,9 +1,11 @@
 package ru.oparin.troyka.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.AuthResponse;
 import ru.oparin.troyka.model.dto.LoginRequest;
 import ru.oparin.troyka.model.dto.RegisterRequest;
@@ -33,13 +35,19 @@ public class AuthService {
         return userRepository.existsByUsername(request.getUsername())
                 .flatMap(usernameExists -> {
                     if (usernameExists) {
-                        return Mono.error(new RuntimeException("Username already exists"));
+                        return Mono.error(new AuthException(
+                                HttpStatus.CONFLICT,
+                                "Пользователь с таким именем уже существует"
+                        ));
                     }
                     return userRepository.existsByEmail(request.getEmail());
                 })
                 .flatMap(emailExists -> {
                     if (emailExists) {
-                        return Mono.error(new RuntimeException("Email already exists"));
+                        return Mono.error(new AuthException(
+                                HttpStatus.CONFLICT,
+                                "Пользователь с таким email уже существует"
+                        ));
                     }
 
                     User user = new User();
@@ -66,10 +74,16 @@ public class AuthService {
 
     public Mono<AuthResponse> login(LoginRequest request) {
         return userRepository.findByUsername(request.getUsername())
-                .switchIfEmpty(Mono.error(new RuntimeException("User not found")))
+                .switchIfEmpty(Mono.error(new AuthException(
+                        HttpStatus.NOT_FOUND,
+                        "Пользователь не найден"
+                )))
                 .flatMap(user -> {
                     if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-                        return Mono.error(new RuntimeException("Invalid password"));
+                        return Mono.error(new AuthException(
+                                HttpStatus.UNAUTHORIZED,
+                                "Неверный пароль"
+                        ));
                     }
 
                     String token = jwtService.generateToken(user);

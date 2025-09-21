@@ -45,29 +45,20 @@ public class HealthController {
 
     @GetMapping("/full")
     public Mono<ResponseEntity<Map<String, Object>>> fullHealthCheck() {
-        return Mono.zip(
-                Mono.just(healthService.getBasicHealth()),
-                Mono.just(healthService.getSystemHealth()),
-                healthService.getDatabaseHealth()
-        ).map(tuple -> {
-            Map<String, Object> basicHealth = tuple.getT1();
-            Map<String, Object> systemHealth = tuple.getT2();
-            Map<String, Object> databaseHealth = tuple.getT3();
+        return healthService.getDatabaseHealth()
+                .map(databaseHealth -> {
+                    Map<String, Object> fullHealth = new HashMap<>();
+                    fullHealth.put("basic", healthService.getBasicHealth());
+                    fullHealth.put("system", healthService.getSystemHealth());
+                    fullHealth.put("database", databaseHealth);
 
-            Map<String, Object> fullHealth = new HashMap<>();
-            fullHealth.put("basic", basicHealth);
-            fullHealth.put("system", systemHealth);
-            fullHealth.put("database", databaseHealth);
+                    boolean allHealthy = !"ERROR".equals(databaseHealth.get("status")) &&
+                            !"DISCONNECTED".equals(databaseHealth.get("status"));
+                    fullHealth.put("overallStatus", allHealthy ? "HEALTHY" : "DEGRADED");
 
-            // Проверяем общий статус
-            boolean allHealthy = !"ERROR".equals(databaseHealth.get("status")) &&
-                    !"DISCONNECTED".equals(databaseHealth.get("status"));
-            fullHealth.put("overallStatus", allHealthy ? "HEALTHY" : "DEGRADED");
-
-            log.debug("{}", fullHealth);
-            return allHealthy ?
-                    ResponseEntity.ok(fullHealth) :
-                    ResponseEntity.status(503).body(fullHealth);
-        });
+                    return allHealthy ?
+                            ResponseEntity.ok(fullHealth) :
+                            ResponseEntity.status(503).body(fullHealth);
+                });
     }
 }

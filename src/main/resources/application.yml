@@ -6,6 +6,9 @@ spring:
     pool:
       initial-size: 5
       max-size: 10
+  sql:
+    init:
+      platform: postgres
 
   webflux:
     client:
@@ -24,7 +27,9 @@ logging:
       max-file-size: 10MB
       max-history: 30
   level:
-    ru: ${log_level}
+    ru.oparin.troyka: ${log_level}
+    org.springframework.r2dbc.core.DefaultDatabaseClient: ${sql_log_level:info}
+    io.r2dbc.postgresql.Queries: ${sql_log_level:info}
 
 jwt:
   secret: ${JWT_SECRET}
