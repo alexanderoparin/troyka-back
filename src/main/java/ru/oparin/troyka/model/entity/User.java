@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 @Setter
 @EqualsAndHashCode
 @ToString
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {

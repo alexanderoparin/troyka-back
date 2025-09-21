@@ -1,6 +1,7 @@
 package ru.oparin.troyka.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,9 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+
+    @Value("${jwt.expiration}")
+    private long expiration;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
@@ -50,13 +54,14 @@ public class AuthService {
                         ));
                     }
 
-                    User user = new User();
-                    user.setUsername(request.getUsername());
-                    user.setEmail(request.getEmail());
-                    user.setPassword(passwordEncoder.encode(request.getPassword()));
-                    user.setFirstName(request.getFirstName());
-                    user.setLastName(request.getLastName());
-                    user.setRole(Role.USER);
+                    User user = User.builder()
+                            .username(request.getUsername())
+                            .email(request.getEmail())
+                            .password(passwordEncoder.encode(request.getPassword()))
+                            .firstName(request.getFirstName())
+                            .lastName(request.getLastName())
+                            .role(Role.USER)
+                            .build();
 
                     return userRepository.save(user)
                             .map(savedUser -> {
@@ -66,7 +71,7 @@ public class AuthService {
                                         savedUser.getUsername(),
                                         savedUser.getEmail(),
                                         savedUser.getRole().name(),
-                                        LocalDateTime.now().plusHours(24)
+                                        LocalDateTime.now().plusSeconds(expiration / 1000)
                                 );
                             });
                 });
@@ -92,7 +97,7 @@ public class AuthService {
                             user.getUsername(),
                             user.getEmail(),
                             user.getRole().name(),
-                            LocalDateTime.now().plusHours(24)
+                            LocalDateTime.now().plusSeconds(expiration / 1000)
                     ));
                 });
     }
