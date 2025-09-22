@@ -38,6 +38,7 @@ jwt:
 fal:
   ai:
     api:
-      key: ${FAL_AI_API_KEY:your_fal_ai_api_key}
-      url: https://queue.fal.run/fal-ai
+      key: ${FAL_AI_API_KEY:your_key_here}
+      url: https://queue.fal.run
     model: fal-ai/llava
+    timeout: 30000

@@ -11,9 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
-import ru.oparin.troyka.model.dto.AuthResponse;
-import ru.oparin.troyka.model.dto.LoginRequest;
-import ru.oparin.troyka.model.dto.RegisterRequest;
+import ru.oparin.troyka.model.dto.auth.AuthResponse;
+import ru.oparin.troyka.model.dto.auth.LoginRequest;
+import ru.oparin.troyka.model.dto.auth.RegisterRequest;
 import ru.oparin.troyka.service.AuthService;
 
 @Slf4j

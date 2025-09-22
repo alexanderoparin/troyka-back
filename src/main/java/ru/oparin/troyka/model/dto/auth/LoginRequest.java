@@ -1,4 +1,4 @@
-package ru.oparin.troyka.model.dto;
+package ru.oparin.troyka.model.dto.auth;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
