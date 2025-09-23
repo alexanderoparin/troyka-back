@@ -16,13 +16,13 @@ public class FalAIService {
 
     private final WebClient webClient;
 
-    @Value("${fal.ai.api.key:your_api_key}")
+    @Value("${fal.ai.api.key}")
     private String apiKey;
 
-    @Value("${fal.ai.api.url:https://queue.fal.run/fal-ai}")
+    @Value("${fal.ai.api.url}")
     private String apiUrl;
 
-    @Value("${fal.ai.model:fal-ai/llava}")
+    @Value("${fal.ai.model}")
     private String model;
 
     public FalAIService(WebClient.Builder webClientBuilder) {
