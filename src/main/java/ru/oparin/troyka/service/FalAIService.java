@@ -3,6 +3,7 @@ package ru.oparin.troyka.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -10,6 +11,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.FalAiProperties;
+import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIImageDTO;
 import ru.oparin.troyka.model.dto.fal.FalAIResponseDTO;
 import ru.oparin.troyka.model.dto.fal.ImageResponseDTO;
@@ -52,19 +54,18 @@ public class FalAIService {
                 .map(this::extractImageResponse)
                 .doOnSuccess(response -> log.info("Успешно получен ответ с изображением: {}", response))
                 .onErrorResume(WebClientRequestException.class, e -> {
-                    log.error("Ошибка подключения к fal.ai: {}", e.getMessage());
-                    log.error("Попытка подключения к URL: {}", fullUrl);
-                    return Mono.error(new RuntimeException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса. Подробности: " + e.getMessage()));
+                    log.error("Ошибка подключения к {}: {}", fullUrl, e.getMessage());
+                    throw new FalAIException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.", HttpStatus.SERVICE_UNAVAILABLE, e);
                 })
                 .onErrorResume(WebClientResponseException.class, e -> {
                     log.error("Ошибка ответа от fal.ai: {}", e.getMessage());
                     log.error("Ответ сервера: {}", e.getResponseBodyAsString());
                     log.error("Статус: {}", e.getStatusCode());
-                    return Mono.error(new RuntimeException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode()));
+                    throw new FalAIException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode(), HttpStatus.UNPROCESSABLE_ENTITY, e);
                 })
                 .onErrorResume(Exception.class, e -> {
                     log.error("Неизвестная ошибка при работе с fal.ai: ", e);
-                    return Mono.error(new RuntimeException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage()));
+                    throw new FalAIException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, e);
                 });
     }
 
