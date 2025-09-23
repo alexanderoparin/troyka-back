@@ -1,83 +1,81 @@
 package ru.oparin.troyka.service;
 
-import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.FalAiProperties;
+import ru.oparin.troyka.model.dto.fal.FalAIImageDTO;
+import ru.oparin.troyka.model.dto.fal.FalAIResponseDTO;
+import ru.oparin.troyka.model.dto.fal.ImageResponseDTO;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 public class FalAIService {
+    public static final String PREFIX_PATH = "/fal-ai/";
 
     private final WebClient webClient;
+    private final FalAiProperties prop;
 
-    @Value("${fal.ai.api.key}")
-    private String apiKey;
-
-    @Value("${fal.ai.api.url}")
-    private String apiUrl;
-
-    @Value("${fal.ai.model}")
-    private String model;
-
-    public FalAIService(WebClient.Builder webClientBuilder) {
+    public FalAIService(WebClient.Builder webClientBuilder, FalAiProperties falAiProperties) {
         this.webClient = webClientBuilder
-                .baseUrl(apiUrl)
+                .baseUrl(falAiProperties.getApi().getUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Key " + apiKey)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Key " + falAiProperties.getApi().getKey())
                 .build();
+        this.prop = falAiProperties;
     }
 
-    public Mono<String> getTextResponse(String prompt) {
-        String requestBody = String.format("""
-                {
-                    "prompt": "%s",
-                    "model": "%s"
-                }
-                """, escapeJson(prompt), model);
+    public Mono<ImageResponseDTO> getImageResponse(String prompt) {
+        Map<String, Object> requestBody = Map.of("prompt", prompt);
+        String fullModelPath = PREFIX_PATH + prop.getModel();
+        String fullUrl = prop.getApi().getUrl() + fullModelPath;
+
+        log.info("Отправлено сообщение в fal.ai по адресу '{}' с телом '{}'", fullUrl, requestBody);
 
         return webClient.post()
-                .uri("/fal-ai/" + model)
+                .uri(fullModelPath)
                 .bodyValue(requestBody)
                 .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {
+                .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
                 })
                 .timeout(Duration.ofSeconds(30))
-                .map(this::extractTextFromResponse)
-                .onErrorResume(e -> Mono.just("Error: " + e.getMessage()));
+                .map(this::extractImageResponse)
+                .doOnSuccess(response -> log.info("Успешно получен ответ с изображением: {}", response))
+                .onErrorResume(WebClientRequestException.class, e -> {
+                    log.error("Ошибка подключения к fal.ai: {}", e.getMessage());
+                    log.error("Попытка подключения к URL: {}", fullUrl);
+                    return Mono.error(new RuntimeException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса. Подробности: " + e.getMessage()));
+                })
+                .onErrorResume(WebClientResponseException.class, e -> {
+                    log.error("Ошибка ответа от fal.ai: {}", e.getMessage());
+                    log.error("Ответ сервера: {}", e.getResponseBodyAsString());
+                    log.error("Статус: {}", e.getStatusCode());
+                    return Mono.error(new RuntimeException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode()));
+                })
+                .onErrorResume(Exception.class, e -> {
+                    log.error("Неизвестная ошибка при работе с fal.ai: ", e);
+                    return Mono.error(new RuntimeException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage()));
+                });
     }
 
-    public Mono<Map<String, Object>> getRequestStatus(String requestId) {
-        return webClient.get()
-                .uri("/fal-ai/" + model + "/requests/" + requestId)
-                .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
-                .timeout(Duration.ofSeconds(10));
-    }
+    private ImageResponseDTO extractImageResponse(FalAIResponseDTO response) {
+        log.info("Получен ответ: {}", response);
+        String description = response.getDescription();
 
-    private String extractTextFromResponse(Map<String, Object> response) {
-        // Реализуйте парсинг ответа в зависимости от формата Fal.ai
-        if (response.containsKey("text")) {
-            return response.get("text").toString();
-        }
-        if (response.containsKey("output") && response.get("output") instanceof Map) {
-            Map<String, Object> output = (Map<String, Object>) response.get("output");
-            if (output.containsKey("text")) {
-                return output.get("text").toString();
-            }
-        }
-        return "No text response found";
-    }
+        List<String> urls = response.getImages().stream()
+                .map(FalAIImageDTO::getUrl)
+                .toList();
 
-    private String escapeJson(String input) {
-        return input.replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+        return new ImageResponseDTO(description, urls);
     }
 }

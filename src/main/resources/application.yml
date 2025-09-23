@@ -38,7 +38,7 @@ jwt:
 fal:
   ai:
     api:
-      key: ${fal_ai_api_key:your_key_here}
+      key: ${fal_ai_api_key}
       url: https://fal.run
-    model: ${fal_ai_model:fal-ai/nano-banana}
+    model: nano-banana
     timeout: 30000

@@ -11,5 +11,4 @@ public class TroykaApplication {
     public static void main(String[] args) {
         SpringApplication.run(TroykaApplication.class, args);
     }
-
 }
