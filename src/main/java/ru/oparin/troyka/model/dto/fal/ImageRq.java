@@ -13,4 +13,10 @@ public class ImageRq {
 
     @Schema(description = "Описание изображения", example = "инопланетянин в таджикском стиле")
     private String prompt;
+
+    @Schema(description = "Количество изображений", example = "2")
+    private Integer numImages;
+
+    @Schema(description = "Формат изображений", example = "jpeg")
+    private OutputFormatEnum outputFormat;
 }

@@ -14,6 +14,7 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
 import ru.oparin.troyka.service.FalAIService;
+import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
 @RestController
@@ -38,9 +39,11 @@ public class FalAIController {
     )
     @PostMapping("/image/new")
     public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
-        log.info("Получен запрос на создание изображения по описанию: {}", rq);
-        return falAIService.getImageResponse(rq.getPrompt())
+        return SecurityUtil.getCurrentUsername()
+                .doOnNext(username -> log.info("Получен запрос на создание изображения от пользователя с логином: {}", username))
+                .flatMap(username -> falAIService.getImageResponse(rq))
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> Mono.just(ResponseEntity.badRequest().body(null)));
     }
+
 }

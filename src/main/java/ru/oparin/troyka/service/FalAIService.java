@@ -14,11 +14,14 @@ import ru.oparin.troyka.config.properties.FalAiProperties;
 import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIImageDTO;
 import ru.oparin.troyka.model.dto.fal.FalAIResponseDTO;
+import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+
+import static ru.oparin.troyka.model.dto.fal.OutputFormatEnum.JPEG;
 
 @Slf4j
 @Service
@@ -37,12 +40,19 @@ public class FalAIService {
         this.prop = falAiProperties;
     }
 
-    public Mono<ImageRs> getImageResponse(String prompt) {
-        Map<String, Object> requestBody = Map.of("prompt", prompt);
+    public Mono<ImageRs> getImageResponse(ImageRq rq) {
+        String prompt = rq.getPrompt();
+        Integer numImages = rq.getNumImages() == null ? 1 : rq.getNumImages();
+        String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
+        Map<String, Object> requestBody = Map.of(
+                "prompt", prompt,
+                "num_images", numImages,
+                "output_format", outputFormat
+        );
+
         String fullModelPath = PREFIX_PATH + prop.getModel();
         String fullUrl = prop.getApi().getUrl() + fullModelPath;
-
-        log.info("Отправлено сообщение в fal.ai по адресу '{}' с телом '{}'", fullUrl, requestBody);
+        log.info("Будет отправлено сообщение в fal.ai по адресу '{}' с телом '{}'", fullUrl, requestBody);
 
         return webClient.post()
                 .uri(fullModelPath)
