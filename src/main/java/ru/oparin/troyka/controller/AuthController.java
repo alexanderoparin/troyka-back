@@ -18,7 +18,7 @@ import ru.oparin.troyka.service.AuthService;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/auth")
 public class AuthController {
 
     private final AuthService authService;

@@ -4,17 +4,20 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
-import ru.oparin.troyka.model.dto.fal.ImageResponseDTO;
+import ru.oparin.troyka.model.dto.fal.ImageRq;
+import ru.oparin.troyka.model.dto.fal.ImageRs;
 import ru.oparin.troyka.service.FalAIService;
 
+@Slf4j
 @RestController
-@RequestMapping("/api/fal")
+@RequestMapping("/fal")
 public class FalAIController {
 
     private final FalAIService falAIService;
@@ -28,14 +31,15 @@ public class FalAIController {
             description = "Генерация изображения на основе промпта",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Успешная генерация",
-                            content = @Content(schema = @Schema(implementation = ImageResponseDTO.class))),
+                            content = @Content(schema = @Schema(implementation = ImageRs.class))),
                     @ApiResponse(responseCode = "401", description = "Неверные учетные данные"),
                     @ApiResponse(responseCode = "404", description = "Пользователь не найден")
             }
     )
-    @PostMapping("/generate-image")
-    public Mono<ResponseEntity<ImageResponseDTO>> generateImage(@RequestParam String prompt) {
-        return falAIService.getImageResponse(prompt)
+    @PostMapping("/image/new")
+    public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
+        log.info("Получен запрос на создание изображения по описанию: {}", rq);
+        return falAIService.getImageResponse(rq.getPrompt())
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> Mono.just(ResponseEntity.badRequest().body(null)));
     }

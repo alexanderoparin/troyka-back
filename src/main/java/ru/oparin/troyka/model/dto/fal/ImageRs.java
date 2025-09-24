@@ -11,7 +11,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "Ответ с изображением от FAL AI")
-public class ImageResponseDTO {
+public class ImageRs {
     @Schema(description = "Описание изображения, сгенерированное ИИ", example = "Конечно, вот инопланетянин в таджикском стиле: ")
     private String description;
     

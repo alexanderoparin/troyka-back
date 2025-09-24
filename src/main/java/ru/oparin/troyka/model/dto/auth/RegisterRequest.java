@@ -5,7 +5,9 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import lombok.ToString;
 
+@ToString
 @Data
 public class RegisterRequest {
 
@@ -18,6 +20,7 @@ public class RegisterRequest {
     @Schema(description = "Email адрес", example = "ivan@example.com")
     private String email;
 
+    @ToString.Exclude
     @NotBlank
     @Size(min = 6)
     @Schema(description = "Пароль", example = "securePassword123")
@@ -28,15 +31,4 @@ public class RegisterRequest {
 
     @Schema(description = "Фамилия", example = "Петров")
     private String lastName;
-
-    @Override
-    public String toString() {
-        return "RegisterRequest{" +
-                "username='" + username + '\'' +
-                ", email='" + email + '\'' +
-                ", password='" + "***" + '\'' +
-                ", firstName='" + firstName + '\'' +
-                ", lastName='" + lastName + '\'' +
-                '}';
-    }
 }

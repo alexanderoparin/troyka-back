@@ -29,9 +29,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeExchange(auth -> auth
                         .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        .pathMatchers("/api/health/**").permitAll()
-                        .pathMatchers("/api/auth/**").permitAll()
-                        .pathMatchers("/api/fal/**").authenticated()
+                        .pathMatchers("/health/**").permitAll()
+                        .pathMatchers("/auth/**").permitAll()
+                        .pathMatchers("/fal/**").authenticated()
                         .anyExchange().authenticated()
                 )
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())

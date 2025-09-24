@@ -14,7 +14,7 @@ import ru.oparin.troyka.config.properties.FalAiProperties;
 import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIImageDTO;
 import ru.oparin.troyka.model.dto.fal.FalAIResponseDTO;
-import ru.oparin.troyka.model.dto.fal.ImageResponseDTO;
+import ru.oparin.troyka.model.dto.fal.ImageRs;
 
 import java.time.Duration;
 import java.util.List;
@@ -37,7 +37,7 @@ public class FalAIService {
         this.prop = falAiProperties;
     }
 
-    public Mono<ImageResponseDTO> getImageResponse(String prompt) {
+    public Mono<ImageRs> getImageResponse(String prompt) {
         Map<String, Object> requestBody = Map.of("prompt", prompt);
         String fullModelPath = PREFIX_PATH + prop.getModel();
         String fullUrl = prop.getApi().getUrl() + fullModelPath;
@@ -69,7 +69,7 @@ public class FalAIService {
                 });
     }
 
-    private ImageResponseDTO extractImageResponse(FalAIResponseDTO response) {
+    private ImageRs extractImageResponse(FalAIResponseDTO response) {
         log.info("Получен ответ: {}", response);
         String description = response.getDescription();
 
@@ -77,6 +77,6 @@ public class FalAIService {
                 .map(FalAIImageDTO::getUrl)
                 .toList();
 
-        return new ImageResponseDTO(description, urls);
+        return new ImageRs(description, urls);
     }
 }
