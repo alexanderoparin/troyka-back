@@ -66,6 +66,7 @@ public class AuthService {
                     return userRepository.save(user)
                             .map(savedUser -> {
                                 String token = jwtService.generateToken(savedUser);
+                                log.info("Пользователь {} зарегистрирован", savedUser.getUsername());
                                 return new AuthResponse(
                                         token,
                                         savedUser.getUsername(),

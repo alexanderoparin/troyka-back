@@ -1,9 +1,7 @@
 package ru.oparin.troyka.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +17,7 @@ import ru.oparin.troyka.service.AuthService;
 @Slf4j
 @RestController
 @RequestMapping("/auth")
+@Tag(name = "Аутентификация", description = "API для регистрации и входа пользователей")
 public class AuthController {
 
     private final AuthService authService;
@@ -27,16 +26,8 @@ public class AuthController {
         this.authService = authService;
     }
 
-    @Operation(
-            summary = "Регистрация нового пользователя",
-            description = "Создает нового пользователя в системе и возвращает JWT токен",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Успешная регистрация",
-                            content = @Content(schema = @Schema(implementation = AuthResponse.class))),
-                    @ApiResponse(responseCode = "409", description = "Пользователь уже существует"),
-                    @ApiResponse(responseCode = "500", description = "Внутренняя ошибка сервера")
-            }
-    )
+    @Operation(summary = "Регистрация нового пользователя",
+            description = "Создает нового пользователя в системе и возвращает JWT токен")
     @PostMapping("/register")
     public Mono<ResponseEntity<AuthResponse>> register(@RequestBody RegisterRequest request) {
         log.info("Получен запрос на регистрацию нового пользователя: {}", request);
@@ -44,16 +35,8 @@ public class AuthController {
                 .map(ResponseEntity::ok);
     }
 
-    @Operation(
-            summary = "Вход в систему",
-            description = "Аутентификация пользователя и получение JWT токена",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Успешный вход",
-                            content = @Content(schema = @Schema(implementation = AuthResponse.class))),
-                    @ApiResponse(responseCode = "401", description = "Неверные учетные данные"),
-                    @ApiResponse(responseCode = "404", description = "Пользователь не найден")
-            }
-    )
+    @Operation(summary = "Вход в систему",
+            description = "Аутентификация пользователя и получение JWT токена")
     @PostMapping("/login")
     public Mono<ResponseEntity<AuthResponse>> login(@RequestBody LoginRequest request) {
         log.info("Получен запрос на авторизацию пользователя с логином: {}", request.getUsername());

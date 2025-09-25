@@ -10,6 +10,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsWebFilter;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import ru.oparin.troyka.service.JwtService;
 
 @Configuration
@@ -23,10 +26,26 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsWebFilter corsFilter() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowCredentials(true);
+        config.addAllowedOrigin("http://localhost:3000");
+        config.addAllowedHeader("*");
+        config.addAllowedMethod("*");
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+
+        return new CorsWebFilter(source);
+    }
+
+    @Bean
     @Profile("!dev") // PROD режим - с security
     public SecurityWebFilterChain securityWebFilterChainProd(ServerHttpSecurity http) {
         return http
                 .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.disable())
+                .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
                         .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .pathMatchers("/health/**").permitAll()
@@ -44,6 +63,8 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChainDev(ServerHttpSecurity http) {
         return http
                 .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.disable())
+                .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth.anyExchange().permitAll())
                 .build();
     }
