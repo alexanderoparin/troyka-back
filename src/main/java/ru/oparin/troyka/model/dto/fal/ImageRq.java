@@ -17,6 +17,6 @@ public class ImageRq {
     @Schema(description = "Количество изображений", example = "2")
     private Integer numImages;
 
-    @Schema(description = "Формат изображений", example = "jpeg")
+    @Schema(description = "Формат изображений", example = "JPEG")
     private OutputFormatEnum outputFormat;
 }
