@@ -2,7 +2,7 @@ package ru.oparin.troyka.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.repository.UserRepository;
@@ -20,20 +20,21 @@ public class ImageGenerationHistoryService {
         this.imageGenerationHistoryRepository = imageGenerationHistoryRepository;
         this.userRepository = userRepository;
     }
-
-    public Mono<ImageGenerationHistory> saveHistory(String imageUrl, String prompt) {
+    
+    public Flux<ImageGenerationHistory> saveHistories(Iterable<String> imageUrls, String prompt) {
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userRepository::findByUsername)
-                .map(user -> {
-                    ImageGenerationHistory history = ImageGenerationHistory.builder()
-                            .userId(user.getId())
-                            .imageUrl(imageUrl)
-                            .prompt(prompt)
-                            .build();
-                    log.info("Сохранение записи истории генерации изображений: {}", history);
-                    return history;
-                })
-                .flatMap(imageGenerationHistoryRepository::save)
-                .doOnNext(history -> log.info("Запись истории успешно сохранена с ID: {}", history.getId()));
+                .flatMapMany(user -> {
+                    Flux<ImageGenerationHistory> histories = Flux.fromIterable(imageUrls)
+                            .map(url -> ImageGenerationHistory.builder()
+                                    .userId(user.getId())
+                                    .imageUrl(url)
+                                    .prompt(prompt)
+                                    .build());
+                    
+                    return imageGenerationHistoryRepository.saveAll(histories)
+                            .doOnNext(history ->
+                                    log.info("Запись истории успешно сохранена с ID: {}", history.getId()));
+                });
     }
 }

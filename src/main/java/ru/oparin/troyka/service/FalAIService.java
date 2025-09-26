@@ -37,7 +37,7 @@ public class FalAIService {
                        ImageGenerationHistoryService imageGenerationHistoryService) {
         this.webClient = webClientBuilder
                 .baseUrl(falAiProperties.getApi().getUrl())
-.defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Key " + falAiProperties.getApi().getKey())
                 .build();
         this.prop = falAiProperties;
@@ -67,29 +67,25 @@ public class FalAIService {
                 .timeout(Duration.ofSeconds(30))
                 .map(this::extractImageResponse)
                 .flatMap(response -> {
-                    // Сохраняем первую ссылку на изображение в истории
-                    if (!response.getImageUrls().isEmpty()) {
-                        String imageUrl = response.getImageUrls().get(0);
-                        return imageGenerationHistoryService.saveHistory(imageUrl, prompt)
-                                .thenReturn(response);
-                    }
-                    return Mono.just(response);
+                    // Сохраняем все ссылки на изображения в истории
+                    return imageGenerationHistoryService.saveHistories(response.getImageUrls(), prompt)
+                            .then(Mono.just(response));
                 })
                 .doOnSuccess(response -> log.info("Успешно получен ответ с изображением: {}", response))
                 .onErrorResume(WebClientRequestException.class, e -> {
                     log.error("Ошибка подключения к {}: {}", fullUrl, e.getMessage());
-                                        throw new FalAIException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.", HttpStatus.SERVICE_UNAVAILABLE, e);
+                    throw new FalAIException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.", HttpStatus.SERVICE_UNAVAILABLE, e);
                 })
                 .onErrorResume(WebClientResponseException.class, e -> {
                     log.error("Ошибка ответа от fal.ai: {}", e.getMessage());
                     log.error("Ответ сервера: {}", e.getResponseBodyAsString());
                     log.error("Статус: {}", e.getStatusCode());
                     throw new FalAIException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode(), HttpStatus.UNPROCESSABLE_ENTITY, e);
-})
+                })
                 .onErrorResume(Exception.class, e -> {
                     log.error("Неизвестная ошибка при работе с fal.ai: ", e);
                     throw new FalAIException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, e);
-});
+                });
     }
 
     private ImageRs extractImageResponse(FalAIResponseDTO response) {
