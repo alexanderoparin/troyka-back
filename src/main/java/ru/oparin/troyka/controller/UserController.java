@@ -7,7 +7,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.dto.ImageGenerationHistoryDTO;
 import ru.oparin.troyka.model.dto.UserInfoDTO;
 import ru.oparin.troyka.service.UserService;
 
@@ -30,6 +32,15 @@ public class UserController {
         log.info("Получен запрос на получение информации о текущем пользователе");
         return userService.getCurrentUser()
                 .doOnNext(userInfoDTO -> log.info("Отправка информации о пользователе: {}", userInfoDTO))
-                .map(ResponseEntity::ok);
+                .map(user -> ResponseEntity.ok(user));
+    }
+
+    @Operation(summary = "Получение истории генерации изображений",
+            description = "Возвращает историю генерации изображений текущего пользователя")
+    @GetMapping("/me/image-history")
+    public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
+        log.info("Получен запрос на получение истории генерации изображений текущего пользователя");
+        return userService.getCurrentUserImageHistory()
+                .doOnNext(history -> log.info("Отправка записи истории: {}", history));
     }
 }
