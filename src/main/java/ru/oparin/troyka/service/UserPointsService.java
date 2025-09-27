@@ -20,11 +20,12 @@ public class UserPointsService {
     }
     
     /**
-     * Получить количество баллов пользователя
+     * Получить баланс пользователя
      */
     public Mono<Integer> getUserPoints(Long userId) {
         return userPointsRepository.findByUserId(userId)
                 .map(UserPoints::getPoints)
+                .doOnNext(balance -> log.info("Баланс пользователя c id {}: {} поинтов", userId, balance))
                 .defaultIfEmpty(0);
     }
     

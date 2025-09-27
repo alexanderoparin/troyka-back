@@ -41,15 +41,13 @@ public class FalAIController {
                     return Mono.just(ResponseEntity.badRequest().body(null));
                 });
     }
-    
-    @Operation(
-            summary = "Получение баллов пользователя",
-            description = "Возвращает количество доступных баллов текущего пользователя"
-    )
+
+    @Operation(summary = "Получение баланса пользователя",
+            description = "Возвращает количество доступных баллов текущего пользователя")
     @GetMapping("/user/points")
     public Mono<ResponseEntity<Integer>> getUserPoints() {
-        return SecurityUtil.getCurrentUsername()
-                .doOnNext(username -> log.info("Получен запрос на получение баллов от пользователя: {}", username))
+        Mono<String> currentUsername = SecurityUtil.getCurrentUsername();
+        return currentUsername
                 .flatMap(userService::findByUsername)
                 .flatMap(user -> userPointsService.getUserPoints(user.getId()))
                 .map(ResponseEntity::ok)

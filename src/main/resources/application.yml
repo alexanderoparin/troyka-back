@@ -32,6 +32,7 @@ logging:
     ru.oparin.troyka: ${log_level}
     org.springframework.r2dbc.core.DefaultDatabaseClient: ${sql_log_level:info}
     io.r2dbc.postgresql.Queries: ${sql_log_level:info}
+    org.springframework.r2dbc: ${sql_log_level:info}
 
 jwt:
   secret: ${JWT_SECRET}
