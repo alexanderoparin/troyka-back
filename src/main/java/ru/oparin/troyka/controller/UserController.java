@@ -31,8 +31,8 @@ public class UserController {
     public Mono<ResponseEntity<UserInfoDTO>> getCurrentUserInfo() {
         log.info("Получен запрос на получение информации о текущем пользователе");
         return userService.getCurrentUser()
-                .doOnNext(userInfoDTO -> log.info("Отправка информации о пользователе: {}", userInfoDTO))
-                .map(user -> ResponseEntity.ok(user));
+                .doOnNext(userInfoDTO -> log.debug("Отправка информации о пользователе: {}", userInfoDTO))
+                .map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Получение истории генерации изображений",
@@ -41,6 +41,6 @@ public class UserController {
     public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
         log.info("Получен запрос на получение истории генерации изображений текущего пользователя");
         return userService.getCurrentUserImageHistory()
-                .doOnNext(history -> log.info("Успешная отправка записи истории: {}", history));
+                .doOnNext(history -> log.debug("Успешная отправка записи истории: {}", history));
     }
 }

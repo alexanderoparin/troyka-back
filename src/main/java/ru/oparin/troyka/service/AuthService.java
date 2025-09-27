@@ -23,16 +23,19 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final UserPointsService userPointsService;
 
     @Value("${jwt.expiration}")
     private long expiration;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtService jwtService) {
+                       JwtService jwtService,
+                       UserPointsService userPointsService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.userPointsService = userPointsService;
     }
 
     public Mono<AuthResponse> register(RegisterRequest request) {
@@ -64,16 +67,21 @@ public class AuthService {
                             .build();
 
                     return userRepository.save(user)
-                            .map(savedUser -> {
-                                String token = jwtService.generateToken(savedUser);
-                                log.info("Пользователь {} зарегистрирован", savedUser.getUsername());
-                                return new AuthResponse(
-                                        token,
-                                        savedUser.getUsername(),
-                                        savedUser.getEmail(),
-                                        savedUser.getRole().name(),
-                                        LocalDateTime.now().plusSeconds(expiration / 1000)
-                                );
+                            .flatMap(savedUser -> {
+                                // Инициализируем баллы пользователя с 6 бесплатными баллами
+                                return userPointsService.initializeUserPoints(savedUser.getId())
+                                        .flatMap(userPoints -> userPointsService.addPointsToUser(savedUser.getId(), 6))
+                                        .then(Mono.fromCallable(() -> {
+                                            String token = jwtService.generateToken(savedUser);
+                                            log.info("Пользователь {} зарегистрирован с 6 бесплатными баллами", savedUser.getUsername());
+                                            return new AuthResponse(
+                                                    token,
+                                                    savedUser.getUsername(),
+                                                    savedUser.getEmail(),
+                                                    savedUser.getRole().name(),
+                                                    LocalDateTime.now().plusSeconds(expiration / 1000)
+                                            );
+                                        }));
                             });
                 });
     }

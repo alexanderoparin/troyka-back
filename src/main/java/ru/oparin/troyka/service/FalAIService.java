@@ -33,10 +33,12 @@ public class FalAIService {
     private final WebClient webClient;
     private final FalAiProperties prop;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
+    private final UserPointsService userPointsService;
 
     public FalAIService(WebClient.Builder webClientBuilder,
                         FalAiProperties falAiProperties,
-                        ImageGenerationHistoryService imageGenerationHistoryService) {
+                        ImageGenerationHistoryService imageGenerationHistoryService,
+                        UserPointsService userPointsService) {
         this.webClient = webClientBuilder
                 .baseUrl(falAiProperties.getApi().getUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -44,52 +46,67 @@ public class FalAIService {
                 .build();
         this.prop = falAiProperties;
         this.imageGenerationHistoryService = imageGenerationHistoryService;
+        this.userPointsService = userPointsService;
     }
 
-    public Mono<ImageRs> getImageResponse(ImageRq rq) {
-        String prompt = rq.getPrompt();
+    public Mono<ImageRs> getImageResponse(ImageRq rq, Long userId) {
+        // Проверяем, достаточно ли баллов у пользователя (3 балла за изображение)
         Integer numImages = rq.getNumImages() == null ? 1 : rq.getNumImages();
-        String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
-        Map<String, Object> requestBody = new HashMap<>(Map.of(
-                "prompt", prompt,
-                "num_images", numImages,
-                "output_format", outputFormat
-        ));
+        Integer pointsNeeded = numImages * 3;
 
-        List<String> imageUrls = rq.getImageUrls();
-        boolean isNewImage = CollectionUtils.isEmpty(imageUrls);
-        if (!isNewImage) {
-            requestBody.put("image_urls", imageUrls);
-        }
+        return userPointsService.hasEnoughPoints(userId, pointsNeeded)
+                .flatMap(hasEnough -> {
+                    if (!hasEnough) {
+                        return Mono.error(new FalAIException("Недостаточно баллов для генерации изображений. Требуется: " + pointsNeeded, HttpStatus.PAYMENT_REQUIRED));
+                    }
 
-        String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
-        String fullModelPath = PREFIX_PATH + model;
-        String fullUrl = prop.getApi().getUrl() + fullModelPath;
-        String modelType = isNewImage ? "создание" : "редактирование";
-        log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", modelType, fullUrl, requestBody);
+                    // Списываем баллы
+                    return userPointsService.deductPointsFromUser(userId, pointsNeeded)
+                            .then(Mono.defer(() -> {
+                                String prompt = rq.getPrompt();
+                                String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
+                                Map<String, Object> requestBody = new HashMap<>(Map.of(
+                                        "prompt", prompt,
+                                        "num_images", numImages,
+                                        "output_format", outputFormat
+                                ));
 
-        return webClient.post()
-                .uri(fullModelPath)
-                .bodyValue(requestBody)
-                .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
-                })
-                .timeout(Duration.ofSeconds(30))
-                .map(this::extractImageResponse)
-                .flatMap(response -> {
-                    // Сохраняем все ссылки на изображения в истории
-                    return imageGenerationHistoryService.saveHistories(response.getImageUrls(), prompt)
-                            .then(Mono.just(response));
-                })
-                .doOnSuccess(response -> log.info("Успешно получен ответ с изображением: {}", response))
-                .onErrorResume(WebClientRequestException.class, e -> {
-                    throw new FalAIException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.", HttpStatus.SERVICE_UNAVAILABLE, e);
-                })
-                .onErrorResume(WebClientResponseException.class, e -> {
-                    throw new FalAIException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode(), HttpStatus.UNPROCESSABLE_ENTITY, e);
-                })
-                .onErrorResume(Exception.class, e -> {
-                    throw new FalAIException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, e);
+                                List<String> imageUrls = rq.getImageUrls();
+                                boolean isNewImage = CollectionUtils.isEmpty(imageUrls);
+                                if (!isNewImage) {
+                                    requestBody.put("image_urls", imageUrls);
+                                }
+
+                                String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
+                                String fullModelPath = PREFIX_PATH + model;
+                                String fullUrl = prop.getApi().getUrl() + fullModelPath;
+                                String modelType = isNewImage ? "создание" : "редактирование";
+                                log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", modelType, fullUrl, requestBody);
+
+                                return webClient.post()
+                                        .uri(fullModelPath)
+                                        .bodyValue(requestBody)
+                                        .retrieve()
+                                        .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
+                                        })
+                                        .timeout(Duration.ofSeconds(30))
+                                        .map(this::extractImageResponse)
+                                        .flatMap(response -> {
+                                            // Сохраняем все ссылки на изображения в истории
+                                            return imageGenerationHistoryService.saveHistories(response.getImageUrls(), prompt)
+                                                    .then(Mono.just(response));
+                                        })
+                                        .doOnSuccess(response -> log.info("Успешно получен ответ с изображением: {}", response))
+                                        .onErrorResume(WebClientRequestException.class, e -> {
+                                            throw new FalAIException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.", HttpStatus.SERVICE_UNAVAILABLE, e);
+                                        })
+                                        .onErrorResume(WebClientResponseException.class, e -> {
+                                            throw new FalAIException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode(), HttpStatus.UNPROCESSABLE_ENTITY, e);
+                                        })
+                                        .onErrorResume(Exception.class, e -> {
+                                            throw new FalAIException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, e);
+                                        });
+                            }));
                 });
     }
 

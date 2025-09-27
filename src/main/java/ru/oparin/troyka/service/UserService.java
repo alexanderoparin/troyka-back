@@ -6,6 +6,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.ImageGenerationHistoryDTO;
 import ru.oparin.troyka.model.dto.UserInfoDTO;
+import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.util.SecurityUtil;
@@ -35,8 +36,8 @@ public class UserService {
                     return userInfoDTO;
                 });
     }
-    
-public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
+
+    public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userRepository::findByUsername)
                 .flatMapMany(user -> {
@@ -44,5 +45,9 @@ public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
                     return imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
                 })
                 .map(ImageGenerationHistoryDTO::fromEntity);
+    }
+
+    public Mono<User> findByUsername(String username) {
+        return userRepository.findByUsername(username);
     }
 }
