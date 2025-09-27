@@ -50,6 +50,8 @@ public class SecurityConfig {
                         .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .pathMatchers("/health/**").permitAll()
                         .pathMatchers("/auth/**").permitAll()
+                        .pathMatchers("/files/upload").authenticated()
+                        .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()
                         .anyExchange().authenticated()
                 )
@@ -65,7 +67,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.disable())
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
-                .authorizeExchange(auth -> auth.anyExchange().permitAll())
+                .authorizeExchange(auth -> auth
+                        .pathMatchers("/files/**").permitAll()
+                        .anyExchange().permitAll())
                 .build();
     }
 

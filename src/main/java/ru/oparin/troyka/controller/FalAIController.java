@@ -1,9 +1,6 @@
 package ru.oparin.troyka.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,17 +24,9 @@ public class FalAIController {
         this.falAIService = falAIService;
     }
 
-    @Operation(
-            summary = "Создание изображения по описанию",
-            description = "Генерация изображения на основе промпта",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Успешная генерация",
-                            content = @Content(schema = @Schema(implementation = ImageRs.class))),
-                    @ApiResponse(responseCode = "401", description = "Неверные учетные данные"),
-                    @ApiResponse(responseCode = "404", description = "Пользователь не найден")
-            }
-    )
-    @PostMapping("/image/new")
+    @Operation(summary = "Синхронное создание изображения по описанию",
+            description = "Генерация изображения на основе промпта, если заполнено поле imageUrls, то это редактирование переданных изображений")
+    @PostMapping("/image/run/create")
     public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
         return SecurityUtil.getCurrentUsername()
                 .doOnNext(username -> log.info("Получен запрос на создание изображения от пользователя с логином: {}", username))
@@ -45,5 +34,4 @@ public class FalAIController {
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> Mono.just(ResponseEntity.badRequest().body(null)));
     }
-
 }

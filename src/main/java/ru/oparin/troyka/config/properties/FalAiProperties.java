@@ -15,7 +15,7 @@ public class FalAiProperties {
 
     private Api api;
 
-    private String model;
+    private Model model;
 
     private Integer timeout;
 
@@ -26,5 +26,14 @@ public class FalAiProperties {
     public static class Api  {
         private String url;
         private String key;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Model  {
+        private String create;
+        private String edit;
     }
 }

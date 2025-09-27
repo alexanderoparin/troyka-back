@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -18,6 +19,7 @@ import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -32,9 +34,9 @@ public class FalAIService {
     private final FalAiProperties prop;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
 
-    public FalAIService(WebClient.Builder webClientBuilder, 
-                       FalAiProperties falAiProperties,
-                       ImageGenerationHistoryService imageGenerationHistoryService) {
+    public FalAIService(WebClient.Builder webClientBuilder,
+                        FalAiProperties falAiProperties,
+                        ImageGenerationHistoryService imageGenerationHistoryService) {
         this.webClient = webClientBuilder
                 .baseUrl(falAiProperties.getApi().getUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -48,15 +50,23 @@ public class FalAIService {
         String prompt = rq.getPrompt();
         Integer numImages = rq.getNumImages() == null ? 1 : rq.getNumImages();
         String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
-        Map<String, Object> requestBody = Map.of(
+        Map<String, Object> requestBody = new HashMap<>(Map.of(
                 "prompt", prompt,
                 "num_images", numImages,
                 "output_format", outputFormat
-        );
+        ));
 
-        String fullModelPath = PREFIX_PATH + prop.getModel();
+        List<String> imageUrls = rq.getImageUrls();
+        boolean isNewImage = CollectionUtils.isEmpty(imageUrls);
+        if (!isNewImage) {
+            requestBody.put("image_urls", imageUrls);
+        }
+
+        String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
+        String fullModelPath = PREFIX_PATH + model;
         String fullUrl = prop.getApi().getUrl() + fullModelPath;
-        log.info("Будет отправлено сообщение в fal.ai по адресу '{}' с телом '{}'", fullUrl, requestBody);
+        String modelType = isNewImage ? "создание" : "редактирование";
+        log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", modelType, fullUrl, requestBody);
 
         return webClient.post()
                 .uri(fullModelPath)
@@ -73,17 +83,12 @@ public class FalAIService {
                 })
                 .doOnSuccess(response -> log.info("Успешно получен ответ с изображением: {}", response))
                 .onErrorResume(WebClientRequestException.class, e -> {
-                    log.error("Ошибка подключения к {}: {}", fullUrl, e.getMessage());
                     throw new FalAIException("Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.", HttpStatus.SERVICE_UNAVAILABLE, e);
                 })
                 .onErrorResume(WebClientResponseException.class, e -> {
-                    log.error("Ошибка ответа от fal.ai: {}", e.getMessage());
-                    log.error("Ответ сервера: {}", e.getResponseBodyAsString());
-                    log.error("Статус: {}", e.getStatusCode());
                     throw new FalAIException("Сервис fal.ai вернул ошибку: " + e.getMessage() + ", статус: " + e.getStatusCode(), HttpStatus.UNPROCESSABLE_ENTITY, e);
                 })
                 .onErrorResume(Exception.class, e -> {
-                    log.error("Неизвестная ошибка при работе с fal.ai: ", e);
                     throw new FalAIException("Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR, e);
                 });
     }

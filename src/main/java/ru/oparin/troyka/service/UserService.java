@@ -43,7 +43,6 @@ public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
                     log.info("Получение истории генерации изображений для пользователя: {}", user.getUsername());
                     return imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
                 })
-                .map(ImageGenerationHistoryDTO::fromEntity)
-                .doOnNext(history -> log.info("Найдена запись истории: {}", history));
+                .map(ImageGenerationHistoryDTO::fromEntity);
     }
 }

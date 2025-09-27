@@ -41,6 +41,6 @@ public class UserController {
     public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
         log.info("Получен запрос на получение истории генерации изображений текущего пользователя");
         return userService.getCurrentUserImageHistory()
-                .doOnNext(history -> log.info("Отправка записи истории: {}", history));
+                .doOnNext(history -> log.info("Успешная отправка записи истории: {}", history));
     }
 }
