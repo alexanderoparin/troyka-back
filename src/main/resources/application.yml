@@ -20,6 +20,7 @@ spring:
 
 server:
   port: 8080
+  host: 213.171.4.47
 
 logging:
   file:

@@ -26,7 +26,7 @@ public class FileService {
     @Value("${file.upload-dir}")
     private String uploadDir;
     
-    @Value("${server.host:localhost}")
+    @Value("${server.host:213.171.4.47}")
     private String serverHost;
     
     @Value("${server.port:8080}")
