@@ -31,6 +31,8 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
         config.addAllowedOrigin("http://localhost:3000");
+        config.addAllowedOrigin("http://213.171.4.47");
+        config.addAllowedOrigin("http://213.171.4.47:3000");
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
 
@@ -79,6 +81,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.addAllowedOrigin("http://213.171.4.47");
         configuration.addAllowedOrigin("http://213.171.4.47:3000");
+        configuration.addAllowedOrigin("http://localhost:3000");
         configuration.addAllowedMethod("*");
         configuration.addAllowedHeader("*");
         configuration.setAllowCredentials(true);
