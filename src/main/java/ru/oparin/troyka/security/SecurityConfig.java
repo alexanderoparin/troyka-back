@@ -56,6 +56,7 @@ public class SecurityConfig {
                         .pathMatchers("/files/upload").authenticated()
                         .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()
+                        .pathMatchers("/users/**").authenticated()
                         .anyExchange().authenticated()
                 )
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
