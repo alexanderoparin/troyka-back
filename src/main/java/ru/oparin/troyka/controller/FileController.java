@@ -1,5 +1,6 @@
 package ru.oparin.troyka.controller;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
@@ -10,18 +11,15 @@ import ru.oparin.troyka.service.FileService;
 import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/files")
 public class FileController {
 
     private final FileService fileService;
 
-    public FileController(FileService fileService) {
-        this.fileService = fileService;
-    }
-
     @PostMapping("/upload")
-    public Mono<ResponseEntity<String>> uploadFile(@RequestPart("file") FilePart filePart) {
+    public Mono<ResponseEntity<String>>uploadFile(@RequestPart("file") FilePart filePart) {
         return SecurityUtil.getCurrentUsername()
                 .doOnNext(username -> log.info("Получен запрос на загрузку файла от пользователя: {}", username))
                 .flatMap(username -> fileService.saveFile(filePart, username))

@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.entity.UserAvatar;
 
 import java.io.IOException;
 import java.nio.file.AccessDeniedException;
@@ -25,22 +26,36 @@ public class FileService {
 
     @Value("${file.upload-dir}")
     private String uploadDir;
-    
-    @Value("${server.host:213.171.4.47}")
+
+    @Value("${server.host}")
     private String serverHost;
-    
+
     @Value("${server.port:8080}")
     private String serverPort;
 
+    private final UserService userService;
+    private final UserAvatarService userAvatarService;
+
+    public FileService(UserService userService, UserAvatarService userAvatarService) {
+        this.userService = userService;
+        this.userAvatarService = userAvatarService;
+    }
+
     public Mono<ResponseEntity<String>> saveFile(FilePart filePart, String username) {
-        log.info("Пользователь {} загружает файл: оригинальное имя={}, размер={} байт", 
+        return saveFileAndGetUrl(filePart, username)
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> Mono.just(ResponseEntity.badRequest().body("Ошибка при загрузке файла: " + e.getMessage())));
+    }
+
+    public Mono<String> saveFileAndGetUrl(FilePart filePart, String username) {
+        log.info("Пользователь {} загружает файл: оригинальное имя={}, размер={} байт",
                 username, filePart.filename(), "неизвестно (реактивная загрузка)");
-        
+
         try {
             // Создаем директорию для загрузки, если она не существует
             Path uploadPath = Paths.get(uploadDir);
             log.info("Проверяем существование директории для загрузки: {}", uploadPath.toAbsolutePath());
-            
+
             if (!Files.exists(uploadPath)) {
                 log.info("Создаем директорию для загрузки: {}", uploadPath.toAbsolutePath());
                 Files.createDirectories(uploadPath);
@@ -49,8 +64,7 @@ public class FileService {
             // Проверяем права на запись
             if (!Files.isWritable(uploadPath)) {
                 log.error("Директория {} недоступна для записи", uploadPath.toAbsolutePath());
-                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body("Директория загрузки недоступна для записи"));
+                return Mono.error(new RuntimeException("Директория загрузки недоступна для записи"));
             }
 
             // Генерируем уникальное имя файла
@@ -70,26 +84,42 @@ public class FileService {
                         // Возвращаем URL файла, который может использовать FAL AI
                         String fileUrl = "http://" + serverHost + ":" + serverPort + "/files/" + uniqueFilename;
                         log.info("Файл успешно загружен пользователем {}: {}", username, fileUrl);
-                        return ResponseEntity.ok(fileUrl);
+                        return fileUrl;
                     }))
                     .onErrorResume(AccessDeniedException.class, e -> {
-                        log.error("Ошибка доступа при сохранении файла пользователем " + username + 
-                                ". Путь: " + filePath.toAbsolutePath(), e);
-                        return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                .body("Нет прав доступа для сохранения файла. Проверьте права на директорию: " + uploadDir));
+                        log.error("Ошибка доступа при сохранении файла пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                        return Mono.error(new RuntimeException("Нет правдоступа для сохранения файла. Проверьте права на директорию: " + uploadDir));
                     })
                     .onErrorResume(Exception.class, e -> {
-                        log.error("Ошибка при сохранении файла пользователем " + username + 
-                                ". Путь: " + filePath.toAbsolutePath(), e);
-                        return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                .body("Ошибка при сохранении файла: " + e.getMessage()));
+                        log.error("Ошибка при сохранении файла пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                        return Mono.error(new RuntimeException("Ошибкапри сохранении файла: " + e.getMessage()));
                     });
 
         } catch (Exception e) {
-            log.error("Ошибка при обработке загрузки файла пользователем " + username, e);
-            return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка при обработке файла: " + e.getMessage()));
+            log.error("Ошибка при обработке загрузки файла пользователем {}", username, e);
+            return Mono.error(new RuntimeException("Ошибка при обработке файла: " + e.getMessage()));
         }
+    }
+
+    public Mono<String> saveAvatar(FilePart filePart) {
+        return userService.getCurrentUser()
+                .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
+                .flatMap(user -> saveFileAndGetUrl(filePart, "avatar_" + user.getUsername())
+                        .flatMap(fileUrl -> userAvatarService.saveUserAvatar(user.getId(), fileUrl)
+                                .then(Mono.just(fileUrl))));
+    }
+
+    public Mono<String> getCurrentUserAvatar() {
+        return userService.getCurrentUser()
+                .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
+                .flatMap(user -> userAvatarService.getUserAvatarByUserId(user.getId()))
+                .map(UserAvatar::getAvatarUrl);
+    }
+
+    public Mono<Void> deleteCurrentUserAvatar() {
+        return userService.getCurrentUser()
+                .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
+                .flatMap(user -> userAvatarService.deleteUserAvatarByUserId(user.getId()));
     }
 
     public Mono<ResponseEntity<Resource>> getFile(String filename) {
@@ -100,7 +130,7 @@ public class FileService {
                 if (!normalizedUploadDir.endsWith("/")) {
                     normalizedUploadDir += "/";
                 }
-                
+
                 log.info("Запрос файла: {}", filename);
                 Path file = Paths.get(normalizedUploadDir).resolve(filename);
                 Resource resource = new UrlResource(file.toUri());
