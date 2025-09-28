@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import ru.oparin.troyka.service.JwtService;
@@ -44,7 +45,7 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChainProd(ServerHttpSecurity http) {
         return http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
                         .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
@@ -71,6 +72,20 @@ public class SecurityConfig {
                         .pathMatchers("/files/**").permitAll()
                         .anyExchange().permitAll())
                 .build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.addAllowedOrigin("http://213.171.4.47");
+        configuration.addAllowedOrigin("http://213.171.4.47:3000");
+        configuration.addAllowedMethod("*");
+        configuration.addAllowedHeader("*");
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     @Bean
