@@ -18,6 +18,7 @@ import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -42,14 +43,14 @@ public class FileService {
     }
 
     public Mono<ResponseEntity<String>> saveFile(FilePart filePart, String username) {
-        return saveFileAndGetUrl(filePart, username)
+        return saveFileAndGetUrl(filePart, username, null)
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> Mono.just(ResponseEntity.badRequest().body("Ошибка при загрузке файла: " + e.getMessage())));
     }
 
-    public Mono<String> saveFileAndGetUrl(FilePart filePart, String username) {
-        log.info("Пользователь {} загружает файл: оригинальное имя={}, размер={} байт",
-                username, filePart.filename(), "неизвестно (реактивная загрузка)");
+    public Mono<String> saveFileAndGetUrl(FilePart filePart, String username, String prefix) {
+        log.info("Пользователь {} загружает файл: оригинальное имя={}",
+                username, filePart.filename());
 
         try {
             // Создаем директорию для загрузки, если она не существует
@@ -67,13 +68,13 @@ public class FileService {
                 return Mono.error(new RuntimeException("Директория загрузки недоступна для записи"));
             }
 
-            // Генерируем уникальное имя файла
+            String uniqueFilename;
             String originalFilename = filePart.filename();
             String fileExtension = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
+            if (originalFilename.contains(".")) {
                 fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
             }
-            String uniqueFilename = UUID.randomUUID().toString() + fileExtension;
+            uniqueFilename = Objects.requireNonNullElseGet(prefix, UUID::randomUUID) + fileExtension;
 
             // Сохраняем файл
             Path filePath = uploadPath.resolve(uniqueFilename);
@@ -104,7 +105,7 @@ public class FileService {
     public Mono<String> saveAvatar(FilePart filePart) {
         return userService.getCurrentUser()
                 .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
-                .flatMap(user -> saveFileAndGetUrl(filePart, "avatar_" + user.getUsername())
+                .flatMap(user -> saveFileAndGetUrl(filePart, user.getUsername(), "avatar_")
                         .flatMap(fileUrl -> userAvatarService.saveUserAvatar(user.getId(), fileUrl)
                                 .then(Mono.just(fileUrl))));
     }
