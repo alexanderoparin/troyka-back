@@ -27,7 +27,9 @@ public class UserAvatarService {
                             .userId(userId)
                             .avatarUrl(avatarUrl)
                             .build();
-                    return userAvatarRepository.save(newUserAvatar);
+                    Mono<UserAvatar> saved = userAvatarRepository.save(newUserAvatar);
+                    log.info("URL аватара для пользователя с ID {} сохранен", userId);
+                    return saved;
                 }));
     }
 
