@@ -19,6 +19,7 @@ public class UserAvatarService {
                             .userId(userId)
                             .avatarUrl(avatarUrl)
                             .build();
+                    userAvatarRepository.save(newUserAvatar);
                     return newUserAvatar;
                 }))
                 .flatMap(avatar -> {
