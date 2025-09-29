@@ -20,7 +20,7 @@ spring:
 
 server:
   port: 8080
-  host: 213.171.4.47
+  address: 0.0.0.0
 
 logging:
   file:
@@ -53,3 +53,4 @@ fal:
 # File storage configuration
 file:
   upload-dir: ${UPLOAD_DIR:/var/www/uploads/}
+  host: 213.171.4.47
