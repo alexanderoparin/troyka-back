@@ -1,11 +1,13 @@
 package ru.oparin.troyka.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.UserAvatar;
 import ru.oparin.troyka.repository.UserAvatarRepository;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserAvatarService {
@@ -15,12 +17,12 @@ public class UserAvatarService {
     public Mono<UserAvatar> saveUserAvatar(Long userId, String avatarUrl) {
         return userAvatarRepository.findByUserId(userId)
                 .flatMap(existingAvatar -> {
-                    // Если запись существует, обновляем URL
+                    log.info("Обновление URL аватара для пользователя с ID: {}", userId);
                     existingAvatar.setAvatarUrl(avatarUrl);
                     return userAvatarRepository.save(existingAvatar);
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // Если запись не существует, создаем новую
+                    log.info("Сохранение URL аватара для пользователя с ID: {}", userId);
                     UserAvatar newUserAvatar = UserAvatar.builder()
                             .userId(userId)
                             .avatarUrl(avatarUrl)
