@@ -2,11 +2,13 @@ package ru.oparin.troyka.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.relational.core.query.Criteria;
 import org.springframework.data.relational.core.query.Query;
 import org.springframework.data.relational.core.query.Update;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.UserAvatar;
 import ru.oparin.troyka.repository.UserAvatarRepository;
@@ -21,25 +23,20 @@ public class UserAvatarService {
     private final UserAvatarRepository userAvatarRepository;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
+    @Transactional
     public Mono<UserAvatar> saveUserAvatar(Long userId, String avatarUrl) {
         return userAvatarRepository.findByUserId(userId)
-                .hasElement()
-                .flatMap(exists -> {
-                    if (exists) {
-                        // Обновляем существующую запись
-                        return userAvatarRepository.findByUserId(userId)
-                                .flatMap(avatar -> {
-                                    avatar.setAvatarUrl(avatarUrl);
-                                    return userAvatarRepository.save(avatar);
-                                });
-                    } else {
-                        // Создаем новую запись
-                        UserAvatar newAvatar = UserAvatar.builder()
-                                .userId(userId)
-                                .avatarUrl(avatarUrl)
-                                .build();
-                        return userAvatarRepository.save(newAvatar);
-                    }
+                .flatMap(existingAvatar -> {
+                    existingAvatar.setAvatarUrl(avatarUrl);
+                    return userAvatarRepository.save(existingAvatar);
+                })
+                .onErrorResume(EmptyResultDataAccessException.class, e -> {
+                    // Записи нет, создаем новую
+                    UserAvatar newAvatar = UserAvatar.builder()
+                            .userId(userId)
+                            .avatarUrl(avatarUrl)
+                            .build();
+                    return userAvatarRepository.save(newAvatar);
                 });
     }
 
