@@ -10,16 +10,38 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.UserAvatar;
 import ru.oparin.troyka.repository.UserAvatarRepository;
+import ru.oparin.troyka.repository.UserRepository;
+import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserAvatarService {
 
+    private final UserRepository userRepository;
     private final UserAvatarRepository userAvatarRepository;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
     public Mono<UserAvatar> saveUserAvatar(Long userId, String avatarUrl) {
+        return SecurityUtil.getCurrentUsername()
+                .flatMap(userRepository::findByUsername)
+                .flatMap(user -> {
+                    return userAvatarRepository.findByUserId(user.getId())
+                            .flatMap(userAvatar -> {
+                                userAvatar.setAvatarUrl(avatarUrl);
+                                return userAvatarRepository.save(userAvatar);
+                            })
+                            .switchIfEmpty(Mono.defer(() -> {
+                                UserAvatar newUserAvatar = UserAvatar.builder()
+                                        .userId(userId)
+                                        .avatarUrl(avatarUrl)
+                                        .build();
+                                return userAvatarRepository.save(newUserAvatar);
+                            }));
+                });
+    }
+
+    public Mono<UserAvatar> saveUserAvatar1(Long userId, String avatarUrl) {
         // Сначала пытаемся обновить существующую запись
         return r2dbcEntityTemplate.update(UserAvatar.class)
                 .matching(Query.query(Criteria.where("userId").is(userId)))
