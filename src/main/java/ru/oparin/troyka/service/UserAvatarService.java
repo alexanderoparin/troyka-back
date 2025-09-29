@@ -24,22 +24,25 @@ public class UserAvatarService {
         return r2dbcEntityTemplate.update(UserAvatar.class)
                 .matching(Query.query(Criteria.where("userId").is(userId)))
                 .apply(Update.update("avatarUrl", avatarUrl))
-                .then(Mono.just(UserAvatar.builder()
-                        .userId(userId)
-                        .avatarUrl(avatarUrl)
-                        .build()))
-                .doOnNext(avatar -> log.info("URL аватара для пользователя с ID {} обновлен", userId))
-                .switchIfEmpty(Mono.defer(() -> {
-                    // Если обновление не затронуло ни одной записи, создаем новую
-                    log.info("Создание новой записи аватара для пользователя с ID: {}", userId);
-                    UserAvatar newUserAvatar = UserAvatar.builder()
-                            .userId(userId)
-                            .avatarUrl(avatarUrl)
-                            .build();
-                    return r2dbcEntityTemplate.insert(UserAvatar.class)
-                            .using(newUserAvatar)
-                            .doOnNext(saved -> log.info("URL аватара для пользователя с ID {} создан", userId));
-                }));
+                .flatMap(rowsUpdated -> {
+                    if (rowsUpdated > 0) {
+                        log.info("URL аватара для пользователя с ID {} обновлен", userId);
+                        return Mono.just(UserAvatar.builder()
+                                .userId(userId)
+                                .avatarUrl(avatarUrl)
+                                .build());
+                    } else {
+                        // Если обновление не затронуло ни одной записи, создаем новую
+                        log.info("Создание новой записи аватара для пользователя с ID: {}", userId);
+                        UserAvatar newUserAvatar = UserAvatar.builder()
+                                .userId(userId)
+                                .avatarUrl(avatarUrl)
+                                .build();
+                        return r2dbcEntityTemplate.insert(UserAvatar.class)
+                                .using(newUserAvatar)
+                                .doOnNext(saved -> log.info("URL аватара для пользователя с ID {} создан", userId));
+                    }
+                });
     }
 
     public Mono<UserAvatar> getUserAvatarByUserId(Long userId) {
