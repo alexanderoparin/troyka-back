@@ -14,16 +14,16 @@ public class UserAvatarService {
 
     public Mono<UserAvatar> saveUserAvatar(Long userId, String avatarUrl) {
         return userAvatarRepository.findByUserId(userId)
-                .switchIfEmpty(Mono.defer(() -> {
+                .switchIfEmpty(Mono.fromCallable(() -> {
                     UserAvatar newUserAvatar = UserAvatar.builder()
                             .userId(userId)
                             .avatarUrl(avatarUrl)
                             .build();
-                    return userAvatarRepository.save(newUserAvatar);
+                    return newUserAvatar;
                 }))
-                .flatMap(existingAvatar -> {
-                    existingAvatar.setAvatarUrl(avatarUrl);
-                    return userAvatarRepository.save(existingAvatar);
+                .flatMap(avatar -> {
+                    avatar.setAvatarUrl(avatarUrl);
+                    return userAvatarRepository.save(avatar);
                 });
     }
 
