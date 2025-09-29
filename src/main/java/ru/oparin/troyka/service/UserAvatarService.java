@@ -22,6 +22,28 @@ public class UserAvatarService {
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
     public Mono<UserAvatar> saveUserAvatar(Long userId, String avatarUrl) {
+        return userAvatarRepository.findByUserId(userId)
+                .hasElement()
+                .flatMap(exists -> {
+                    if (exists) {
+                        // Обновляем существующую запись
+                        return userAvatarRepository.findByUserId(userId)
+                                .flatMap(avatar -> {
+                                    avatar.setAvatarUrl(avatarUrl);
+                                    return userAvatarRepository.save(avatar);
+                                });
+                    } else {
+                        // Создаем новую запись
+                        UserAvatar newAvatar = UserAvatar.builder()
+                                .userId(userId)
+                                .avatarUrl(avatarUrl)
+                                .build();
+                        return userAvatarRepository.save(newAvatar);
+                    }
+                });
+    }
+
+    public Mono<UserAvatar> saveUserAvatar1(Long userId, String avatarUrl) {
         // Сначала пытаемся обновить существующую запись
         return r2dbcEntityTemplate.update(UserAvatar.class)
                 .matching(Query.query(Criteria.where("userId").is(userId)))
