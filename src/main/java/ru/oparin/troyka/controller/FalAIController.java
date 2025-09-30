@@ -33,7 +33,7 @@ public class FalAIController {
     public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
         return SecurityUtil.getCurrentUsername()
                 .doOnNext(username -> log.info("Получен запрос на создание изображения от пользователя с логином: {}", username))
-                .flatMap(userService::findByUsername)
+                .flatMap(userService::findByUsernameOrThrow)
                 .flatMap(user -> falAIService.getImageResponse(rq, user.getId()))
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
@@ -48,7 +48,7 @@ public class FalAIController {
     public Mono<ResponseEntity<Integer>> getUserPoints() {
         Mono<String> currentUsername = SecurityUtil.getCurrentUsername();
         return currentUsername
-                .flatMap(userService::findByUsername)
+                .flatMap(userService::findByUsernameOrThrow)
                 .flatMap(user -> userPointsService.getUserPoints(user.getId()))
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {

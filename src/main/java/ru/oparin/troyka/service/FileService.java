@@ -102,7 +102,7 @@ public class FileService {
 
     public Mono<String> saveAvatar(FilePart filePart) {
         return userService.getCurrentUser()
-                .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
+                .flatMap(userInfoDTO -> userService.findByUsernameOrThrow(userInfoDTO.getUsername()))
                 .flatMap(user -> saveFileAndGetUrl(filePart, user.getUsername())
                         .flatMap(fileUrl -> userAvatarService.saveUserAvatar(user.getId(), fileUrl)
                                 .then(Mono.just(fileUrl))));
@@ -110,14 +110,14 @@ public class FileService {
 
     public Mono<String> getCurrentUserAvatar() {
         return userService.getCurrentUser()
-                .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
+                .flatMap(userInfoDTO -> userService.findByUsernameOrThrow(userInfoDTO.getUsername()))
                 .flatMap(user -> userAvatarService.getUserAvatarByUserId(user.getId()))
                 .map(UserAvatar::getAvatarUrl);
     }
 
     public Mono<Void> deleteCurrentUserAvatar() {
         return userService.getCurrentUser()
-                .flatMap(userInfoDTO -> userService.findByUsername(userInfoDTO.getUsername()))
+                .flatMap(userInfoDTO -> userService.findByUsernameOrThrow(userInfoDTO.getUsername()))
                 .flatMap(user -> userAvatarService.deleteUserAvatarByUserId(user.getId()));
     }
 

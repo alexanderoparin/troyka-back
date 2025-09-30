@@ -1,5 +1,6 @@
 package ru.oparin.troyka.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -12,15 +13,15 @@ import ru.oparin.troyka.model.dto.auth.LoginRequest;
 import ru.oparin.troyka.model.dto.auth.RegisterRequest;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.enums.Role;
-import ru.oparin.troyka.repository.UserRepository;
 
 import java.time.LocalDateTime;
 
+@RequiredArgsConstructor
 @Service
 @Slf4j
 public class AuthService {
 
-    private final UserRepository userRepository;
+    private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserPointsService userPointsService;
@@ -28,34 +29,9 @@ public class AuthService {
     @Value("${jwt.expiration}")
     private long expiration;
 
-    public AuthService(UserRepository userRepository,
-                       PasswordEncoder passwordEncoder,
-                       JwtService jwtService,
-                       UserPointsService userPointsService) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
-        this.userPointsService = userPointsService;
-    }
-
     public Mono<AuthResponse> register(RegisterRequest request) {
-        return userRepository.existsByUsername(request.getUsername())
-                .flatMap(usernameExists -> {
-                    if (usernameExists) {
-                        return Mono.error(new AuthException(
-                                HttpStatus.CONFLICT,
-                                "Пользователь с таким именем уже существует"
-                        ));
-                    }
-                    return userRepository.existsByEmail(request.getEmail());
-                })
-                .flatMap(emailExists -> {
-                    if (emailExists) {
-                        return Mono.error(new AuthException(
-                                HttpStatus.CONFLICT,
-                                "Пользователь с таким email уже существует"
-                        ));
-                    }
+        return userService.existsByUsernameOrEmail(request.getUsername(), request.getEmail())
+                .then(Mono.defer(() -> {
 
                     User user = User.builder()
                             .username(request.getUsername())
@@ -66,7 +42,7 @@ public class AuthService {
                             .role(Role.USER)
                             .build();
 
-                    return userRepository.save(user)
+                    return userService.saveUser(user)
                             .flatMap(savedUser -> {
                                 // Инициализируем баллы пользователя с 6 бесплатными баллами
                                 return userPointsService.initializeUserPoints(savedUser.getId())
@@ -83,15 +59,11 @@ public class AuthService {
                                             );
                                         }));
                             });
-                });
+                }));
     }
 
     public Mono<AuthResponse> login(LoginRequest request) {
-        return userRepository.findByUsername(request.getUsername())
-                .switchIfEmpty(Mono.error(new AuthException(
-                        HttpStatus.NOT_FOUND,
-                        "Пользователь не найден"
-                )))
+        return userService.findByUsernameOrThrow(request.getUsername())
                 .flatMap(user -> {
                     if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
                         return Mono.error(new AuthException(
