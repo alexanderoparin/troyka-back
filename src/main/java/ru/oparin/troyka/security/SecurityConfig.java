@@ -33,6 +33,8 @@ public class SecurityConfig {
         config.addAllowedOrigin("http://localhost:3000");
         config.addAllowedOrigin("http://213.171.4.47");
         config.addAllowedOrigin("http://213.171.4.47:3000");
+        config.addAllowedOrigin("http://24reshai.ru");
+        config.addAllowedOrigin("https://24reshai.ru");
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
 
@@ -83,6 +85,8 @@ public class SecurityConfig {
         configuration.addAllowedOrigin("http://213.171.4.47");
         configuration.addAllowedOrigin("http://213.171.4.47:3000");
         configuration.addAllowedOrigin("http://localhost:3000");
+        configuration.addAllowedOrigin("http://24reshai.ru");
+        configuration.addAllowedOrigin("https://24reshai.ru");
         configuration.addAllowedMethod("*");
         configuration.addAllowedHeader("*");
         configuration.setAllowCredentials(true);
