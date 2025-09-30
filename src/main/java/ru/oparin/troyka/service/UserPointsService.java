@@ -1,6 +1,8 @@
 package ru.oparin.troyka.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
@@ -9,15 +11,13 @@ import ru.oparin.troyka.repository.UserPointsRepository;
 
 import java.time.LocalDateTime;
 
+@RequiredArgsConstructor
 @Slf4j
 @Service
 public class UserPointsService {
     
     private final UserPointsRepository userPointsRepository;
-    
-    public UserPointsService(UserPointsRepository userPointsRepository) {
-        this.userPointsRepository = userPointsRepository;
-    }
+    private final R2dbcEntityTemplate r2dbcEntityTemplate;
     
     /**
      * Получить баланс пользователя
@@ -41,17 +41,10 @@ public class UserPointsService {
                     // Если запись о баллах пользователя не существует, создаем новую
                     UserPoints newUserPoints = UserPoints.builder()
                             .userId(userId)
-                            .points(0)
-                            .createdAt(LocalDateTime.now())
+                            .points(points)
                             .build();
                     return userPointsRepository.save(newUserPoints);
                 }))
-                .flatMap(userPoints -> {
-                    Integer currentPoints = userPoints.getPoints() != null ? userPoints.getPoints() : 0;
-                    userPoints.setPoints(currentPoints + points);
-                    userPoints.setUpdatedAt(LocalDateTime.now());
-                    return userPointsRepository.save(userPoints);
-                })
                 .doOnSuccess(userPoints -> log.info("Успешно добавлено {} баллов пользователю с ID: {}", points, userId));
     }
     
