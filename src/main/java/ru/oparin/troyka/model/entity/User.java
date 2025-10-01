@@ -32,6 +32,8 @@ public class User {
 
     private String lastName;
 
+    private String phone;
+
     private Role role = Role.USER;
 
     @CreatedDate

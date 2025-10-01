@@ -13,6 +13,7 @@ import ru.oparin.troyka.model.dto.auth.LoginRequest;
 import ru.oparin.troyka.model.dto.auth.RegisterRequest;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.enums.Role;
+import ru.oparin.troyka.util.PhoneUtil;
 
 import java.time.LocalDateTime;
 
@@ -39,6 +40,7 @@ public class AuthService {
                             .password(passwordEncoder.encode(request.getPassword()))
                             .firstName(request.getFirstName())
                             .lastName(request.getLastName())
+                            .phone(PhoneUtil.normalizePhone(request.getPhone()))
                             .role(Role.USER)
                             .build();
 
