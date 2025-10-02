@@ -2,6 +2,7 @@ package ru.oparin.troyka.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -45,7 +46,7 @@ public class AuthController {
     @Operation(summary = "Запрос восстановления пароля",
             description = "Отправляет email с инструкциями по восстановлению пароля")
     @PostMapping("/forgot-password")
-    public Mono<ResponseEntity<String>> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+    public Mono<ResponseEntity<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         log.info("Получен запрос на восстановление пароля для email: {}", request.getEmail());
         return passwordResetService.requestPasswordReset(request)
                 .map(ResponseEntity::ok);
@@ -54,7 +55,7 @@ public class AuthController {
     @Operation(summary = "Сброс пароля",
             description = "Устанавливает новый пароль по токену из email")
     @PostMapping("/reset-password")
-    public Mono<ResponseEntity<String>> resetPassword(@RequestBody ResetPasswordRequest request) {
+    public Mono<ResponseEntity<String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         log.info("Получен запрос на сброс пароля с токеном");
         return passwordResetService.resetPassword(request)
                 .map(ResponseEntity::ok);
