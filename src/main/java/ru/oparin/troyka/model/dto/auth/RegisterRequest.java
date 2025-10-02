@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.ToString;
+import ru.oparin.troyka.validation.StrongPassword;
 
 @ToString
 @Data
@@ -22,9 +23,9 @@ public class RegisterRequest {
     private String email;
 
     @ToString.Exclude
-    @NotBlank
-    @Size(min = 6)
-    @Schema(description = "Пароль", example = "securePassword123")
+    @NotBlank(message = "Пароль обязателен")
+    @StrongPassword
+    @Schema(description = "Пароль (минимум 8 символов, включая заглавные и строчные буквы, цифры и специальные символы)", example = "SecurePass123!")
     private String password;
 
     @Schema(description = "Имя", example = "Иван")

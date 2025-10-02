@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import ru.oparin.troyka.validation.StrongPassword;
 
 @Data
 @NoArgsConstructor
@@ -15,7 +16,7 @@ public class ResetPasswordRequest {
     private String token;
     
     @NotBlank(message = "Пароль обязателен")
-    @Size(min = 6, message = "Пароль должен содержать минимум 6 символов")
+    @StrongPassword
     private String newPassword;
 }
 
