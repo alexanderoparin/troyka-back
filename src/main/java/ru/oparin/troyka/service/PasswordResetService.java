@@ -44,6 +44,7 @@ public class PasswordResetService {
         return userRepository.findByEmail(request.getEmail())
                 .switchIfEmpty(Mono.error(new AuthException(HttpStatus.NOT_FOUND, "Пользователь с таким email не найден")))
                 .flatMap(user -> {
+                    log.info("Удаляем старые неиспользованные токены для пользователя {}", user.getUsername());
                     // Удаляем старые неиспользованные токены для этого пользователя
                     return tokenRepository.findActiveTokenByUserId(user.getId(), LocalDateTime.now())
                             .flatMap(tokenRepository::delete)
@@ -104,6 +105,7 @@ public class PasswordResetService {
                     message.setText(buildEmailContent(user.getUsername(), resetUrl));
 
                     try {
+                        log.info("Отправляем email на: {}", user.getEmail());
                         mailSender.send(message);
                         log.info("Email с инструкциями по восстановлению пароля отправлен на: {}", user.getEmail());
                         return Mono.just("Инструкции по восстановлению пароля отправлены на вашу почту");
