@@ -17,6 +17,19 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+  mail:
+    host: ${SMTP_HOST:smtp.timeweb.ru}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:noreply@24reshai.ru}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          ssl:
+            trust: smtp.timeweb.ru
 
 server:
   port: 8080
@@ -54,3 +67,10 @@ fal:
 file:
   upload-dir: ${UPLOAD_DIR:/var/www/uploads/}
   host: 213.171.4.47
+
+# Application configuration
+app:
+  frontend:
+    url: ${FRONTEND_URL:https://24reshai.ru}
+  email:
+    from: ${EMAIL_FROM:noreply@24reshai.ru}

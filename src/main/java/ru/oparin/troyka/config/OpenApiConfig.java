@@ -8,9 +8,9 @@ import org.springframework.context.annotation.Configuration;
 
 @OpenAPIDefinition(
         info = @Info(
-                title = "Troyka API",
+                title = "24reshai API",
                 version = "1.0.0",
-                description = "Документация API для Troyka Backend приложения",
+                description = "Документация API для 24reshai Backend приложения",
                 contact = @Contact(
                         name = "Support",
                         email = "support@troyka.ru"
