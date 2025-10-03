@@ -49,7 +49,7 @@ public class AuthController {
     public Mono<ResponseEntity<MessageResponse>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         log.info("Получен запрос на восстановление пароля для email: {}", request.getEmail());
         return passwordResetService.requestPasswordReset(request)
-                .map(message -> ResponseEntity.ok(new MessageResponse(message)));
+                .map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Сброс пароля",
@@ -58,6 +58,6 @@ public class AuthController {
     public Mono<ResponseEntity<MessageResponse>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         log.info("Получен запрос на сброс пароля с токеном");
         return passwordResetService.resetPassword(request)
-                .map(message -> ResponseEntity.ok(new MessageResponse(message)));
+                .map(ResponseEntity::ok);
     }
 }

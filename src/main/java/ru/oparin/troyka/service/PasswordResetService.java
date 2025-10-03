@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.auth.ForgotPasswordRequest;
+import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.auth.ResetPasswordRequest;
 import ru.oparin.troyka.model.entity.PasswordResetToken;
 import ru.oparin.troyka.model.entity.User;
@@ -40,7 +41,7 @@ public class PasswordResetService {
     private static final int TOKEN_LENGTH = 32;
     private static final int TOKEN_EXPIRY_HOURS = 24;
 
-    public Mono<String> requestPasswordReset(ForgotPasswordRequest request) {
+    public Mono<MessageResponse> requestPasswordReset(ForgotPasswordRequest request) {
         return userRepository.findByEmail(request.getEmail())
                 .switchIfEmpty(Mono.error(new AuthException(HttpStatus.NOT_FOUND, "Пользователь с таким email не найден")))
                 .flatMap(user -> {
@@ -53,14 +54,18 @@ public class PasswordResetService {
                 .flatMap(this::createPasswordResetToken)
                 .flatMap(this::sendPasswordResetEmail)
                 .doOnSuccess(result -> log.info("Запрос на восстановление пароля отправлен для email: {}", request.getEmail()))
+                .map(result -> new MessageResponse("Инструкции по восстановлению пароля отправлены на вашу почту"))
+                .onErrorResume(AuthException.class, e -> {
+                    log.warn("Попытка восстановления пароля для несуществующего email: {}", request.getEmail());
+                    return Mono.just(new MessageResponse("Пользователь с таким email не найден"));
+                })
                 .onErrorResume(e -> {
                     log.error("Ошибка при запросе восстановления пароля для email: {}", request.getEmail(), e);
-                    // Возвращаем успех даже если пользователь не найден (security best practice)
-                    return Mono.just("Если пользователь с таким email существует, инструкции отправлены на почту");
+                    return Mono.just(new MessageResponse("Произошла ошибка при отправке инструкций. Попробуйте позже"));
                 });
     }
 
-    public Mono<String> resetPassword(ResetPasswordRequest request) {
+    public Mono<MessageResponse> resetPassword(ResetPasswordRequest request) {
         return tokenRepository.findByTokenAndNotUsedAndNotExpired(request.getToken(), LocalDateTime.now())
                 .switchIfEmpty(Mono.error(new AuthException(HttpStatus.BAD_REQUEST, "Недействительный или истекший токен")))
                 .flatMap(token -> {
@@ -76,7 +81,15 @@ public class PasswordResetService {
                             return userRepository.save(user);
                         }))
                 .doOnSuccess(user -> log.info("Пароль успешно сброшен для пользователя: {}", user.getUsername()))
-                .then(Mono.just("Пароль успешно изменен"));
+                .map(user -> new MessageResponse("Пароль успешно изменен"))
+                .onErrorResume(AuthException.class, e -> {
+                    log.warn("Ошибка при сбросе пароля: {}", e.getMessage());
+                    return Mono.just(new MessageResponse(e.getMessage()));
+                })
+                .onErrorResume(e -> {
+                    log.error("Неожиданная ошибка при сбросе пароля", e);
+                    return Mono.just(new MessageResponse("Произошла ошибка при изменении пароля. Попробуйте позже"));
+                });
     }
 
     private Mono<PasswordResetToken> createPasswordResetToken(User user) {
