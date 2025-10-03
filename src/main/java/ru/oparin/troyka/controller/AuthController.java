@@ -46,18 +46,18 @@ public class AuthController {
     @Operation(summary = "Запрос восстановления пароля",
             description = "Отправляет email с инструкциями по восстановлению пароля")
     @PostMapping("/forgot-password")
-    public Mono<ResponseEntity<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    public Mono<ResponseEntity<MessageResponse>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         log.info("Получен запрос на восстановление пароля для email: {}", request.getEmail());
         return passwordResetService.requestPasswordReset(request)
-                .map(ResponseEntity::ok);
+                .map(message -> ResponseEntity.ok(new MessageResponse(message)));
     }
 
     @Operation(summary = "Сброс пароля",
             description = "Устанавливает новый пароль по токену из email")
     @PostMapping("/reset-password")
-    public Mono<ResponseEntity<String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    public Mono<ResponseEntity<MessageResponse>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         log.info("Получен запрос на сброс пароля с токеном");
         return passwordResetService.resetPassword(request)
-                .map(ResponseEntity::ok);
+                .map(message -> ResponseEntity.ok(new MessageResponse(message)));
     }
 }
