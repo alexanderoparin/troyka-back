@@ -40,21 +40,29 @@ public class PasswordResetService {
 
     private static final int TOKEN_LENGTH = 32;
     private static final int TOKEN_EXPIRY_HOURS = 24;
+    private static final int MIN_REQUEST_INTERVAL_MINUTES = 5; // Минимум 5 минут между запросами
 
     public Mono<MessageResponse> requestPasswordReset(ForgotPasswordRequest request) {
         return userRepository.findByEmail(request.getEmail())
                 .switchIfEmpty(Mono.error(new AuthException(HttpStatus.NOT_FOUND, "Пользователь с таким email не найден")))
                 .flatMap(user -> {
-                    log.info("Удаляем старые неиспользованные токены для пользователя {}", user.getUsername());
-                    // Удаляем старые неиспользованные токены для этого пользователя
-                    return tokenRepository.findActiveTokenByUserId(user.getId(), LocalDateTime.now())
-                            .flatMap(tokenRepository::delete)
-                            .then(Mono.just(user));
+                    // Проверяем, не было ли недавнего запроса
+                    return checkRecentPasswordResetRequest(user.getId())
+                            .flatMap(hasRecentRequest -> {
+                                if (hasRecentRequest) {
+                                    return Mono.just(new MessageResponse("Слишком частые запросы. Попробуйте через " + MIN_REQUEST_INTERVAL_MINUTES + " минут"));
+                                }
+                                
+                                log.info("Удаляем старые неиспользованные токены для пользователя {}", user.getUsername());
+                                // Удаляем старые неиспользованные токены для этого пользователя
+                                return tokenRepository.findActiveTokenByUserId(user.getId(), LocalDateTime.now())
+                                        .flatMap(tokenRepository::delete)
+                                        .then(createPasswordResetToken(user))
+                                        .flatMap(this::sendPasswordResetEmail)
+                                        .doOnSuccess(result -> log.info("Запрос на восстановление пароля отправлен для email: {}", request.getEmail()))
+                                        .map(result -> new MessageResponse("Инструкции по восстановлению пароля отправлены на вашу почту"));
+                            });
                 })
-                .flatMap(this::createPasswordResetToken)
-                .flatMap(this::sendPasswordResetEmail)
-                .doOnSuccess(result -> log.info("Запрос на восстановление пароля отправлен для email: {}", request.getEmail()))
-                .map(result -> new MessageResponse("Инструкции по восстановлению пароля отправлены на вашу почту"))
                 .onErrorResume(AuthException.class, e -> {
                     log.warn("Попытка восстановления пароля для несуществующего email: {}", request.getEmail());
                     return Mono.just(new MessageResponse("Пользователь с таким email не найден"));
@@ -152,6 +160,18 @@ public class PasswordResetService {
                 С уважением,
                 Команда 24reshai.ru
                 """, username, resetUrl);
+    }
+
+    // Проверяет, был ли недавний запрос на восстановление пароля
+    private Mono<Boolean> checkRecentPasswordResetRequest(Long userId) {
+        LocalDateTime minTime = LocalDateTime.now().minusMinutes(MIN_REQUEST_INTERVAL_MINUTES);
+        return tokenRepository.findActiveTokenByUserId(userId, minTime)
+                .hasElement()
+                .doOnNext(hasRecent -> {
+                    if (hasRecent) {
+                        log.warn("Попытка частого запроса восстановления пароля для пользователя {}", userId);
+                    }
+                });
     }
 
     // Метод для очистки истекших токенов (можно вызывать по расписанию)
