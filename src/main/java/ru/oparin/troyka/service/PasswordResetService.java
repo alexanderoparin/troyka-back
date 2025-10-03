@@ -165,11 +165,11 @@ public class PasswordResetService {
     // Проверяет, был ли недавний запрос на восстановление пароля
     private Mono<Boolean> checkRecentPasswordResetRequest(Long userId) {
         LocalDateTime minTime = LocalDateTime.now().minusMinutes(MIN_REQUEST_INTERVAL_MINUTES);
-        return tokenRepository.findActiveTokenByUserId(userId, minTime)
+        return tokenRepository.findRecentTokensByUserId(userId, minTime)
                 .hasElement()
                 .doOnNext(hasRecent -> {
                     if (hasRecent) {
-                        log.warn("Попытка частого запроса восстановления пароля для пользователя {}", userId);
+                        log.warn("Попытка частого запроса восстановления пароля для пользователя {} (последний запрос был менее {} минут назад)", userId, MIN_REQUEST_INTERVAL_MINUTES);
                     }
                 });
     }

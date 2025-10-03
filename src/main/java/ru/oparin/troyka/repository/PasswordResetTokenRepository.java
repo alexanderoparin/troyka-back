@@ -17,6 +17,9 @@ public interface PasswordResetTokenRepository extends ReactiveCrudRepository<Pas
     @Query("SELECT * FROM troyka.password_reset_tokens WHERE user_id = :userId AND used = false AND expires_at > :now ORDER BY created_at DESC LIMIT 1")
     Mono<PasswordResetToken> findActiveTokenByUserId(Long userId, LocalDateTime now);
     
+    @Query("SELECT * FROM troyka.password_reset_tokens WHERE user_id = :userId AND created_at > :minTime ORDER BY created_at DESC LIMIT 1")
+    Mono<PasswordResetToken> findRecentTokensByUserId(Long userId, LocalDateTime minTime);
+    
     @Query("UPDATE troyka.password_reset_tokens SET used = true WHERE token = :token")
     Mono<Void> markTokenAsUsed(String token);
     
