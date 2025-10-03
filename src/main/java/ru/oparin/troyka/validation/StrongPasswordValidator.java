@@ -31,16 +31,16 @@ public class StrongPasswordValidator implements ConstraintValidator<StrongPasswo
             return false;
         }
 
-        // Проверяем наличие строчных букв
-        if (!password.matches(".*[a-z].*")) {
+        // Проверяем наличие строчных букв (латинские и кириллические)
+        if (!password.matches(".*[a-zа-я].*")) {
             context.disableDefaultConstraintViolation();
             context.buildConstraintViolationWithTemplate("Пароль должен содержать строчные буквы")
                    .addConstraintViolation();
             return false;
         }
 
-        // Проверяем наличие заглавных букв
-        if (!password.matches(".*[A-Z].*")) {
+        // Проверяем наличие заглавных букв (латинские и кириллические)
+        if (!password.matches(".*[A-ZА-Я].*")) {
             context.disableDefaultConstraintViolation();
             context.buildConstraintViolationWithTemplate("Пароль должен содержать заглавные буквы")
                    .addConstraintViolation();
