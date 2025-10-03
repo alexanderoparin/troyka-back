@@ -55,6 +55,7 @@ public class SecurityConfig {
                         .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .pathMatchers("/health/**").permitAll()
                         .pathMatchers("/auth/**").permitAll()
+                        .pathMatchers("/pricing/**").permitAll()
                         .pathMatchers("/files/upload").authenticated()
                         .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()
