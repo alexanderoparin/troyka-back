@@ -56,6 +56,7 @@ public class SecurityConfig {
                         .pathMatchers("/health/**").permitAll()
                         .pathMatchers("/auth/**").permitAll()
                         .pathMatchers("/pricing/**").permitAll()
+                        .pathMatchers("/contact/**").permitAll()
                         .pathMatchers("/files/upload").authenticated()
                         .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()

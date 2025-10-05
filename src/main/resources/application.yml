@@ -80,3 +80,4 @@ app:
     url: ${FRONTEND_URL:https://24reshai.ru}
   email:
     from: ${EMAIL_FROM:noreply@24reshai.ru}
+    support: ${EMAIL_SUPPORT:support@24reshai.ru}

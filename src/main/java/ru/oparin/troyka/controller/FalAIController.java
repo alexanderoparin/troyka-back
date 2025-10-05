@@ -1,6 +1,7 @@
 package ru.oparin.troyka.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +14,7 @@ import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/fal")
 public class FalAIController {
@@ -20,12 +22,6 @@ public class FalAIController {
     private final FalAIService falAIService;
     private final UserService userService;
     private final UserPointsService userPointsService;
-
-    public FalAIController(FalAIService falAIService, UserService userService, UserPointsService userPointsService) {
-        this.falAIService = falAIService;
-        this.userService = userService;
-        this.userPointsService = userPointsService;
-    }
 
     @Operation(summary = "Синхронное создание изображения по описанию",
             description = "Генерация изображения на основе промпта, если заполнено поле imageUrls, то это редактирование переданных изображений")
