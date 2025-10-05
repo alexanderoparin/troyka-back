@@ -1,5 +1,6 @@
 package ru.oparin.troyka.security;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -16,15 +17,12 @@ import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import ru.oparin.troyka.service.JwtService;
 
+@RequiredArgsConstructor
 @Configuration
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
     private final JwtService jwtService;
-
-    public SecurityConfig(JwtService jwtService) {
-        this.jwtService = jwtService;
-    }
 
     @Bean
     public CorsWebFilter corsFilter() {
@@ -45,22 +43,22 @@ public class SecurityConfig {
     }
 
     @Bean
-    @Profile("!dev") // PROD режим - с security
+    @Profile("prod")
     public SecurityWebFilterChain securityWebFilterChainProd(ServerHttpSecurity http) {
         return http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
-                        .pathMatchers("/api/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        .pathMatchers("/api/health/**").permitAll()
-                        .pathMatchers("/api/auth/**").permitAll()
-                        .pathMatchers("/api/pricing/**").permitAll()
-                        .pathMatchers("/api/contact/**").permitAll()
-                        .pathMatchers("/api/files/upload").authenticated()
-                        .pathMatchers("/api/files/**").permitAll()
-                        .pathMatchers("/api/fal/**").authenticated()
-                        .pathMatchers("/api/users/**").authenticated()
+                        .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .pathMatchers("/health/**").permitAll()
+                        .pathMatchers("/auth/**").permitAll()
+                        .pathMatchers("/pricing/**").permitAll()
+                        .pathMatchers("/contact/**").permitAll()
+                        .pathMatchers("/files/upload").authenticated()
+                        .pathMatchers("/files/**").permitAll()
+                        .pathMatchers("/fal/**").authenticated()
+                        .pathMatchers("/users/**").authenticated()
                         .anyExchange().authenticated()
                 )
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
