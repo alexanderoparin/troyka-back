@@ -13,6 +13,7 @@ spring:
     client:
       connect-timeout: 5000
       response-timeout: 10000
+    base-path: /api
   servlet:
     multipart:
       max-file-size: 10MB
@@ -40,8 +41,6 @@ spring:
 server:
   port: 8080
   address: 0.0.0.0
-  servlet:
-    context-path: /api
 
 logging:
   file:
