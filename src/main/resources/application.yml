@@ -84,3 +84,14 @@ app:
   email:
     from: ${EMAIL_FROM:noreply@24reshai.ru}
     support: ${EMAIL_SUPPORT:support@24reshai.ru}
+
+# Robokassa
+robokassa:
+  merchant:
+    login: "24reshai"
+  password1: ${robokassa_pass_1:CsA50ojxS9xXL31zfbDh}
+  password2: ${robokassa_pass_2:bygydVijs42dHkH651HV}
+  test: ${robokassa_is_test:true}
+  success-url: "https://24reshai.ru/payment/success"
+  fail-url: "https://24reshai.ru/payment/fail"
+  result-url: "https://24reshai.ru/api/payment/result"
