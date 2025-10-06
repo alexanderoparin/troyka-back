@@ -46,7 +46,7 @@ public class SecurityConfig {
     @Profile("prod")
     public SecurityWebFilterChain securityWebFilterChainProd(ServerHttpSecurity http) {
         return http
-                .csrf(csrf -> csrf.disable())
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
@@ -71,8 +71,8 @@ public class SecurityConfig {
     @Profile("dev") // DEV режим - без security
     public SecurityWebFilterChain securityWebFilterChainDev(ServerHttpSecurity http) {
         return http
-                .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.disable())
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .cors(ServerHttpSecurity.CorsSpec::disable)
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
                         .pathMatchers("/files/**").permitAll()

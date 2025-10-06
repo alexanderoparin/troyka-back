@@ -9,12 +9,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.dto.payment.PaymentHistory;
 import ru.oparin.troyka.model.dto.payment.PaymentRequest;
 import ru.oparin.troyka.model.dto.payment.PaymentResponse;
-import ru.oparin.troyka.repository.UserRepository;
+import ru.oparin.troyka.service.PaymentService;
 import ru.oparin.troyka.service.RobokassaService;
-import ru.oparin.troyka.util.SecurityUtil;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,8 +28,8 @@ import java.util.Map;
 @Tag(name = "Платежи", description = "API для создания и обработки платежей через Робокассу")
 public class PaymentController {
 
+    private final PaymentService paymentService;
     private final RobokassaService robokassaService;
-    private final UserRepository userRepository;
 
     @Operation(summary = "Создать платеж",
             description = "Создает новый платеж в системе Робокасса и возвращает URL для оплаты")
@@ -36,13 +37,7 @@ public class PaymentController {
     public Mono<ResponseEntity<PaymentResponse>> createPayment(
             @Parameter(description = "Данные для создания платежа", required = true)
             @Valid @RequestBody PaymentRequest request) {
-        return SecurityUtil.getCurrentUsername()
-                .flatMap(userRepository::findByUsername)
-                .map(user -> {
-                    request.setUserId(user.getId());
-                    return request;
-                })
-                .map(robokassaService::createPayment)
+        return paymentService.createPayment(request)
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка создания платежа: {}", e.getMessage());
@@ -76,5 +71,19 @@ public class PaymentController {
             log.error("Ошибка обработки результата платежа: {}", e.getMessage());
             return ResponseEntity.badRequest().body("ERROR");
         }
+    }
+
+    @Operation(
+            summary = "Получить историю платежей",
+            description = "Возвращает историю всех платежей текущего пользователя"
+    )
+    @GetMapping("/history")
+    public Mono<ResponseEntity<List<PaymentHistory>>> getPaymentHistory() {
+        return paymentService.getPaymentHistory()
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Ошибка получения истории платежей: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.badRequest().build());
+                });
     }
 }
