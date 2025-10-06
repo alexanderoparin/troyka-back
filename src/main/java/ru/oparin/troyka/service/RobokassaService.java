@@ -53,12 +53,12 @@ public class RobokassaService {
             response.setAmount(request.getAmount());
             response.setStatus("created");
 
-            log.info("Created payment for order: {}, amount: {}", orderId, request.getAmount());
+            log.info("Создан платеж для заказа: {}, сумма: {}", orderId, request.getAmount());
 
             return response;
 
         } catch (Exception e) {
-            log.error("Error creating payment: {}", e.getMessage());
+            log.error("Ошибка создания платежа: {}", e.getMessage());
             throw new RuntimeException("Ошибка создания платежа", e);
         }
     }
@@ -69,12 +69,12 @@ public class RobokassaService {
             String calculatedSignature = md5(checkString);
 
             boolean isValid = calculatedSignature.equalsIgnoreCase(signature);
-            log.info("Payment verification for order {}: {}", invId, isValid ? "SUCCESS" : "FAILED");
+            log.info("Проверка платежа для заказа {}: {}", invId, isValid ? "УСПЕШНО" : "НЕУДАЧНО");
 
             return isValid;
 
         } catch (Exception e) {
-            log.error("Error verifying payment: {}", e.getMessage());
+            log.error("Ошибка проверки платежа: {}", e.getMessage());
             return false;
         }
     }
@@ -86,7 +86,7 @@ public class RobokassaService {
 
     private String buildPaymentUrl(Double amount, String orderId, String description, String signature) {
         StringBuilder url = new StringBuilder();
-        url.append(isTest ? "https://auth.robokassa.ru/Merchant/Index.aspx" : "https://auth.robokassa.ru/Merchant/Index.aspx");
+        url.append("https://auth.robokassa.ru/Merchant/Index.aspx");
         url.append("?MerchantLogin=").append(merchantLogin);
         url.append("&OutSum=").append(amount);
         url.append("&InvId=").append(orderId);
@@ -122,7 +122,7 @@ public class RobokassaService {
             return hexString.toString();
 
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("MD5 algorithm not found", e);
+            throw new RuntimeException("Алгоритм MD5 не найден", e);
         }
     }
 }
