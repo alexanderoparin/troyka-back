@@ -18,6 +18,7 @@ public class UserInfoDTO {
     private String lastName;
     private String phone;
     private String role;
+    private String createdAt;
 
     public static UserInfoDTO fromUser(User user) {
         return UserInfoDTO.builder()
@@ -27,6 +28,7 @@ public class UserInfoDTO {
                 .lastName(user.getLastName())
                 .phone(PhoneUtil.formatPhone(user.getPhone()))
                 .role(user.getRole().name())
+                .createdAt(user.getCreatedAt().toString())
                 .build();
     }
 }
