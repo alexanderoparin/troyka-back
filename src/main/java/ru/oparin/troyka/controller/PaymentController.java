@@ -7,8 +7,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.reactive.function.server.ServerRequest;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.payment.PaymentHistory;
 import ru.oparin.troyka.model.dto.payment.PaymentRequest;
@@ -48,37 +48,35 @@ public class PaymentController {
     @Operation(summary = "Обработать результат платежа",
             description = "Callback эндпоинт для получения результата платежа от Робокассы. " +
                     "Проверяет подпись и обновляет статус платежа в системе.")
-    @PostMapping(value = "/result", consumes = "application/x-www-form-urlencoded")
-    public Mono<ResponseEntity<String>> handleResult(
-            @Parameter(description = "Параметры от Робокассы (OutSum, InvId, SignatureValue)", required = true)
-            @RequestBody Mono<MultiValueMap<String, String>> formData) {
-        
-        return formData.map(params -> {
-            try {
-                log.info("Получен результат платежа: {}", params);
+    @PostMapping("/result")
+    public Mono<ResponseEntity<String>> handleResult(ServerRequest request) {
+        return request.formData()
+            .map(params -> {
+                try {
+                    log.info("Получен результат платежа: {}", params);
 
-                String outSum = params.getFirst("OutSum");
-                String invId = params.getFirst("InvId");
-                String signature = params.getFirst("SignatureValue");
-                String culture = params.getFirst("Culture");
-                String isTest = params.getFirst("IsTest");
+                    String outSum = params.getFirst("OutSum");
+                    String invId = params.getFirst("InvId");
+                    String signature = params.getFirst("SignatureValue");
+                    String culture = params.getFirst("Culture");
+                    String isTest = params.getFirst("IsTest");
 
-                log.info("OutSum: {}, InvId: {}, SignatureValue: {}, Culture: {}, IsTest: {}", 
-                        outSum, invId, signature, culture, isTest);
+                    log.info("OutSum: {}, InvId: {}, SignatureValue: {}, Culture: {}, IsTest: {}", 
+                            outSum, invId, signature, culture, isTest);
 
-                if (robokassaService.verifyPayment(outSum, invId, signature)) {
-                    log.info("Платеж успешно проверен для заказа: {}", invId);
-                    return ResponseEntity.ok("OK");
-                } else {
-                    log.warn("Проверка платежа не удалась для заказа: {}", invId);
-                    return ResponseEntity.badRequest().body("FAIL");
+                    if (robokassaService.verifyPayment(outSum, invId, signature)) {
+                        log.info("Платеж успешно проверен для заказа: {}", invId);
+                        return ResponseEntity.ok("OK");
+                    } else {
+                        log.warn("Проверка платежа не удалась для заказа: {}", invId);
+                        return ResponseEntity.badRequest().body("FAIL");
+                    }
+
+                } catch (Exception e) {
+                    log.error("Ошибка обработки результата платежа: {}", e.getMessage());
+                    return ResponseEntity.badRequest().body("ERROR");
                 }
-
-            } catch (Exception e) {
-                log.error("Ошибка обработки результата платежа: {}", e.getMessage());
-                return ResponseEntity.badRequest().body("ERROR");
-            }
-        });
+            });
     }
 
     @Operation(summary = "Получить историю платежей",
