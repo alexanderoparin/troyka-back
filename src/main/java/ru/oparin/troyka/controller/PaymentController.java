@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.reactive.function.server.ServerRequest;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.payment.PaymentHistory;
 import ru.oparin.troyka.model.dto.payment.PaymentRequest;
@@ -47,33 +48,49 @@ public class PaymentController {
     @Operation(summary = "Обработать результат платежа",
             description = "Callback эндпоинт для получения результата платежа от Робокассы. " +
                     "Проверяет подпись и обновляет статус платежа в системе.")
-    @PostMapping(value = "/result", consumes = "application/x-www-form-urlencoded")
-    public Mono<ResponseEntity<String>> handleResult(
-            @RequestParam("OutSum") String outSum,
-            @RequestParam("InvId") String invId,
-            @RequestParam("SignatureValue") String signature,
-            @RequestParam(value = "Culture", required = false) String culture,
-            @RequestParam(value = "IsTest", required = false) String isTest) {
-        
-        return Mono.fromCallable(() -> {
-            try {
-                log.info("Получен результат платежа:");
-                log.info("OutSum: {}, InvId: {}, SignatureValue: {}, Culture: {}, IsTest: {}", 
-                        outSum, invId, signature, culture, isTest);
+    @PostMapping("/result")
+    public Mono<ResponseEntity<String>> handleResult(ServerRequest request) {
+        return request.bodyToMono(String.class)
+            .doOnNext(body -> {
+                log.info("=== ROBOKASSA CALLBACK DEBUG ===");
+                log.info("Content-Type: {}", request.headers().firstHeader("Content-Type"));
+                log.info("Raw body: {}", body);
+                log.info("Query params: {}", request.queryParams());
+                log.info("Path variables: {}", request.pathVariables());
+                log.info("Headers: {}", request.headers().asHttpHeaders());
+                log.info("=== END DEBUG ===");
+            })
+            .then(request.formData())
+            .map(params -> {
+                try {
+                    log.info("Form data: {}", params);
+                    
+                    String outSum = params.getFirst("OutSum");
+                    String invId = params.getFirst("InvId");
+                    String signature = params.getFirst("SignatureValue");
+                    String culture = params.getFirst("Culture");
+                    String isTest = params.getFirst("IsTest");
 
-                if (robokassaService.verifyPayment(outSum, invId, signature)) {
-                    log.info("Платеж успешно проверен для заказа: {}", invId);
-                    return ResponseEntity.ok("OK");
-                } else {
-                    log.warn("Проверка платежа не удалась для заказа: {}", invId);
-                    return ResponseEntity.badRequest().body("FAIL");
+                    log.info("OutSum: {}, InvId: {}, SignatureValue: {}, Culture: {}, IsTest: {}", 
+                            outSum, invId, signature, culture, isTest);
+
+                    if (robokassaService.verifyPayment(outSum, invId, signature)) {
+                        log.info("Платеж успешно проверен для заказа: {}", invId);
+                        return ResponseEntity.ok("OK");
+                    } else {
+                        log.warn("Проверка платежа не удалась для заказа: {}", invId);
+                        return ResponseEntity.badRequest().body("FAIL");
+                    }
+
+                } catch (Exception e) {
+                    log.error("Ошибка обработки результата платежа: {}", e.getMessage());
+                    return ResponseEntity.badRequest().body("ERROR");
                 }
-
-            } catch (Exception e) {
-                log.error("Ошибка обработки результата платежа: {}", e.getMessage());
-                return ResponseEntity.badRequest().body("ERROR");
-            }
-        });
+            })
+            .onErrorResume(e -> {
+                log.error("Ошибка парсинга запроса: {}", e.getMessage());
+                return Mono.just(ResponseEntity.badRequest().body("PARSE_ERROR"));
+            });
     }
 
     @Operation(summary = "Получить историю платежей",
