@@ -19,6 +19,7 @@ public class UserInfoDTO {
     private String phone;
     private String role;
     private String createdAt;
+    private Boolean emailVerified;
 
     public static UserInfoDTO fromUser(User user) {
         return UserInfoDTO.builder()
@@ -29,6 +30,7 @@ public class UserInfoDTO {
                 .phone(PhoneUtil.formatPhone(user.getPhone()))
                 .role(user.getRole().name())
                 .createdAt(user.getCreatedAt().toString())
+                .emailVerified(user.getEmailVerified())
                 .build();
     }
 }

@@ -11,6 +11,11 @@ import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
+/**
+ * Сущность поинтов пользователя.
+ * Хранит информацию о балансе поинтов пользователя, которые используются
+ * для оплаты генерации изображений и других операций в системе.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,14 +23,31 @@ import java.time.LocalDateTime;
 @Table(value = "user_points", schema = "troyka")
 public class UserPoints {
 
+    /**
+     * Идентификатор пользователя.
+     * Используется как первичный ключ, ссылается на таблицу user.
+     */
     @Id
     private Long userId;
 
+    /**
+     * Количество поинтов пользователя.
+     * Используется для оплаты генерации изображений (3 поинта за изображение).
+     * Может быть отрицательным при недостатке средств.
+     */
     private Integer points;
 
+    /**
+     * Дата и время создания записи поинтов.
+     * Автоматически устанавливается при создании.
+     */
     @CreatedDate
     private LocalDateTime createdAt;
 
+    /**
+     * Дата и время последнего обновления записи поинтов.
+     * Автоматически обновляется при изменении баланса.
+     */
     @LastModifiedDate
     private LocalDateTime updatedAt;
 }

@@ -1,0 +1,118 @@
+package ru.oparin.troyka.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.entity.EmailVerificationToken;
+import ru.oparin.troyka.model.entity.User;
+import ru.oparin.troyka.repository.EmailVerificationTokenRepository;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class EmailVerificationService {
+
+    private final JavaMailSender mailSender;
+    private final EmailVerificationTokenRepository tokenRepository;
+    private final UserService userService;
+
+    @Value("${app.email.from:noreply@24reshai.ru}")
+    private String fromEmail;
+
+    @Value("${app.frontend.url:https://24reshai.ru}")
+    private String frontendUrl;
+
+    public Mono<Void> sendVerificationEmail(User user) {
+        // Создаем токен подтверждения
+        String token = generateVerificationToken();
+        LocalDateTime expiresAt = LocalDateTime.now().plusHours(24); // Токен действителен 24 часа
+        
+        EmailVerificationToken verificationToken = EmailVerificationToken.builder()
+                .userId(user.getId())
+                .token(token)
+                .expiresAt(expiresAt)
+                .createdAt(LocalDateTime.now())
+                .build();
+        
+        // Сохраняем токен в базе данных и отправляем письмо
+        return tokenRepository.save(verificationToken)
+                .doOnSuccess(savedToken -> {
+                    // Отправляем письмо
+                    sendVerificationEmail(user.getEmail(), user.getUsername(), token);
+                    log.info("Письмо подтверждения отправлено пользователю: {} <{}>", user.getUsername(), user.getEmail());
+                })
+                .doOnError(error -> {
+                    log.error("Ошибка при отправке письма подтверждения пользователю: {}", user.getUsername(), error);
+                })
+                .then();
+    }
+
+    public Mono<Boolean> verifyEmail(String token) {
+        return tokenRepository.findByToken(token)
+                .flatMap(verificationToken -> {
+                    if (verificationToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+                        log.warn("Токен подтверждения истек: {}", token);
+                        return Mono.just(false);
+                    }
+                    
+                    // Обновляем статус emailVerified у пользователя
+                    return userService.findById(verificationToken.getUserId())
+                            .flatMap(user -> {
+                                user.setEmailVerified(true);
+                                return userService.saveUser(user);
+                            })
+                            .then(tokenRepository.deleteById(verificationToken.getId()))
+                            .then(Mono.just(true));
+                })
+                .switchIfEmpty(Mono.just(false));
+    }
+
+    private void sendVerificationEmail(String email, String username, String token) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromEmail);
+        message.setTo(email);
+        message.setSubject("Подтвердите ваш email - 24reshai.ru");
+        message.setText(buildVerificationEmailContent(username, token));
+        
+        mailSender.send(message);
+        log.info("Письмо подтверждения отправлено: {} -> {}", token, email);
+    }
+
+    private String buildVerificationEmailContent(String username, String token) {
+        String verificationUrl = frontendUrl + "/verify-email?token=" + token;
+        
+        return String.format("""
+                Здравствуйте, %s!
+                
+                Добро пожаловать в 24reshai.ru!
+                
+                Для завершения регистрации подтвердите ваш email адрес, перейдя по ссылке:
+                
+                %s
+                
+                Ссылка действительна в течение 24 часов.
+                
+                Если вы не регистрировались на нашем сайте, просто проигнорируйте это письмо.
+                
+                С уважением,
+                Команда 24reshai.ru
+                
+                ---
+                Если ссылка не работает, скопируйте и вставьте её в адресную строку браузера.
+                """,
+                username,
+                verificationUrl
+        );
+    }
+
+    private String generateVerificationToken() {
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+}

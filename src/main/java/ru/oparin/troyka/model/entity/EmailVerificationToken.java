@@ -1,26 +1,26 @@
 package ru.oparin.troyka.model.entity;
 
-import lombok.*;
-import org.springframework.data.annotation.CreatedDate;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
 /**
- * Сущность токена сброса пароля.
+ * Сущность токена подтверждения email.
  * Используется для хранения временных токенов, отправляемых пользователям
- * для сброса пароля при забытом пароле.
+ * для подтверждения их email адресов при регистрации.
  */
-@Table(value = "password_reset_tokens", schema = "troyka")
-@Getter
-@Setter
-@EqualsAndHashCode
-@ToString
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PasswordResetToken {
+@Table("email_verification_token")
+public class EmailVerificationToken {
 
     /**
      * Уникальный идентификатор токена.
@@ -33,33 +33,28 @@ public class PasswordResetToken {
      * Идентификатор пользователя, для которого создан токен.
      * Ссылается на таблицу user.
      */
+    @Column("user_id")
     private Long userId;
 
     /**
-     * Уникальный токен для сброса пароля.
-     * Генерируется случайным образом и используется в ссылке сброса пароля.
+     * Уникальный токен для подтверждения email.
+     * Генерируется случайным образом и используется в ссылке подтверждения.
      */
+    @Column("token")
     private String token;
 
     /**
      * Дата и время истечения токена.
      * После истечения токен становится недействительным.
-     * Обычно устанавливается на 1 час с момента создания.
+     * Обычно устанавливается на 24 часа с момента создания.
      */
+    @Column("expires_at")
     private LocalDateTime expiresAt;
-
-    /**
-     * Флаг использования токена.
-     * true - токен уже использован и не может быть использован повторно.
-     * По умолчанию false.
-     */
-    @Builder.Default
-    private Boolean used = false;
 
     /**
      * Дата и время создания токена.
      * Используется для отслеживания времени жизни токена.
      */
-    @CreatedDate
+    @Column("created_at")
     private LocalDateTime createdAt;
 }

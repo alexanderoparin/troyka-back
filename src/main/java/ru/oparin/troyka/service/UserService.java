@@ -46,6 +46,10 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    public Mono<User> findById(Long id) {
+        return userRepository.findById(id);
+    }
+
     public Mono<User> findByUsernameOrThrow(String username) {
         return userRepository.findByUsername(username)
                 .switchIfEmpty(Mono.error(new AuthException(

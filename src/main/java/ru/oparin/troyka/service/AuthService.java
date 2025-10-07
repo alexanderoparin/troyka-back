@@ -26,6 +26,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserPointsService userPointsService;
+    private final EmailVerificationService emailVerificationService;
 
     @Value("${jwt.expiration}")
     private long expiration;
@@ -48,9 +49,10 @@ public class AuthService {
                             .flatMap(savedUser -> {
                                 // Добавляем 6 бесплатных поинтов пользователю (метод сам создаст запись если её нет)
                                 return userPointsService.addPointsToUser(savedUser.getId(), 6)
+                                        .then(emailVerificationService.sendVerificationEmail(savedUser))
                                         .then(Mono.fromCallable(() -> {
                                             String token = jwtService.generateToken(savedUser);
-                                            log.info("Пользователь {} зарегистрирован с 6 бесплатными поинтами", savedUser.getUsername());
+                                            log.info("Пользователь {} зарегистрирован с 6 бесплатными поинтами, письмо подтверждения отправлено", savedUser.getUsername());
                                             return new AuthResponse(
                                                     token,
                                                     savedUser.getUsername(),

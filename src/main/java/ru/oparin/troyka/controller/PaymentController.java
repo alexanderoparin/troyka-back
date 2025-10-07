@@ -14,6 +14,7 @@ import ru.oparin.troyka.model.dto.payment.PaymentRequest;
 import ru.oparin.troyka.model.dto.payment.PaymentResponse;
 import ru.oparin.troyka.service.PaymentService;
 import ru.oparin.troyka.service.RobokassaService;
+import ru.oparin.troyka.service.UserService;
 
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,7 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final RobokassaService robokassaService;
+    private final UserService userService;
 
     @Operation(summary = "Создать платеж",
             description = "Создает новый платеж в системе Робокасса и возвращает URL для оплаты")
