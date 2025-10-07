@@ -36,11 +36,11 @@ public class UserPointsService {
     }
     
     /**
-     * Добавить баллы пользователю
+     * Добавить поинты пользователю
      */
     @Transactional
     public Mono<UserPoints> addPointsToUser(Long userId, Integer points) {
-        log.info("Добавление {} баллов пользователю с ID: {}", points, userId);
+        log.info("Добавление {} поинтов пользователю с ID: {}", points, userId);
         
         // Сначала пытаемся найти существующую запись
         return userPointsRepository.findByUserId(userId)
@@ -54,11 +54,11 @@ public class UserPointsService {
                             .apply(Update.update("points", newPoints)
                                     .set("updatedAt", LocalDateTime.now()))
                             .then(userPointsRepository.findByUserId(userId))
-                            .doOnNext(updated -> log.info("Баллы пользователя с ID {} обновлены: {} -> {}", userId, currentPoints, newPoints));
+                            .doOnNext(updated -> log.info("Поинты пользователя с ID {} обновлены: {} -> {}", userId, currentPoints, newPoints));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Если запись не существует, создаем новую
-                    log.info("Создание новой записи баллов для пользователя с ID: {}", userId);
+                    log.info("Создание новой записи поинтов для пользователя с ID: {}", userId);
                     UserPoints newUserPoints = UserPoints.builder()
                             .userId(userId)
                             .points(points)
@@ -67,35 +67,35 @@ public class UserPointsService {
                             .build();
                     return r2dbcEntityTemplate.insert(UserPoints.class)
                             .using(newUserPoints)
-                            .doOnNext(saved -> log.info("Запись баллов для пользователя с ID {} создана с {} баллами", userId, points));
+                            .doOnNext(saved -> log.info("Запись поинтов для пользователя с ID {} создана с {} поинтами", userId, points));
                 }))
-                .doOnSuccess(userPoints -> log.info("Успешно добавлено {} баллов пользователю с ID: {}", points, userId));
+                .doOnSuccess(userPoints -> log.info("Успешно добавлено {} поинтов пользователю с ID: {}", points, userId));
     }
     
     /**
-     * Списать баллы у пользователя
+     * Списать поинты у пользователя
      */
     @Transactional
     public Mono<UserPoints> deductPointsFromUser(Long userId, Integer points) {
-        log.info("Списание {} баллов у пользователя с ID: {}", points, userId);
+        log.info("Списание {} поинтов у пользователя с ID: {}", points, userId);
 
         return userPointsRepository.findByUserId(userId)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("У пользователя нет записи о баллах")))
+                .switchIfEmpty(Mono.error(new IllegalArgumentException("У пользователя нет записи о поинтах")))
                 .flatMap(userPoints -> {
                     Integer currentPoints = userPoints.getPoints() != null ? userPoints.getPoints() : 0;
                     if (currentPoints < points) {
-                        return Mono.error(new IllegalArgumentException("Недостаточно баллов у пользователя"));
+                        return Mono.error(new IllegalArgumentException("Недостаточно поинтов у пользователя"));
                     }
                     
                     userPoints.setPoints(currentPoints - points);
                     userPoints.setUpdatedAt(LocalDateTime.now());
                     return userPointsRepository.save(userPoints);
                 })
-                .doOnSuccess(userPoints -> log.info("Успешно списано {} баллов у пользователя с ID: {}", points, userId));
+                .doOnSuccess(userPoints -> log.info("Успешно списано {} поинтов у пользователя с ID: {}", points, userId));
     }
     
     /**
-     * Проверить, достаточно ли баллов у пользователя
+     * Проверить, достаточно ли поинтов у пользователя
      */
     public Mono<Boolean> hasEnoughPoints(Long userId, Integer requiredPoints) {
         return getUserPoints(userId)
@@ -104,14 +104,14 @@ public class UserPointsService {
     }
     
     /**
-     * Инициализировать баллы пользователя (при регистрации)
+     * Инициализировать поинты пользователя (при регистрации)
      */
     @Transactional
     public Mono<UserPoints> initializeUserPoints(Long userId) {
         return userPointsRepository.existsByUserId(userId)
                 .flatMap(exists -> {
                     if (exists) {
-                        return Mono.error(new IllegalStateException("У пользователя уже есть запись о баллах"));
+                        return Mono.error(new IllegalStateException("У пользователя уже есть запись о поинтах"));
                     } else {
                         UserPoints userPoints = UserPoints.builder()
                                 .userId(userId)

@@ -45,64 +45,20 @@ public class PaymentController {
                 });
     }
 
-    @Operation(summary = "Обработать результат платежа (GET)",
-            description = "Callback эндпоинт для получения результата платежа от Робокассы через GET. " +
+    @Operation(summary = "Обработать результат платежа",
+            description = "Callback эндпоинт для получения результата платежа от Робокассы. " +
                     "Проверяет подпись и обновляет статус платежа в системе.")
     @GetMapping("/result")
-    public Mono<ResponseEntity<String>> handleResultGet(
+    public Mono<ResponseEntity<String>> handleResult(
             @RequestParam Map<String, String> allParams) {
         
         return Mono.fromCallable(() -> {
             try {
-                log.info("=== ROBOKASSA CALLBACK DEBUG (GET) ===");
-                log.info("Все параметры: {}", allParams);
-                log.info("=== END DEBUG ===");
+                log.info("Получен результат платежа: {}", allParams);
                 
                 String outSum = allParams.get("OutSum");
                 String invId = allParams.get("InvId");
                 String signature = allParams.get("SignatureValue");
-                String culture = allParams.get("Culture");
-                String isTest = allParams.get("IsTest");
-
-                log.info("OutSum: {}, InvId: {}, SignatureValue: {}, Culture: {}, IsTest: {}", 
-                        outSum, invId, signature, culture, isTest);
-
-                if (robokassaService.verifyPayment(outSum, invId, signature)) {
-                    log.info("Платеж успешно проверен для заказа: {}", invId);
-                    return ResponseEntity.ok("OK");
-                } else {
-                    log.warn("Проверка платежа не удалась для заказа: {}", invId);
-                    return ResponseEntity.badRequest().body("FAIL");
-                }
-
-            } catch (Exception e) {
-                log.error("Ошибка обработки результата платежа: {}", e.getMessage());
-                return ResponseEntity.badRequest().body("ERROR");
-            }
-        });
-    }
-
-    @Operation(summary = "Обработать результат платежа (POST)",
-            description = "Callback эндпоинт для получения результата платежа от Робокассы через POST. " +
-                    "Проверяет подпись и обновляет статус платежа в системе.")
-    @PostMapping("/result")
-    public Mono<ResponseEntity<String>> handleResultPost(
-            @RequestParam Map<String, String> allParams) {
-        
-        return Mono.fromCallable(() -> {
-            try {
-                log.info("=== ROBOKASSA CALLBACK DEBUG (POST) ===");
-                log.info("Все параметры: {}", allParams);
-                log.info("=== END DEBUG ===");
-                
-                String outSum = allParams.get("OutSum");
-                String invId = allParams.get("InvId");
-                String signature = allParams.get("SignatureValue");
-                String culture = allParams.get("Culture");
-                String isTest = allParams.get("IsTest");
-
-                log.info("OutSum: {}, InvId: {}, SignatureValue: {}, Culture: {}, IsTest: {}", 
-                        outSum, invId, signature, culture, isTest);
 
                 if (robokassaService.verifyPayment(outSum, invId, signature)) {
                     log.info("Платеж успешно проверен для заказа: {}", invId);

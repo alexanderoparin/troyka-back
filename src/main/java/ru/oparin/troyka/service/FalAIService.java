@@ -50,17 +50,17 @@ public class FalAIService {
     }
 
     public Mono<ImageRs> getImageResponse(ImageRq rq, Long userId) {
-        // Проверяем, достаточно ли баллов у пользователя (3 балла за изображение)
+        // Проверяем, достаточно ли поинтов у пользователя (3 поинта за изображение)
         Integer numImages = rq.getNumImages() == null ? 1 : rq.getNumImages();
         Integer pointsNeeded = numImages * 3;
 
         return userPointsService.hasEnoughPoints(userId, pointsNeeded)
                 .flatMap(hasEnough -> {
                     if (!hasEnough) {
-                        return Mono.error(new FalAIException("Недостаточно баллов для генерации изображений. Требуется: " + pointsNeeded, HttpStatus.PAYMENT_REQUIRED));
+                        return Mono.error(new FalAIException("Недостаточно поинтов для генерации изображений. Требуется: " + pointsNeeded, HttpStatus.PAYMENT_REQUIRED));
                     }
 
-                    // Списываем баллы
+                    // Списываем поинты
                     return userPointsService.deductPointsFromUser(userId, pointsNeeded)
                             .then(Mono.defer(() -> {
                                 String prompt = rq.getPrompt();

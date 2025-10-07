@@ -46,11 +46,11 @@ public class AuthService {
 
                     return userService.saveUser(user)
                             .flatMap(savedUser -> {
-                                // Добавляем 6 бесплатных баллов пользователю (метод сам создаст запись если её нет)
+                                // Добавляем 6 бесплатных поинтов пользователю (метод сам создаст запись если её нет)
                                 return userPointsService.addPointsToUser(savedUser.getId(), 6)
                                         .then(Mono.fromCallable(() -> {
                                             String token = jwtService.generateToken(savedUser);
-                                            log.info("Пользователь {} зарегистрирован с 6 бесплатными баллами", savedUser.getUsername());
+                                            log.info("Пользователь {} зарегистрирован с 6 бесплатными поинтами", savedUser.getUsername());
                                             return new AuthResponse(
                                                     token,
                                                     savedUser.getUsername(),
