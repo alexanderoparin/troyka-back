@@ -12,10 +12,11 @@ import ru.oparin.troyka.model.enums.PaymentStatus;
 import ru.oparin.troyka.repository.PaymentRepository;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
  * Сервис для работы с платежной системой Робокасса
@@ -77,50 +78,71 @@ public class RobokassaService {
      * @return ответ с URL для оплаты
      * @throws RuntimeException если произошла ошибка при создании платежа
      */
-    public PaymentResponse createPayment(PaymentRequest request) {
-        try {
-            String orderId = request.getOrderId() != null ? request.getOrderId() : UUID.randomUUID().toString();
+    public Mono<PaymentResponse> createPayment(PaymentRequest request) {
+        // Используем количество поинтов из запроса
+        Integer creditsAmount = request.getCredits();
 
-            // Создаем подпись для запроса
-            String signature = createSignature(request.getAmount(), orderId);
+        // Создаем платеж в БД без orderId (будет использоваться ID)
+        Payment payment = Payment.builder()
+                .userId(request.getUserId())
+                .amount(BigDecimal.valueOf(request.getAmount()))
+                .description(request.getDescription())
+                .status(PaymentStatus.CREATED)
+                .creditsAmount(creditsAmount)
+                .build();
 
-            // Формируем URL для оплаты
-            String paymentUrl = buildPaymentUrl(request.getAmount(), orderId, request.getDescription(), signature);
+        return paymentRepository.save(payment)
+                .flatMap(savedPayment -> {
+                    try {
+                        // Используем ID платежа как InvId для Robokassa
+                        String invId = savedPayment.getId().toString();
 
-            // Используем количество поинтов из запроса
-            Integer creditsAmount = request.getCredits();
+                        // Создаем подпись для запроса
+                        String signature = createSignature(request.getAmount(), invId);
 
-            // Сохраняем платеж в БД
-            Payment payment = Payment.builder()
-                    .orderId(orderId)
-                    .userId(request.getUserId())
-                    .amount(BigDecimal.valueOf(request.getAmount()))
-                    .description(request.getDescription())
-                    .status(PaymentStatus.CREATED)
-                    .robokassaSignature(signature)
-                    .paymentUrl(paymentUrl)
-                    .creditsAmount(creditsAmount)
-                    .build();
+                        // Формируем URL для оплаты
+                        String paymentUrl = buildPaymentUrl(request.getAmount(), invId, request.getDescription(), signature);
 
-            paymentRepository.save(payment).subscribe(
-                    savedPayment -> log.info("Платеж сохранен в БД: {}", savedPayment.getId()),
-                    error -> log.error("Ошибка сохранения платежа в БД: {}", error.getMessage())
-            );
+                        // Обновляем платеж с подписью и URL
+                        savedPayment.setRobokassaSignature(signature);
+                        savedPayment.setPaymentUrl(paymentUrl);
 
-            PaymentResponse response = new PaymentResponse();
-            response.setPaymentUrl(paymentUrl);
-            response.setOrderId(orderId);
-            response.setAmount(request.getAmount());
-            response.setStatus("created");
+                        return paymentRepository.save(savedPayment)
+                                .map(updatedPayment -> {
+                                    PaymentResponse response = new PaymentResponse();
+                                    response.setPaymentUrl(paymentUrl);
+                                    response.setPaymentId(invId);
+                                    response.setAmount(request.getAmount());
+                                    response.setStatus("created");
 
-            log.info("Создан платеж для заказа: {}, сумма: {}", orderId, request.getAmount());
+                                    log.info("Создан платеж для заказа: {}, сумма: {}", invId, request.getAmount());
+                                    return response;
+                                });
+                    } catch (Exception e) {
+                        // Если что-то пошло не так, отменяем заказ
+                        log.error("Ошибка при создании URL для платежа {}: {}", savedPayment.getId(), e.getMessage());
+                        return cancelPayment(savedPayment.getId())
+                                .then(Mono.error(new RuntimeException("Ошибка создания платежа", e)));
+                    }
+                })
+                .doOnError(error -> log.error("Ошибка создания платежа: {}", error.getMessage()));
+    }
 
-            return response;
-
-        } catch (Exception e) {
-            log.error("Ошибка создания платежа: {}", e.getMessage());
-            throw new RuntimeException("Ошибка создания платежа", e);
-        }
+    /**
+     * Отменяет платеж (устанавливает статус CANCELLED)
+     * 
+     * @param paymentId ID платежа для отмены
+     * @return Mono<Void>
+     */
+    private Mono<Void> cancelPayment(Long paymentId) {
+        return paymentRepository.findById(paymentId)
+                .flatMap(payment -> {
+                    payment.setStatus(PaymentStatus.CANCELLED);
+                    return paymentRepository.save(payment);
+                })
+                .doOnSuccess(payment -> log.info("Платеж {} отменен", paymentId))
+                .doOnError(error -> log.error("Ошибка отмены платежа {}: {}", paymentId, error.getMessage()))
+                .then();
     }
 
     /**
@@ -141,7 +163,9 @@ public class RobokassaService {
 
             if (isValid) {
                 // Обновляем статус платежа в БД и начисляем поинты
-                paymentRepository.findByOrderId(invId)
+                // Ищем платеж по ID (invId = ID платежа)
+                Long paymentId = Long.parseLong(invId);
+                paymentRepository.findById(paymentId)
                         .flatMap(payment -> {
                             payment.setStatus(PaymentStatus.PAID);
                             payment.setPaidAt(LocalDateTime.now());
@@ -154,17 +178,17 @@ public class RobokassaService {
                                 return userPointsService.addPointsToUser(payment.getUserId(), payment.getCreditsAmount())
                                         .map(userPoints -> {
                                             log.info("Начислено {} поинтов пользователю {} (платеж {})", 
-                                                    payment.getCreditsAmount(), payment.getUserId(), payment.getOrderId());
+                                                    payment.getCreditsAmount(), payment.getUserId(), payment.getId());
                                             return payment;
                                         });
                             } else {
                                 log.warn("Не удалось начислить поинты: creditsAmount = {} для платежа {}", 
-                                        payment.getCreditsAmount(), payment.getOrderId());
+                                        payment.getCreditsAmount(), payment.getId());
                                 return Mono.just(payment);
                             }
                         })
                         .subscribe(
-                                updatedPayment -> log.info("Платеж обработан успешно: {}", updatedPayment.getOrderId()),
+                                updatedPayment -> log.info("Платеж обработан успешно: {}", updatedPayment.getId()),
                                 error -> log.error("Ошибка обработки платежа: {}", error.getMessage())
                         );
             }
@@ -179,18 +203,20 @@ public class RobokassaService {
 
     /**
      * Создает подпись для запроса к Робокассе
+     * Согласно документации: MerchantLogin:OutSum:InvId:Password#1
+     * где InvId может быть пустым, но должен присутствовать
      * 
      * @param amount сумма платежа
      * @param orderId идентификатор заказа
      * @return MD5 подпись
      */
     private String createSignature(Double amount, String orderId) {
-        String checkString = String.format("%s:%s:%s", merchantLogin, amount, orderId) + ":" + password1;
+        String checkString = String.format("%s:%s:%s:%s", merchantLogin, amount, orderId, password1);
         return md5(checkString);
     }
 
     /**
-     * Строит URL для оплаты в Робокассе
+     * Строит URL для оплаты в Робокассе с правильным URL кодированием
      * 
      * @param amount сумма платежа
      * @param orderId идентификатор заказа
@@ -204,13 +230,13 @@ public class RobokassaService {
         url.append("?MerchantLogin=").append(merchantLogin);
         url.append("&OutSum=").append(amount);
         url.append("&InvId=").append(orderId);
-        url.append("&Description=").append(description);
+        url.append("&Description=").append(URLEncoder.encode(description, StandardCharsets.UTF_8));
         url.append("&SignatureValue=").append(signature);
         url.append("&Culture=ru");
         url.append("&Encoding=utf-8");
-        url.append("&ResultURL=").append(resultUrl);
-        url.append("&SuccessURL=").append(successUrl);
-        url.append("&FailURL=").append(failUrl);
+        url.append("&ResultURL=").append(URLEncoder.encode(resultUrl, StandardCharsets.UTF_8));
+        url.append("&SuccessURL=").append(URLEncoder.encode(successUrl, StandardCharsets.UTF_8));
+        url.append("&FailURL=").append(URLEncoder.encode(failUrl, StandardCharsets.UTF_8));
 
         if (isTest) {
             url.append("&IsTest=1");

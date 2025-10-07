@@ -73,10 +73,8 @@ public class PaymentController {
         }
     }
 
-    @Operation(
-            summary = "Получить историю платежей",
-            description = "Возвращает историю всех платежей текущего пользователя"
-    )
+    @Operation(summary = "Получить историю платежей",
+            description = "Возвращает историю всех платежей текущего пользователя")
     @GetMapping("/history")
     public Mono<ResponseEntity<List<PaymentHistory>>> getPaymentHistory() {
         return paymentService.getPaymentHistory()
@@ -86,4 +84,5 @@ public class PaymentController {
                     return Mono.just(ResponseEntity.badRequest().build());
                 });
     }
+
 }

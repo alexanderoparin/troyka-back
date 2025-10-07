@@ -24,11 +24,6 @@ public class Payment {
     private Long id;
 
     /**
-     * Уникальный идентификатор заказа (InvId из Робокассы)
-     */
-    private String orderId;
-
-    /**
      * Связь с пользователем
      */
     private Long userId;

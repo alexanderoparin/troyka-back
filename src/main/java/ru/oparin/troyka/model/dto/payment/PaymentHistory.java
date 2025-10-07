@@ -20,11 +20,6 @@ public class PaymentHistory {
     private Integer id;
     
     /**
-     * Уникальный идентификатор заказа
-     */
-    private String orderId;
-    
-    /**
      * Сумма платежа в рублях
      */
     private Double amount;

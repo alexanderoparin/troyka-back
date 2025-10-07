@@ -24,11 +24,6 @@ public class PaymentRequest {
     private String description;
 
     /**
-     * Уникальный идентификатор заказа (если не указан, генерируется автоматически)
-     */
-    private String orderId;
-
-    /**
      * ID пользователя, создающего платеж
      */
     private Long userId;
