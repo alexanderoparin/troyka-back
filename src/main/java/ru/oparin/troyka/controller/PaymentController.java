@@ -53,11 +53,11 @@ public class PaymentController {
             @Parameter(description = "Параметры от Робокассы (OutSum, InvId, SignatureValue)", required = true)
             @RequestParam Map<String, String> params) {
         try {
+            log.info("Получен результат платежа: {}", params);
+
             String outSum = params.get("OutSum");
             String invId = params.get("InvId");
             String signature = params.get("SignatureValue");
-
-            log.info("Получен результат платежа: OutSum={}, InvId={}, Signature={}", outSum, invId, signature);
 
             if (robokassaService.verifyPayment(outSum, invId, signature)) {
                 log.info("Платеж успешно проверен для заказа: {}", invId);
