@@ -158,4 +158,58 @@ public class FileService {
             }
         });
     }
+
+    public Mono<ResponseEntity<Resource>> getExampleFile(String filename) {
+        return Mono.fromCallable(() -> {
+            try {
+                log.info("Запрос файла примера генерации с главной страницы: {}", filename);
+                
+                // Создаем путь к файлу в папке examples
+                String normalizedUploadDir = uploadDir.replace("\\", "/");
+                if (!normalizedUploadDir.endsWith("/")) {
+                    normalizedUploadDir += "/";
+                }
+                
+                Path file = Paths.get(normalizedUploadDir, "examples", filename);
+                Resource resource = new UrlResource(file.toUri());
+
+                if (resource.exists() && resource.isReadable()) {
+                    String contentType;
+                    try {
+                        contentType = Files.probeContentType(file);
+                        if (contentType == null) {
+                            // Определяем тип по расширению файла
+                            String fileExtension = filename.toLowerCase();
+                            if (fileExtension.endsWith(".jpg") || fileExtension.endsWith(".jpeg")) {
+                                contentType = "image/jpeg";
+                            } else if (fileExtension.endsWith(".png")) {
+                                contentType = "image/png";
+                            } else if (fileExtension.endsWith(".gif")) {
+                                contentType = "image/gif";
+                            } else if (fileExtension.endsWith(".webp")) {
+                                contentType = "image/webp";
+                            } else {
+                                contentType = "application/octet-stream";
+                            }
+                        }
+                    } catch (IOException e) {
+                        log.warn("Не удалось определить тип контента для файла: {}", filename);
+                        contentType = "image/jpeg"; // По умолчанию для изображений
+                    }
+
+                    log.info("Файл примера {} найден, тип контента: {}", filename, contentType);
+                    return ResponseEntity.ok()
+                            .contentType(MediaType.parseMediaType(contentType))
+                            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000") // Кешируем на год
+                            .body(resource);
+                } else {
+                    log.warn("Файл примера {} не найден или недоступен для чтения", filename);
+                    return ResponseEntity.notFound().build();
+                }
+            } catch (Exception e) {
+                log.error("Ошибка при попытке получить файл примера: " + filename, e);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            }
+        });
+    }
 }

@@ -33,4 +33,9 @@ public class FileController {
     public Mono<ResponseEntity<Resource>> serveFile(@PathVariable String filename) {
         return fileService.getFile(filename);
     }
+
+    @GetMapping("/examples/{filename}")
+    public Mono<ResponseEntity<Resource>> getExampleFile(@PathVariable String filename) {
+        return fileService.getExampleFile(filename);
+    }
 }
