@@ -2,12 +2,17 @@ spring:
   profiles:
     active: prod
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}?schema=${DB_SCHEMA:troyka}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}?schema=${DB_SCHEMA:troyka}&tcpKeepAlive=true&connectTimeout=30s&socketTimeout=60s
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     pool:
+      enabled: true
       initial-size: 5
-      max-size: 10
+      max-size: 20
+      max-idle-time: 30m
+      max-life-time: 1h
+      validation-query: SELECT 1
+      acquire-retry: 3
   sql:
     init:
       platform: postgres
@@ -43,6 +48,11 @@ spring:
 server:
   port: 8080
   address: 0.0.0.0
+  tomcat:
+    max-http-post-size: 50MB
+    max-connections: 200
+    accept-count: 100
+    connection-timeout: 20000
 
 logging:
   file:
@@ -52,10 +62,7 @@ logging:
       max-file-size: 10MB
       max-history: 30
   level:
-    ru.oparin.troyka: ${log_level}
-    org.springframework.r2dbc.core.DefaultDatabaseClient: ${sql_log_level:info}
-    io.r2dbc.postgresql.Queries: ${sql_log_level:info}
-    org.springframework.r2dbc: ${sql_log_level:info}
+    ru.oparin.troyka: ${log_level:info}
 
 jwt:
   secret: ${JWT_SECRET}

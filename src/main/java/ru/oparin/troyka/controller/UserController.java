@@ -28,9 +28,8 @@ public class UserController {
             description = "Возвращает информацию о текущем авторизованном пользователе")
     @GetMapping("/me")
     public Mono<ResponseEntity<UserInfoDTO>> getCurrentUserInfo() {
-        log.info("Получен запрос на получение информации о текущем пользователе");
         return userService.getCurrentUser()
-                .doOnNext(userInfoDTO -> log.debug("Отправка информации о пользователе: {}", userInfoDTO))
+                .doOnNext(userInfoDTO -> log.info("Получен запрос на получение информации о пользователе: {}", userInfoDTO.getUsername()))
                 .map(ResponseEntity::ok);
     }
 
@@ -38,8 +37,9 @@ public class UserController {
             description = "Возвращает историю генерации изображений текущего пользователя")
     @GetMapping("/me/image-history")
     public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
-        log.info("Получен запрос на получение истории генерации изображений текущего пользователя");
-        return userService.getCurrentUserImageHistory();
+        return userService.getCurrentUser()
+                .doOnNext(userInfoDTO -> log.info("Получен запрос на получение истории генерации изображений от пользователя: {}", userInfoDTO.getUsername()))
+                .flatMapMany(userInfoDTO -> userService.getCurrentUserImageHistory());
     }
 
     @PostMapping("/avatar/upload")
