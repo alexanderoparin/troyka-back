@@ -82,7 +82,7 @@ fal:
 # File storage configuration
 file:
   upload-dir: ${UPLOAD_DIR:/var/www/uploads/}
-  host: 213.171.4.47
+  host: 24reshai.ru
 
 # Application configuration
 app:

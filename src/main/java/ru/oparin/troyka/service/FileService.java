@@ -30,9 +30,6 @@ public class FileService {
     @Value("${file.host}")
     private String serverHost;
 
-    @Value("${server.port:8080}")
-    private String serverPort;
-
     private final UserService userService;
     private final UserAvatarService userAvatarService;
 
@@ -81,7 +78,7 @@ public class FileService {
             return filePart.transferTo(filePath)
                     .then(Mono.fromCallable(() -> {
                         // Возвращаем URL файла, который может использовать FAL AI
-                        String fileUrl = "http://" + serverHost + ":" + serverPort + "/files/" + uniqueFilename;
+                        String fileUrl = "https://" + serverHost + "/files/" + uniqueFilename;
                         log.info("Файл успешно загружен пользователем {}: {}", username, fileUrl);
                         return fileUrl;
                     }))
