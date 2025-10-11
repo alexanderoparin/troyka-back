@@ -71,7 +71,7 @@ public class FalAIService {
                                         "output_format", outputFormat
                                 ));
 
-                                List<String> imageUrls = rq.getImageUrls();
+                                List<String> imageUrls = rq.getInputImageUrls();
                                 boolean isNewImage = CollectionUtils.isEmpty(imageUrls);
                                 if (!isNewImage) {
                                     requestBody.put("image_urls", imageUrls);

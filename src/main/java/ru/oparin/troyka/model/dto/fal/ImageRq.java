@@ -8,23 +8,35 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * DTO для запроса генерации изображения с помощью FAL AI.
+ * Поддерживает работу с сессиями для организации истории генераций.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "Запрос для генерации изображения с помощью промпта от FAL AI")
 public class ImageRq {
 
-    @NotBlank
+    /** Описание изображения (промпт) */
+    @NotBlank(message = "Промпт не может быть пустым")
     @Schema(description = "Описание изображения", example = "инопланетянин в таджикском стиле")
     private String prompt;
 
-    @Schema(description = "Список URL изображений для редактирования",
+    /** Список URL входных изображений для редактирования (отправляются в FAL AI и сохраняются в истории) */
+    @Schema(description = "Список URL входных изображений для редактирования. Отправляются в FAL AI и сохраняются в истории сессии",
             example = "[\"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png\"]")
-    private List<String> imageUrls;
+    private List<String> inputImageUrls;
 
+    /** Количество изображений для генерации */
     @Schema(description = "Количество изображений", example = "2")
     private Integer numImages;
 
+    /** Формат выходных изображений */
     @Schema(description = "Формат изображений", example = "JPEG")
     private OutputFormatEnum outputFormat;
+
+    /** Идентификатор сессии для сохранения истории генерации */
+    @Schema(description = "Идентификатор сессии для сохранения истории генерации. Если не указан, будет создана или получена дефолтная сессия")
+    private Long sessionId;
 }
