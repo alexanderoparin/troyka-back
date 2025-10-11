@@ -97,12 +97,76 @@ public class FileService {
         }
     }
 
+    public Mono<String> saveAvatarAndGetUrl(FilePart filePart, String username) {
+        log.info("Пользователь {} загружает аватар: оригинальное имя={}", username, filePart.filename());
+
+        try {
+            // Создаем директорию для загрузки аватаров, если она не существует
+            Path uploadPath = Paths.get(uploadDir).resolve("avatar");
+            log.info("Проверяем существование директории для загрузки аватаров: {}", uploadPath.toAbsolutePath());
+
+            if (!Files.exists(uploadPath)) {
+                log.info("Создаем директорию для загрузки аватаров: {}", uploadPath.toAbsolutePath());
+                Files.createDirectories(uploadPath);
+            }
+
+            // Проверяем права на запись
+            if (!Files.isWritable(uploadPath)) {
+                log.error("Директория {} недоступна для записи", uploadPath.toAbsolutePath());
+                return Mono.error(new RuntimeException("Директория загрузки аватаров недоступна для записи"));
+            }
+
+            // Генерируем уникальное имя файла
+            String originalFilename = filePart.filename();
+            String fileExtension = "";
+            if (originalFilename != null && originalFilename.contains(".")) {
+                fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
+            }
+            String uniqueFilename = UUID.randomUUID().toString() + fileExtension;
+
+            // Сохраняем файл
+            Path filePath = uploadPath.resolve(uniqueFilename);
+            log.info("Сохраняем аватар по пути: {}", filePath.toAbsolutePath());
+
+            return filePart.transferTo(filePath)
+                    .then(Mono.fromCallable(() -> {
+                        // Возвращаем URL аватара
+                        String fileUrl = "https://" + serverHost + "/files/avatar/" + uniqueFilename;
+                        log.info("Аватар успешно загружен пользователем {}: {}", username, fileUrl);
+                        return fileUrl;
+                    }))
+                    .onErrorResume(AccessDeniedException.class, e -> {
+                        log.error("Ошибка доступа при сохранении аватара пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                        return Mono.error(new RuntimeException("Нет прав доступа для сохранения аватара. Проверьте права на директорию: " + uploadDir + "/avatar"));
+                    })
+                    .onErrorResume(Exception.class, e -> {
+                        log.error("Ошибка при сохранении аватара пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                        return Mono.error(new RuntimeException("Ошибка при сохранении аватара: " + e.getMessage()));
+                    });
+
+        } catch (Exception e) {
+            log.error("Ошибка при обработке загрузки аватара пользователем {}", username, e);
+            return Mono.error(new RuntimeException("Ошибка при обработке аватара: " + e.getMessage()));
+        }
+    }
+
     public Mono<String> saveAvatar(FilePart filePart) {
         return userService.getCurrentUser()
                 .flatMap(userInfoDTO -> userService.findByUsernameOrThrow(userInfoDTO.getUsername()))
-                .flatMap(user -> saveFileAndGetUrl(filePart, user.getUsername())
-                        .flatMap(fileUrl -> userAvatarService.saveUserAvatar(user.getId(), fileUrl)
-                                .then(Mono.just(fileUrl))));
+                .flatMap(user -> {
+                    // Получаем старый аватар перед загрузкой нового
+                    return userAvatarService.getUserAvatarByUserId(user.getId())
+                            .map(UserAvatar::getAvatarUrl)
+                            .defaultIfEmpty("")
+                            .flatMap(oldAvatarUrl -> 
+                                saveAvatarAndGetUrl(filePart, user.getUsername())
+                                    .flatMap(newFileUrl -> 
+                                        userAvatarService.saveUserAvatar(user.getId(), newFileUrl)
+                                            .then(deleteOldAvatarFile(oldAvatarUrl))
+                                            .then(Mono.just(newFileUrl))
+                                    )
+                            );
+                });
     }
 
     public Mono<String> getCurrentUserAvatar() {
@@ -112,10 +176,61 @@ public class FileService {
                 .map(UserAvatar::getAvatarUrl);
     }
 
+    private Mono<Void> deleteOldAvatarFile(String avatarUrl) {
+        if (avatarUrl == null || avatarUrl.isEmpty()) {
+            return Mono.empty();
+        }
+        
+        return Mono.fromCallable(() -> {
+            try {
+                // Извлекаем имя файла из URL
+                // URL формат: https://24reshai.ru/files/avatar/filename.jpg
+                String filename = avatarUrl.substring(avatarUrl.lastIndexOf("/") + 1);
+                
+                // Проверяем, что файл находится в папке avatar для безопасности
+                Path avatarDir = Paths.get(uploadDir).resolve("avatar");
+                Path filePath = avatarDir.resolve(filename);
+                
+                // Дополнительная проверка безопасности - файл должен быть внутри avatar директории
+                if (!filePath.normalize().startsWith(avatarDir.normalize())) {
+                    log.warn("Попытка удалить файл вне директории аватаров: {}", filePath);
+                    return null;
+                }
+                
+                if (Files.exists(filePath)) {
+                    Files.delete(filePath);
+                    log.info("Старый аватар удален: {}", filePath);
+                } else {
+                    log.info("Старый аватар не найден для удаления: {}", filePath);
+                }
+                
+                return null;
+            } catch (Exception e) {
+                log.error("Ошибка при удалении старого аватара: {}", avatarUrl, e);
+                // Не прерываем выполнение, если не удалось удалить старый файл
+                return null;
+            }
+        });
+    }
+
     public Mono<Void> deleteCurrentUserAvatar() {
         return userService.getCurrentUser()
                 .flatMap(userInfoDTO -> userService.findByUsernameOrThrow(userInfoDTO.getUsername()))
-                .flatMap(user -> userAvatarService.deleteUserAvatarByUserId(user.getId()));
+                .flatMap(user -> 
+                    // Сначала получаем URL аватара
+                    userAvatarService.getUserAvatarByUserId(user.getId())
+                            .map(UserAvatar::getAvatarUrl)
+                            .cast(String.class)
+                            .defaultIfEmpty("")
+                            .flatMap(avatarUrl -> 
+                                // Удаляем физический файл
+                                deleteOldAvatarFile(avatarUrl)
+                                    .then(
+                                        // Затем удаляем запись из БД
+                                        userAvatarService.deleteUserAvatarByUserId(user.getId())
+                                    )
+                            )
+                );
     }
 
     public Mono<ResponseEntity<Resource>> getFile(String filename) {
@@ -136,7 +251,7 @@ public class FileService {
                     try {
                         contentType = Files.probeContentType(file);
                     } catch (IOException e) {
-                        log.warn("Не удалось определить тип контента для файла: {}", filename);
+                        log.warn("Не удалось определить тип контента (хэдер) для файла: {}", filename);
                         contentType = "application/octet-stream";
                     }
 
@@ -204,7 +319,7 @@ public class FileService {
                     return ResponseEntity.notFound().build();
                 }
             } catch (Exception e) {
-                log.error("Ошибка при попытке получить файл примера: " + filename, e);
+                log.error("Ошибка при попытке получить файл примера: {}", filename, e);
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
             }
         });
