@@ -34,6 +34,11 @@ public class FileController {
         return fileService.getFile(filename);
     }
 
+    @GetMapping("/avatar/{filename}")
+    public Mono<ResponseEntity<Resource>> serveAvatarFile(@PathVariable String filename) {
+        return fileService.getFile("avatar/" + filename);
+    }
+
     @GetMapping("/examples/{filename}")
     public Mono<ResponseEntity<Resource>> getExampleFile(@PathVariable String filename) {
         return fileService.getExampleFile(filename);
