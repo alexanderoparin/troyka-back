@@ -59,6 +59,7 @@ public class SecurityConfig {
                         .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()
                         .pathMatchers("/users/**").authenticated()
+                        .pathMatchers("/api/sessions/**").authenticated()
                         .pathMatchers("/payment/**").permitAll()
                         .anyExchange().authenticated()
                 )
