@@ -11,6 +11,7 @@ import ru.oparin.troyka.util.JsonUtils;
 import ru.oparin.troyka.util.SecurityUtil;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -41,39 +42,27 @@ public class ImageGenerationHistoryService {
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userRepository::findByUsername)
                 .flatMapMany(user -> {
-                    // Получаем следующий номер итерации
-                    return imageGenerationHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
-                            .collectList()
-                            .map(histories -> {
-                                if (histories.isEmpty()) {
-                                    return 1;
-                                }
-                                return histories.stream()
-                                        .mapToInt(ImageGenerationHistory::getIterationNumber)
-                                        .max()
-                                        .orElse(0) + 1;
-                            })
-                            .flatMapMany(iterationNumber -> {
-                                // Преобразуем inputImageUrls в JSON строку
-                                String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
-                                log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
-                                
-                                // Создаем записи истории для каждого сгенерированного изображения
-                                // Используем кастомный метод с правильным приведением JSONB
-                                return Flux.fromIterable(imageUrls)
-                                        .flatMap(url -> imageGenerationHistoryRepository.saveWithJsonb(
-                                                user.getId(),
-                                                url,
-                                                prompt,
-                                                LocalDateTime.now(),
-                                                sessionId,
-                                                iterationNumber,
-                                                inputImageUrlsJson
-                                        ))
-                                        .doOnNext(history -> 
-                                                log.info("Запись истории сохранена: ID={}, сессия={}, итерация={}", 
-                                                        history.getId(), sessionId, iterationNumber));
-                            });
+                    // Преобразуем списки в JSON строки
+                    List<String> imageUrlsList = new ArrayList<>();
+                    imageUrls.forEach(imageUrlsList::add);
+                    String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
+                    String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
+                    
+                    log.info("Сгенерированные изображения: {}", imageUrlsJson);
+                    log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
+                    
+                    // Создаем ОДНУ запись истории для всех сгенерированных изображений
+                    return imageGenerationHistoryRepository.saveWithJsonb(
+                            user.getId(),
+                            imageUrlsJson,
+                            prompt,
+                            LocalDateTime.now(),
+                            sessionId,
+                            inputImageUrlsJson
+                    )
+                    .doOnNext(history -> 
+                            log.info("Запись истории сохранена: ID={}, сессия={}, изображений={}", 
+                                    history.getId(), sessionId, imageUrlsList.size()));
                 });
     }
 
@@ -92,13 +81,15 @@ public class ImageGenerationHistoryService {
                 .flatMap(userRepository::findByUsername)
                 .flatMapMany(user -> {
                     // Создаем записи без сессии (для обратной совместимости)
-                    Flux<ImageGenerationHistory> histories = Flux.fromIterable(imageUrls)
-                            .map(url -> ImageGenerationHistory.builder()
-                                    .userId(user.getId())
-                                    .imageUrl(url)
-                                    .prompt(prompt)
-                                    .createdAt(LocalDateTime.now())
-                                    .build());
+                    List<String> imageUrlsList = new ArrayList<>();
+                    imageUrls.forEach(imageUrlsList::add);
+                    String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
+                    Flux<ImageGenerationHistory> histories = Flux.just(ImageGenerationHistory.builder()
+                            .userId(user.getId())
+                            .imageUrlsJson(imageUrlsJson)
+                            .prompt(prompt)
+                            .createdAt(LocalDateTime.now())
+                            .build());
                     
                     return imageGenerationHistoryRepository.saveAll(histories)
                             .doOnNext(history -> 
@@ -129,8 +120,8 @@ public class ImageGenerationHistoryService {
     public Flux<ImageGenerationHistory> getSessionImageHistory(Long sessionId) {
         log.info("Получение истории генераций для сессии {}", sessionId);
         
-        return imageGenerationHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
-                .doOnNext(history -> log.debug("Получена запись истории сессии: ID={}, итерация={}", history.getId(), history.getIterationNumber()))
+        return imageGenerationHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
+                .doOnNext(history -> log.debug("Получена запись истории сессии: ID={}, изображений={}", history.getId(), history.getImageUrls().size()))
                 .doOnError(error -> log.error("Ошибка при получении истории генераций для сессии {}", sessionId, error));
     }
 

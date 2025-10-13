@@ -4,6 +4,7 @@ import lombok.*;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -13,13 +14,13 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ImageGenerationHistoryDTO {
 
-    private String imageUrl;
+    private List<String> imageUrls;
     private String prompt;
     private LocalDateTime createdAt;
 
     public static ImageGenerationHistoryDTO fromEntity(ImageGenerationHistory history) {
         return ImageGenerationHistoryDTO.builder()
-                .imageUrl(history.getImageUrl())
+                .imageUrls(history.getImageUrls())
                 .prompt(history.getPrompt())
                 .createdAt(history.getCreatedAt())
                 .build();

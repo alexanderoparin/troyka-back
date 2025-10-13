@@ -9,7 +9,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.mapper.SessionMapper;
 import ru.oparin.troyka.model.dto.*;
-import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.entity.Session;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.repository.SessionRepository;
@@ -108,7 +107,7 @@ public class SessionService {
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
                 .flatMap(session ->
-                        imageHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
+                        imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
                                 .collectList()
                                 .map(histories -> {
                                     int totalCount = histories.size();
@@ -158,7 +157,7 @@ public class SessionService {
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
                 .flatMap(session -> {
                     // Получаем количество записей истории для удаления
-                    return imageHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
+                    return imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
                             .collectList()
                             .flatMap(histories -> {
                                 int historyCount = histories.size();
@@ -238,8 +237,8 @@ public class SessionService {
      */
     private Mono<SessionDTO> enrichSessionWithDetails(Session session) {
         return Mono.zip(
-                imageHistoryRepository.findFirstBySessionIdOrderByIterationNumberDesc(session.getId())
-                        .map(ImageGenerationHistory::getImageUrl)
+                imageHistoryRepository.findFirstBySessionIdOrderByCreatedAtDesc(session.getId())
+                        .map(history -> history.getImageUrls().isEmpty() ? "" : history.getImageUrls().get(0))
                         .switchIfEmpty(Mono.just("")),
                 imageHistoryRepository.countBySessionId(session.getId())
                         .map(Long::intValue)

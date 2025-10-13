@@ -40,10 +40,11 @@ public class ImageGenerationHistory {
     private Long userId;
 
     /**
-     * URL сгенерированного изображения.
-     * Ссылка на файл изображения, хранящийся в файловой системе или облаке.
+     * Массив URL сгенерированных изображений.
+     * Хранится в формате JSONB для поддержки множественных изображений от одного промпта.
      */
-    private String imageUrl;
+    @Column("image_urls")
+    private Object imageUrlsJson;  // Используем Object для JSONB
 
     /**
      * Текстовое описание (промпт), использованное для генерации изображения.
@@ -65,12 +66,6 @@ public class ImageGenerationHistory {
     @Column("session_id")
     private Long sessionId;
 
-    /**
-     * Номер итерации генерации в рамках сессии.
-     * Используется для упорядочивания истории диалога.
-     */
-    @Column("iteration_number")
-    private Integer iterationNumber;
 
     /**
      * Массив URL изображений, которые были отправлены в FAL AI для обработки.
@@ -79,6 +74,27 @@ public class ImageGenerationHistory {
      */
     @Column("input_image_urls")
     private String inputImageUrlsJson;  // Храним как String для R2DBC
+
+    /**
+     * Получить список URL сгенерированных изображений из JSON.
+     * Вспомогательный метод для работы с JSONB полем.
+     */
+    @Transient
+    public List<String> getImageUrls() {
+        if (imageUrlsJson == null) {
+            return List.of();
+        }
+        return JsonUtils.parseJsonToList(imageUrlsJson);
+    }
+
+    /**
+     * Установить список URL сгенерированных изображений, сериализовав в JSON.
+     * Вспомогательный метод для работы с JSONB полем.
+     */
+    @Transient
+    public void setImageUrls(List<String> urls) {
+        this.imageUrlsJson = JsonUtils.convertListToJson(urls);
+    }
 
     /**
      * Получить список URL входных изображений из JSON.

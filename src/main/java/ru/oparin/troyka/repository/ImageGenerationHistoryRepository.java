@@ -23,29 +23,29 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
     Flux<ImageGenerationHistory> findByUserIdOrderByCreatedAtDesc(Long userId);
 
     /**
-     * Найти все записи истории сессии, отсортированные по номеру итерации (по порядку диалога).
+     * Найти все записи истории сессии, отсортированные по дате создания (по порядку диалога).
      *
      * @param sessionId идентификатор сессии
      * @param pageable параметры пагинации
      * @return поток записей истории сессии
      */
-    Flux<ImageGenerationHistory> findBySessionIdOrderByIterationNumberAsc(Long sessionId, Pageable pageable);
+    Flux<ImageGenerationHistory> findBySessionIdOrderByCreatedAtAsc(Long sessionId, Pageable pageable);
 
     /**
-     * Найти все записи истории сессии, отсортированные по номеру итерации (по порядку диалога).
+     * Найти все записи истории сессии, отсортированные по дате создания (по порядку диалога).
      *
      * @param sessionId идентификатор сессии
      * @return поток всех записей истории сессии
      */
-    Flux<ImageGenerationHistory> findBySessionIdOrderByIterationNumberAsc(Long sessionId);
+    Flux<ImageGenerationHistory> findBySessionIdOrderByCreatedAtAsc(Long sessionId);
 
     /**
-     * Найти последнюю запись истории сессии (с наибольшим номером итерации).
+     * Найти последнюю запись истории сессии (с самой поздней датой создания).
      *
      * @param sessionId идентификатор сессии
      * @return последняя запись истории или пустой результат
      */
-    Mono<ImageGenerationHistory> findFirstBySessionIdOrderByIterationNumberDesc(Long sessionId);
+    Mono<ImageGenerationHistory> findFirstBySessionIdOrderByCreatedAtDesc(Long sessionId);
 
     /**
      * Подсчитать количество записей истории в сессии.
@@ -65,20 +65,19 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
 
     /**
      * Сохранить запись истории с правильным приведением JSONB.
-     * Использует кастомный SQL-запрос для корректной работы с JSONB полем.
+     * Использует кастомный SQL-запрос для корректной работы с JSONB полями.
      *
      * @param userId идентификатор пользователя
-     * @param imageUrl URL изображения
+     * @param imageUrlsJson JSON строка с URL сгенерированных изображений
      * @param prompt промпт
      * @param sessionId идентификатор сессии
-     * @param iterationNumber номер итерации
      * @param inputImageUrlsJson JSON строка с URL входных изображений
      * @return сохраненная запись
      */
-    @Query("INSERT INTO troyka.image_generation_history (user_id, image_url, prompt, created_at, session_id, iteration_number, input_image_urls) " +
-           "VALUES (:userId, :imageUrl, :prompt, :createdAt, :sessionId, :iterationNumber, :inputImageUrlsJson::jsonb) " +
+    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls) " +
+           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb) " +
            "RETURNING *")
-    Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrl, String prompt, 
+    Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrlsJson, String prompt, 
                                                java.time.LocalDateTime createdAt, Long sessionId, 
-                                               Integer iterationNumber, String inputImageUrlsJson);
+                                               String inputImageUrlsJson);
 }

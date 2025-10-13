@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component;
 import ru.oparin.troyka.model.dto.*;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.entity.Session;
-import ru.oparin.troyka.util.JsonUtils;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -88,19 +87,17 @@ public class SessionMapper {
             return null;
         }
         
-        // Преобразуем imageUrl в список (пока поддерживаем только одно изображение)
-        List<String> imageUrls = history.getImageUrl() != null ? 
-            List.of(history.getImageUrl()) : List.of();
+        // Получаем список сгенерированных изображений
+        List<String> imageUrls = history.getImageUrls();
         
-        // Парсим JSON в список для inputImageUrls
-        List<String> inputImageUrls = JsonUtils.parseJsonToList(history.getInputImageUrlsJson());
+        // Получаем список входных изображений
+        List<String> inputImageUrls = history.getInputImageUrls();
         
         return SessionMessageDTO.builder()
                 .id(history.getId())
                 .prompt(history.getPrompt())
                 .imageUrls(imageUrls)
                 .inputImageUrls(inputImageUrls)
-                .iterationNumber(history.getIterationNumber())
                 .createdAt(history.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant())
                 .imageCount(imageUrls.size())
                 .outputFormat("JPEG") // TODO: Получить из истории или добавить поле

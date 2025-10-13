@@ -30,8 +30,6 @@ public class SessionMessageDTO {
     /** Список URL входных изображений, которые были использованы для генерации (из поля imageUrls запроса) */
     private List<String> inputImageUrls;
 
-    /** Номер итерации в рамках сессии (для упорядочивания диалога) */
-    private Integer iterationNumber;
 
     /** Дата и время генерации */
     private Instant createdAt;

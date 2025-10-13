@@ -46,6 +46,29 @@ public class JsonUtils {
     }
 
     /**
+     * Преобразовать JSON объект в список строк.
+     * Обрабатывает как строки, так и другие типы объектов.
+     *
+     * @param jsonObject JSON объект (может быть строкой или другим типом)
+     * @return список строк или пустой список если JSON некорректный
+     */
+    public static List<String> parseJsonToList(Object jsonObject) {
+        if (jsonObject == null) {
+            return List.of();
+        }
+        
+        String json = jsonObject.toString();
+        
+        // Обрабатываем JsonByteArrayInput формат
+        if (json.startsWith("JsonByteArrayInput{") && json.endsWith("}")) {
+            // Извлекаем содержимое из JsonByteArrayInput{...}
+            json = json.substring("JsonByteArrayInput{".length(), json.length() - 1);
+        }
+        
+        return parseJsonToList(json);
+    }
+
+    /**
      * Преобразовать JSON строку в список строк.
      * Простая реализация для парсинга JSON массива строк.
      *
