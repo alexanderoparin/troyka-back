@@ -34,28 +34,28 @@ public class SessionService {
      * Создать новую сессию для пользователя.
      * Если название не указано, будет сгенерировано автоматически как "Сессия {id}".
      *
-     * @param userId идентификатор пользователя
+     * @param userId      идентификатор пользователя
      * @param sessionName название сессии (опционально)
      * @return созданная сессия в виде DTO
      */
     public Mono<CreateSessionResponseDTO> createSession(Long userId, String sessionName) {
         log.info("Создание новой сессии для пользователя {} с названием: {}", userId, sessionName);
-        
+
         Session newSession = sessionMapper.createSessionEntity(userId, sessionName);
-        
+
         return sessionRepository.save(newSession)
-        .flatMap(savedSession -> {
-            // Если название не было указано, обновляем его с ID
-            if (sessionName == null || sessionName.trim().isEmpty()) {
-                String sessionNameWithId = "Сессия " + savedSession.getId();
-                savedSession.setName(sessionNameWithId);
-                return sessionRepository.save(savedSession);
-            }
-            return Mono.just(savedSession);
-        })
-        .map(sessionMapper::toCreateSessionResponseDTO)
-        .doOnSuccess(sessionDTO -> log.info("Сессия {} успешно создана для пользователя {}", sessionDTO.getId(), userId))
-        .doOnError(error -> log.error("Ошибка при создании сессии для пользователя {}", userId, error));
+                .flatMap(savedSession -> {
+                    // Если название не было указано, обновляем его с ID
+                    if (sessionName == null || sessionName.trim().isEmpty()) {
+                        String sessionNameWithId = "Сессия " + savedSession.getId();
+                        savedSession.setName(sessionNameWithId);
+                        return sessionRepository.save(savedSession);
+                    }
+                    return Mono.just(savedSession);
+                })
+                .map(sessionMapper::toCreateSessionResponseDTO)
+                .doOnSuccess(sessionDTO -> log.info("Сессия {} успешно создана для пользователя {}", sessionDTO.getId(), userId))
+                .doOnError(error -> log.error("Ошибка при создании сессии для пользователя {}", userId, error));
     }
 
     /**
@@ -63,22 +63,22 @@ public class SessionService {
      * Включает превью последнего изображения и количество сообщений.
      *
      * @param userId идентификатор пользователя
-     * @param page номер страницы (начиная с 0)
-     * @param size размер страницы
+     * @param page   номер страницы (начиная с 0)
+     * @param size   размер страницы
      * @return список сессий с метаинформацией
      */
     public Mono<PageResponseDTO<SessionDTO>> getSessionsList(Long userId, int page, int size) {
         log.info("Получение списка сессий для пользователя {}, страница {}, размер {}", userId, page, size);
-        
+
         Pageable pageable = PageRequest.of(page, size);
-        
+
         return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
                 .collectList()
                 .flatMap(sessions -> {
                     if (sessions.isEmpty()) {
                         return Mono.<PageResponseDTO<SessionDTO>>just(PageResponseDTO.<SessionDTO>of(List.of(), page, size, 0L));
                     }
-                    
+
                     // Получаем детали для каждой сессии
                     return Flux.fromIterable(sessions)
                             .flatMap(this::enrichSessionWithDetails)
@@ -97,47 +97,46 @@ public class SessionService {
      * Получить детальную информацию о сессии с историей сообщений.
      *
      * @param sessionId идентификатор сессии
-     * @param userId идентификатор пользователя
-     * @param page номер страницы истории (начиная с 0)
-     * @param size размер страницы истории
+     * @param userId    идентификатор пользователя
+     * @param page      номер страницы истории (начиная с 0)
+     * @param size      размер страницы истории
      * @return детальная информация о сессии
      */
     public Mono<SessionDetailDTO> getSessionDetail(Long sessionId, Long userId, int page, int size) {
         log.info("Получение деталей сессии {} для пользователя {}", sessionId, userId);
-        
+
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
-                .flatMap(session -> {
-                    return imageHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
-                            .collectList()
-                            .map(histories -> {
-                                int totalCount = histories.size();
-                                boolean hasMore = (page + 1) * size < totalCount;
-                                
-                                return sessionMapper.toSessionDetailDTO(session, histories, totalCount, hasMore);
-                            });
-                })
-                .doOnSuccess(result -> log.info("Получены детали сессии {} с {} сообщениями", sessionId, result.getTotalMessages()))
-                .doOnError(error -> log.error("Ошибка при получении деталей сессии {} для пользователя {}", sessionId, userId, error));
+                .flatMap(session ->
+                        imageHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
+                                .collectList()
+                                .map(histories -> {
+                                    int totalCount = histories.size();
+                                    boolean hasMore = (page + 1) * size < totalCount;
+
+                                    return sessionMapper.toSessionDetailDTO(session, histories, totalCount, hasMore);
+                                }))
+                .doOnSuccess(result -> log.info("Получены детали сессии с id={} с {} сообщениями", sessionId, result.getTotalMessages()))
+                .doOnError(error -> log.error("Ошибка при получении деталей сессии с id={} для пользователя с id={}", sessionId, userId, error));
     }
 
     /**
      * Переименовать сессию.
      *
      * @param sessionId идентификатор сессии
-     * @param userId идентификатор пользователя
-     * @param newName новое название сессии
+     * @param userId    идентификатор пользователя
+     * @param newName   новое название сессии
      * @return обновленная сессия в виде DTO
      */
     public Mono<RenameSessionResponseDTO> renameSession(Long sessionId, Long userId, String newName) {
         log.info("Переименование сессии {} в '{}' для пользователя {}", sessionId, newName, userId);
-        
+
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
                 .flatMap(session -> {
                     session.setName(newName);
                     session.setUpdatedAt(Instant.now());
-                    
+
                     return sessionRepository.save(session);
                 })
                 .map(sessionMapper::toRenameSessionResponseDTO)
@@ -149,12 +148,12 @@ public class SessionService {
      * Удалить сессию и все связанные записи истории.
      *
      * @param sessionId идентификатор сессии
-     * @param userId идентификатор пользователя
+     * @param userId    идентификатор пользователя
      * @return DTO ответа при удалении сессии
      */
     public Mono<DeleteSessionResponseDTO> deleteSession(Long sessionId, Long userId) {
         log.info("Удаление сессии {} для пользователя {}", sessionId, userId);
-        
+
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
                 .flatMap(session -> {
@@ -163,7 +162,7 @@ public class SessionService {
                             .collectList()
                             .flatMap(histories -> {
                                 int historyCount = histories.size();
-                                
+
                                 // Удаляем сессию (каскадное удаление истории)
                                 return sessionRepository.deleteByIdAndUserId(sessionId, userId)
                                         .map(deletedSessions -> {
@@ -184,7 +183,7 @@ public class SessionService {
      */
     public Mono<SessionDTO> getOrCreateDefaultSession(Long userId) {
         log.info("Получение или создание дефолтной сессии для пользователя {}", userId);
-        
+
         return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId)
                 .collectList()
                 .flatMap(sessions -> {
@@ -207,7 +206,7 @@ public class SessionService {
      * Если sessionId null, возвращает или создает дефолтную сессию пользователя.
      *
      * @param sessionId идентификатор сессии (может быть null)
-     * @param userId идентификатор пользователя
+     * @param userId    идентификатор пользователя
      * @return сессия для генерации
      */
     public Mono<Session> getOrCreateSession(Long sessionId, Long userId) {
