@@ -45,4 +45,29 @@ public class PageResponseDTO<T> {
 
     /** Это последняя страница */
     private Boolean isLast;
+
+    /**
+     * Создает пагинированный ответ с автоматическим расчетом метаинформации.
+     * 
+     * @param content список элементов на текущей странице
+     * @param page номер текущей страницы (начиная с 0)
+     * @param size размер страницы
+     * @param totalElements общее количество элементов
+     * @return пагинированный ответ
+     */
+    public static <T> PageResponseDTO<T> of(List<T> content, int page, int size, long totalElements) {
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+        
+        return PageResponseDTO.<T>builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .hasNext(page < totalPages - 1)
+                .hasPrevious(page > 0)
+                .isFirst(page == 0)
+                .isLast(page >= totalPages - 1)
+                .build();
+    }
 }

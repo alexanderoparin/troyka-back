@@ -76,7 +76,7 @@ public class FalAIService {
                     }
 
                     // Получаем или создаем сессию
-                    return getOrCreateSession(rq.getSessionId(), userId)
+                    return sessionService.getOrCreateSession(rq.getSessionId(), userId)
                             .flatMap(session -> {
                                 // Списываем поинты
                                 return userPointsService.deductPointsFromUser(userId, pointsNeeded)
@@ -136,32 +136,6 @@ public class FalAIService {
                                         }));
                             });
                 });
-    }
-
-    /**
-     * Получить или создать сессию для генерации.
-     * Если sessionId не указан, создается или получается дефолтная сессия пользователя.
-     *
-     * @param sessionId идентификатор сессии (может быть null)
-     * @param userId идентификатор пользователя
-     * @return сессия для генерации
-     */
-    private Mono<ru.oparin.troyka.model.entity.Session> getOrCreateSession(Long sessionId, Long userId) {
-        if (sessionId != null) {
-            log.info("Использование указанной сессии {} для пользователя {}", sessionId, userId);
-            // TODO: Реализовать проверку существования сессии через SessionRepository
-            // Пока что создаем объект сессии напрямую
-            return Mono.just(ru.oparin.troyka.model.entity.Session.builder()
-                    .id(sessionId)
-                    .name("Сессия " + sessionId)
-                    .createdAt(java.time.Instant.now())
-                    .updatedAt(java.time.Instant.now())
-                    .isActive(true)
-                    .build());
-        } else {
-            log.info("Создание или получение дефолтной сессии для пользователя {}", userId);
-            return sessionService.getOrCreateDefaultSession(userId);
-        }
     }
 
     /**

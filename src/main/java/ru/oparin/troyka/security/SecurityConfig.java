@@ -50,7 +50,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
-                        .pathMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        .pathMatchers("/swagger-ui/**", "/v3/api-docs/**", "/api-docs/**").permitAll()
                         .pathMatchers("/health/**").permitAll()
                         .pathMatchers("/auth/**").permitAll()
                         .pathMatchers("/pricing/**").permitAll()
@@ -76,7 +76,9 @@ public class SecurityConfig {
                 .cors(ServerHttpSecurity.CorsSpec::disable)
                 .addFilterAt(corsFilter(), SecurityWebFiltersOrder.CORS)
                 .authorizeExchange(auth -> auth
+                        .pathMatchers("/swagger-ui/**", "/v3/api-docs/**", "/api-docs/**").permitAll()
                         .pathMatchers("/files/**").permitAll()
+                        .pathMatchers("/api/**").permitAll()
                         .anyExchange().permitAll())
                 .build();
     }

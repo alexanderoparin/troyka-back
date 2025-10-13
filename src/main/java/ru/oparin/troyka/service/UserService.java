@@ -26,13 +26,13 @@ public class UserService {
 
     public Mono<UserInfoDTO> getCurrentUser() {
         return SecurityUtil.getCurrentUsername()
-                .flatMap(username -> withRetry(userRepository.findByUsername(username)))
+                .flatMap(userRepository::findByUsername)
                 .map(UserInfoDTO::fromUser);
     }
 
     public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
         return SecurityUtil.getCurrentUsername()
-                .flatMap(username -> withRetry(userRepository.findByUsername(username)))
+                .flatMap(userRepository::findByUsername)
                 .flatMapMany(user -> imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()))
                 .map(ImageGenerationHistoryDTO::fromEntity);
     }

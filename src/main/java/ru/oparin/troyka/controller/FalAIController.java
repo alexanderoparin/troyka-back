@@ -20,17 +20,16 @@ import ru.oparin.troyka.util.SecurityUtil;
 public class FalAIController {
 
     private final FalAIService falAIService;
-    private final UserService userService;
     private final UserPointsService userPointsService;
+    private final UserService userService;
 
     @Operation(summary = "Синхронное создание изображения по описанию",
             description = "Генерация изображения на основе промпта, если заполнено поле imageUrls, то это редактирование переданных изображений")
     @PostMapping("/image/run/create")
     public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
-        return SecurityUtil.getCurrentUsername()
-                .doOnNext(username -> log.info("Получен запрос на создание изображения от пользователя с логином: {}", username))
-                .flatMap(userService::findByUsernameOrThrow)
-                .flatMap(user -> falAIService.getImageResponse(rq, user.getId()))
+        return SecurityUtil.getCurrentUserId(userService)
+                .doOnNext(userId -> log.info("Получен запрос на создание изображения от пользователя с ID: {}", userId))
+                .flatMap(userId -> falAIService.getImageResponse(rq, userId))
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка при генерации изображения", e);
@@ -42,10 +41,8 @@ public class FalAIController {
             description = "Возвращает количество доступных поинтов текущего пользователя")
     @GetMapping("/user/points")
     public Mono<ResponseEntity<Integer>> getUserPoints() {
-        Mono<String> currentUsername = SecurityUtil.getCurrentUsername();
-        return currentUsername
-                .flatMap(userService::findByUsernameOrThrow)
-                .flatMap(user -> userPointsService.getUserPoints(user.getId()))
+        return SecurityUtil.getCurrentUserId(userService)
+                .flatMap(userId -> userPointsService.getUserPoints(userId))
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка при получении поинтов пользователя", e);

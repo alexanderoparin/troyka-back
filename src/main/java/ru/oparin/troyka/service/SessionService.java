@@ -7,19 +7,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import ru.oparin.troyka.model.dto.PageResponseDTO;
-import ru.oparin.troyka.model.dto.SessionDTO;
-import ru.oparin.troyka.model.dto.SessionDetailDTO;
-import ru.oparin.troyka.model.dto.SessionMessageDTO;
+import ru.oparin.troyka.mapper.SessionMapper;
+import ru.oparin.troyka.model.dto.*;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.entity.Session;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.repository.SessionRepository;
-import ru.oparin.troyka.util.JsonUtils;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Сервис для работы с сессиями генерации изображений.
@@ -32,34 +28,33 @@ public class SessionService {
 
     private final SessionRepository sessionRepository;
     private final ImageGenerationHistoryRepository imageHistoryRepository;
+    private final SessionMapper sessionMapper;
 
     /**
      * Создать новую сессию для пользователя.
-     * Название будет сгенерировано автоматически как "Сессия {id}".
+     * Если название не указано, будет сгенерировано автоматически как "Сессия {id}".
      *
      * @param userId идентификатор пользователя
-     * @return созданная сессия
+     * @param sessionName название сессии (опционально)
+     * @return созданная сессия в виде DTO
      */
-    public Mono<Session> createSession(Long userId) {
-        log.info("Создание новой сессии для пользователя {}", userId);
+    public Mono<CreateSessionResponseDTO> createSession(Long userId, String sessionName) {
+        log.info("Создание новой сессии для пользователя {} с названием: {}", userId, sessionName);
         
-        Session newSession = Session.builder()
-                .userId(userId)
-                .name("Сессия") // Временно, будет обновлено после сохранения
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .isActive(true)
-                .build();
+        Session newSession = sessionMapper.createSessionEntity(userId, sessionName);
         
         return sessionRepository.save(newSession)
         .flatMap(savedSession -> {
-            // Обновляем название с реальным ID
-            String sessionName = "Сессия " + savedSession.getId();
-            savedSession.setName(sessionName);
-            
-            return sessionRepository.save(savedSession);
+            // Если название не было указано, обновляем его с ID
+            if (sessionName == null || sessionName.trim().isEmpty()) {
+                String sessionNameWithId = "Сессия " + savedSession.getId();
+                savedSession.setName(sessionNameWithId);
+                return sessionRepository.save(savedSession);
+            }
+            return Mono.just(savedSession);
         })
-        .doOnSuccess(session -> log.info("Сессия {} успешно создана для пользователя {}", session.getId(), userId))
+        .map(sessionMapper::toCreateSessionResponseDTO)
+        .doOnSuccess(sessionDTO -> log.info("Сессия {} успешно создана для пользователя {}", sessionDTO.getId(), userId))
         .doOnError(error -> log.error("Ошибка при создании сессии для пользователя {}", userId, error));
     }
 
@@ -81,41 +76,17 @@ public class SessionService {
                 .collectList()
                 .flatMap(sessions -> {
                     if (sessions.isEmpty()) {
-                        return Mono.just(PageResponseDTO.<SessionDTO>builder()
-                                .content(List.of())
-                                .page(page)
-                                .size(size)
-                                .totalElements(0L)
-                                .totalPages(0)
-                                .hasNext(false)
-                                .hasPrevious(false)
-                                .isFirst(true)
-                                .isLast(true)
-                                .build());
+                        return Mono.<PageResponseDTO<SessionDTO>>just(PageResponseDTO.<SessionDTO>of(List.of(), page, size, 0L));
                     }
                     
                     // Получаем детали для каждой сессии
                     return Flux.fromIterable(sessions)
-                            .flatMap(session -> enrichSessionWithDetails(session))
+                            .flatMap(this::enrichSessionWithDetails)
                             .collectList()
                             .flatMap(sessionDTOs -> {
                                 // Подсчитываем общее количество сессий
                                 return sessionRepository.countByUserId(userId)
-                                        .map(totalCount -> {
-                                            int totalPages = (int) Math.ceil((double) totalCount / size);
-                                            
-                                            return PageResponseDTO.<SessionDTO>builder()
-                                                    .content(sessionDTOs)
-                                                    .page(page)
-                                                    .size(size)
-                                                    .totalElements(totalCount)
-                                                    .totalPages(totalPages)
-                                                    .hasNext(page < totalPages - 1)
-                                                    .hasPrevious(page > 0)
-                                                    .isFirst(page == 0)
-                                                    .isLast(page >= totalPages - 1)
-                                                    .build();
-                                        });
+                                        .map(totalCount -> PageResponseDTO.<SessionDTO>of(sessionDTOs, page, size, totalCount));
                             });
                 })
                 .doOnSuccess(result -> log.info("Получено {} сессий для пользователя {}", result.getContent().size(), userId))
@@ -137,24 +108,13 @@ public class SessionService {
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
                 .flatMap(session -> {
-                    Pageable pageable = PageRequest.of(page, size);
-                    
                     return imageHistoryRepository.findBySessionIdOrderByIterationNumberAsc(sessionId)
                             .collectList()
                             .map(histories -> {
-                                List<SessionMessageDTO> messages = histories.stream()
-                                        .map(this::convertToSessionMessageDTO)
-                                        .collect(Collectors.toList());
+                                int totalCount = histories.size();
+                                boolean hasMore = (page + 1) * size < totalCount;
                                 
-                                return SessionDetailDTO.builder()
-                                        .id(session.getId())
-                                        .name(session.getName())
-                                        .createdAt(session.getCreatedAt())
-                                        .updatedAt(session.getUpdatedAt())
-                                        .history(messages)
-                                        .totalMessages(messages.size())
-                                        .hasMore(false) // TODO: Реализовать пагинацию
-                                        .build();
+                                return sessionMapper.toSessionDetailDTO(session, histories, totalCount, hasMore);
                             });
                 })
                 .doOnSuccess(result -> log.info("Получены детали сессии {} с {} сообщениями", sessionId, result.getTotalMessages()))
@@ -167,9 +127,9 @@ public class SessionService {
      * @param sessionId идентификатор сессии
      * @param userId идентификатор пользователя
      * @param newName новое название сессии
-     * @return обновленная сессия
+     * @return обновленная сессия в виде DTO
      */
-    public Mono<Session> renameSession(Long sessionId, Long userId, String newName) {
+    public Mono<RenameSessionResponseDTO> renameSession(Long sessionId, Long userId, String newName) {
         log.info("Переименование сессии {} в '{}' для пользователя {}", sessionId, newName, userId);
         
         return sessionRepository.findByIdAndUserId(sessionId, userId)
@@ -180,7 +140,8 @@ public class SessionService {
                     
                     return sessionRepository.save(session);
                 })
-                .doOnSuccess(session -> log.info("Сессия {} успешно переименована в '{}'", sessionId, newName))
+                .map(sessionMapper::toRenameSessionResponseDTO)
+                .doOnSuccess(sessionDTO -> log.info("Сессия {} успешно переименована в '{}'", sessionId, newName))
                 .doOnError(error -> log.error("Ошибка при переименовании сессии {} для пользователя {}", sessionId, userId, error));
     }
 
@@ -189,9 +150,9 @@ public class SessionService {
      *
      * @param sessionId идентификатор сессии
      * @param userId идентификатор пользователя
-     * @return количество удаленных записей истории
+     * @return DTO ответа при удалении сессии
      */
-    public Mono<Integer> deleteSession(Long sessionId, Long userId) {
+    public Mono<DeleteSessionResponseDTO> deleteSession(Long sessionId, Long userId) {
         log.info("Удаление сессии {} для пользователя {}", sessionId, userId);
         
         return sessionRepository.findByIdAndUserId(sessionId, userId)
@@ -207,7 +168,7 @@ public class SessionService {
                                 return sessionRepository.deleteByIdAndUserId(sessionId, userId)
                                         .map(deletedSessions -> {
                                             log.info("Сессия {} удалена вместе с {} записями истории", sessionId, historyCount);
-                                            return historyCount;
+                                            return sessionMapper.toDeleteSessionResponseDTO(sessionId, historyCount);
                                         });
                             });
                 })
@@ -219,9 +180,9 @@ public class SessionService {
      * Если у пользователя нет активных сессий, создается новая.
      *
      * @param userId идентификатор пользователя
-     * @return дефолтная сессия
+     * @return дефолтная сессия в виде DTO
      */
-    public Mono<Session> getOrCreateDefaultSession(Long userId) {
+    public Mono<SessionDTO> getOrCreateDefaultSession(Long userId) {
         log.info("Получение или создание дефолтной сессии для пользователя {}", userId);
         
         return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId)
@@ -229,14 +190,35 @@ public class SessionService {
                 .flatMap(sessions -> {
                     if (sessions.isEmpty()) {
                         log.info("У пользователя {} нет сессий, создаем дефолтную", userId);
-                        return createSession(userId);
+                        return createSession(userId, null)
+                                .map(sessionMapper::createResponseToSessionDTO);
                     } else {
                         Session defaultSession = sessions.get(0); // Самая новая сессия
                         log.info("Найдена дефолтная сессия {} для пользователя {}", defaultSession.getId(), userId);
-                        return Mono.just(defaultSession);
+                        return Mono.just(sessionMapper.toSessionDTO(defaultSession));
                     }
                 })
                 .doOnError(error -> log.error("Ошибка при получении дефолтной сессии для пользователя {}", userId, error));
+    }
+
+    /**
+     * Получить сессию по ID или создать/получить дефолтную сессию.
+     * Если sessionId указан, возвращает существующую сессию.
+     * Если sessionId null, возвращает или создает дефолтную сессию пользователя.
+     *
+     * @param sessionId идентификатор сессии (может быть null)
+     * @param userId идентификатор пользователя
+     * @return сессия для генерации
+     */
+    public Mono<Session> getOrCreateSession(Long sessionId, Long userId) {
+        if (sessionId != null) {
+            log.info("Получение сессии {} для пользователя {}", sessionId, userId);
+            return sessionRepository.findByIdAndUserId(sessionId, userId)
+                    .switchIfEmpty(Mono.error(new RuntimeException("Сессия " + sessionId + " не найдена или не принадлежит пользователю " + userId)));
+        } else {
+            return getOrCreateDefaultSession(userId)
+                    .map(sessionMapper::toSessionEntity);
+        }
     }
 
     /**
@@ -256,45 +238,13 @@ public class SessionService {
      * Обогатить сессию дополнительной информацией (последнее изображение, количество сообщений).
      */
     private Mono<SessionDTO> enrichSessionWithDetails(Session session) {
-        return imageHistoryRepository.findBySessionIdOrderByIterationNumberAsc(session.getId())
-                .collectList()
-                .map(histories -> {
-                    String lastImageUrl = null;
-                    if (!histories.isEmpty()) {
-                        // Берем последнее изображение (с наибольшим номером итерации)
-                        lastImageUrl = histories.stream()
-                                .max((h1, h2) -> Integer.compare(
-                                        h1.getIterationNumber() != null ? h1.getIterationNumber() : 0,
-                                        h2.getIterationNumber() != null ? h2.getIterationNumber() : 0))
-                                .map(ImageGenerationHistory::getImageUrl)
-                                .orElse(null);
-                    }
-                    
-                    return SessionDTO.builder()
-                            .id(session.getId())
-                            .name(session.getName())
-                            .createdAt(session.getCreatedAt())
-                            .updatedAt(session.getUpdatedAt())
-                            .lastImageUrl(lastImageUrl)
-                            .messageCount(histories.size())
-                            .build();
-                });
-    }
-
-    /**
-     * Преобразовать запись истории в DTO сообщения сессии.
-     */
-    private SessionMessageDTO convertToSessionMessageDTO(ImageGenerationHistory history) {
-        return SessionMessageDTO.builder()
-                .id(history.getId())
-                .prompt(history.getPrompt())
-                .imageUrls(List.of(history.getImageUrl())) // TODO: Поддержать множественные изображения
-                .inputImageUrls(JsonUtils.parseJsonToList(history.getInputImageUrlsJson())) // Парсим JSON в список
-                .iterationNumber(history.getIterationNumber())
-                .createdAt(history.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant())
-                .imageCount(1) // TODO: Подсчитать реальное количество
-                .outputFormat("JPEG") // TODO: Получить из истории
-                .build();
+        return Mono.zip(
+                imageHistoryRepository.findFirstBySessionIdOrderByIterationNumberDesc(session.getId())
+                        .map(ImageGenerationHistory::getImageUrl)
+                        .switchIfEmpty(Mono.just("")),
+                imageHistoryRepository.countBySessionId(session.getId())
+                        .map(Long::intValue)
+        ).map(tuple -> sessionMapper.toSessionDTOWithDetails(session, tuple.getT1(), tuple.getT2()));
     }
 
 }
