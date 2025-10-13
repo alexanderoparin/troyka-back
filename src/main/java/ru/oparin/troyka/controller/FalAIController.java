@@ -42,7 +42,7 @@ public class FalAIController {
     @GetMapping("/user/points")
     public Mono<ResponseEntity<Integer>> getUserPoints() {
         return SecurityUtil.getCurrentUserId(userService)
-                .flatMap(userId -> userPointsService.getUserPoints(userId))
+                .flatMap(userPointsService::getUserPoints)
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка при получении поинтов пользователя", e);

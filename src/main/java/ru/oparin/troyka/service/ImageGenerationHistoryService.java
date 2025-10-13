@@ -36,7 +36,7 @@ public class ImageGenerationHistoryService {
      * @return сохраненные записи истории
      */
     public Flux<ImageGenerationHistory> saveHistories(Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls) {
-        log.info("Сохранение истории генерации для сессии {}, промпт: {}", sessionId, prompt);
+        log.info("Сохранение истории генерации для сессии {}, промпт: {}, используемые в запросе изображения {}", sessionId, prompt, inputImageUrls);
         
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userRepository::findByUsername)
@@ -56,20 +56,20 @@ public class ImageGenerationHistoryService {
                             .flatMapMany(iterationNumber -> {
                                 // Преобразуем inputImageUrls в JSON строку
                                 String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
+                                log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
                                 
                                 // Создаем записи истории для каждого сгенерированного изображения
-                                Flux<ImageGenerationHistory> histories = Flux.fromIterable(imageUrls)
-                                        .map(url -> ImageGenerationHistory.builder()
-                                                .userId(user.getId())
-                                                .sessionId(sessionId)
-                                                .imageUrl(url)
-                                                .prompt(prompt)
-                                                .iterationNumber(iterationNumber)
-                                                .inputImageUrlsJson(inputImageUrlsJson)
-                                                .createdAt(LocalDateTime.now())
-                                                .build());
-                                
-                                return imageGenerationHistoryRepository.saveAll(histories)
+                                // Используем кастомный метод с правильным приведением JSONB
+                                return Flux.fromIterable(imageUrls)
+                                        .flatMap(url -> imageGenerationHistoryRepository.saveWithJsonb(
+                                                user.getId(),
+                                                url,
+                                                prompt,
+                                                LocalDateTime.now(),
+                                                sessionId,
+                                                iterationNumber,
+                                                inputImageUrlsJson
+                                        ))
                                         .doOnNext(history -> 
                                                 log.info("Запись истории сохранена: ID={}, сессия={}, итерация={}", 
                                                         history.getId(), sessionId, iterationNumber));

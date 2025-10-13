@@ -1,6 +1,7 @@
 package ru.oparin.troyka.repository;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -61,4 +62,23 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
      * @return количество удаленных записей
      */
     Mono<Integer> deleteBySessionId(Long sessionId);
+
+    /**
+     * Сохранить запись истории с правильным приведением JSONB.
+     * Использует кастомный SQL-запрос для корректной работы с JSONB полем.
+     *
+     * @param userId идентификатор пользователя
+     * @param imageUrl URL изображения
+     * @param prompt промпт
+     * @param sessionId идентификатор сессии
+     * @param iterationNumber номер итерации
+     * @param inputImageUrlsJson JSON строка с URL входных изображений
+     * @return сохраненная запись
+     */
+    @Query("INSERT INTO troyka.image_generation_history (user_id, image_url, prompt, created_at, session_id, iteration_number, input_image_urls) " +
+           "VALUES (:userId, :imageUrl, :prompt, :createdAt, :sessionId, :iterationNumber, :inputImageUrlsJson::jsonb) " +
+           "RETURNING *")
+    Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrl, String prompt, 
+                                               java.time.LocalDateTime createdAt, Long sessionId, 
+                                               Integer iterationNumber, String inputImageUrlsJson);
 }

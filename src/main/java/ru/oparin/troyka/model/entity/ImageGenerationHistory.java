@@ -6,6 +6,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
+import ru.oparin.troyka.util.JsonUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -85,8 +86,10 @@ public class ImageGenerationHistory {
      */
     @Transient
     public List<String> getInputImageUrls() {
-        // TODO: Реализовать парсинг JSON в список
-        return null;
+        if (inputImageUrlsJson == null) {
+            return List.of();
+        }
+        return JsonUtils.parseJsonToList(inputImageUrlsJson);
     }
 
     /**
@@ -95,6 +98,6 @@ public class ImageGenerationHistory {
      */
     @Transient
     public void setInputImageUrls(List<String> urls) {
-        // TODO: Реализовать сериализацию списка в JSON
+        this.inputImageUrlsJson = JsonUtils.convertListToJson(urls);
     }
 }

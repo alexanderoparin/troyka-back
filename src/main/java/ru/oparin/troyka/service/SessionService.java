@@ -129,7 +129,7 @@ public class SessionService {
      * @return обновленная сессия в виде DTO
      */
     public Mono<RenameSessionResponseDTO> renameSession(Long sessionId, Long userId, String newName) {
-        log.info("Переименование сессии {} в '{}' для пользователя {}", sessionId, newName, userId);
+        log.info("Переименование сессии '{}' в '{}' для пользователя с id={}", sessionId, newName, userId);
 
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
