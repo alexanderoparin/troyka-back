@@ -91,8 +91,14 @@ public class FalAIService {
 
                                             List<String> inputImageUrls = rq.getInputImageUrls();
                                             boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
+                                            
+                                            // Убираем "blob:" из URL'ов - FAL AI не понимает blob URL'ы
                                             if (!isNewImage) {
-                                                requestBody.put("image_urls", inputImageUrls);
+                                                List<String> processedUrls = inputImageUrls.stream()
+                                                        .map(url -> url.startsWith("blob:") ? url.substring(5) : url)
+                                                        .toList();
+                                                
+                                                requestBody.put("image_urls", processedUrls);
                                             }
 
                                             String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
