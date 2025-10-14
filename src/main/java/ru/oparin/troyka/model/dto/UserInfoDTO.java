@@ -2,7 +2,6 @@ package ru.oparin.troyka.model.dto;
 
 import lombok.*;
 import ru.oparin.troyka.model.entity.User;
-import ru.oparin.troyka.util.PhoneUtil;
 
 @Getter
 @Setter
@@ -14,9 +13,6 @@ public class UserInfoDTO {
 
     private String username;
     private String email;
-    private String firstName;
-    private String lastName;
-    private String phone;
     private String role;
     private String createdAt;
     private Boolean emailVerified;
@@ -25,9 +21,6 @@ public class UserInfoDTO {
         return UserInfoDTO.builder()
                 .username(user.getUsername())
                 .email(user.getEmail())
-                .firstName(user.getFirstName())
-                .lastName(user.getLastName())
-                .phone(PhoneUtil.formatPhone(user.getPhone()))
                 .role(user.getRole().name())
                 .createdAt(user.getCreatedAt().toString())
                 .emailVerified(user.getEmailVerified())
