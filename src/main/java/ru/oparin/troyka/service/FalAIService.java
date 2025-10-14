@@ -82,12 +82,7 @@ public class FalAIService {
                                 return userPointsService.deductPointsFromUser(userId, pointsNeeded)
                                         .then(Mono.defer(() -> {
                                             String prompt = rq.getPrompt();
-                                            String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
-                                            Map<String, Object> requestBody = new HashMap<>(Map.of(
-                                                    "prompt", prompt,
-                                                    "num_images", numImages,
-                                                    "output_format", outputFormat
-                                            ));
+                                            Map<String, Object> requestBody = createRqBody(rq, prompt, numImages);
 
                                             List<String> inputImageUrls = rq.getInputImageUrls();
                                             boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
@@ -142,6 +137,15 @@ public class FalAIService {
                                         }));
                             });
                 });
+    }
+
+    private Map<String, Object> createRqBody(ImageRq rq, String prompt, Integer numImages) {
+        String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
+        return new HashMap<>(Map.of(
+                "prompt", prompt,
+                "num_images", numImages,
+                "output_format", outputFormat
+        ));
     }
 
     /**
