@@ -54,8 +54,7 @@ public class CleanupScheduler {
      */
     @Scheduled(fixedRate = 3600000) // каждый час
     public void cancelExpiredPayments() {
-        log.debug("Проверка просроченных платежей...");
-        
+        log.debug("Поиск просроченных платежей по расписанию");
         try {
             LocalDateTime expiredTime = LocalDateTime.now().minusHours(24);
             
