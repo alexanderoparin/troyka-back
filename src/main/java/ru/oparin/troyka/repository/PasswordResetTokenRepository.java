@@ -24,6 +24,6 @@ public interface PasswordResetTokenRepository extends ReactiveCrudRepository<Pas
     Mono<Void> markTokenAsUsed(String token);
     
     @Query("DELETE FROM troyka.password_reset_tokens WHERE expires_at < :now")
-    Mono<Void> deleteExpiredTokens(LocalDateTime now);
+    Mono<Long> deleteByExpiresAtBefore(LocalDateTime now);
 }
 

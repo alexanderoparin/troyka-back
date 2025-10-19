@@ -173,11 +173,5 @@ public class PasswordResetService {
                     }
                 });
     }
-
-    // Метод для очистки истекших токенов (можно вызывать по расписанию)
-    public Mono<Void> cleanupExpiredTokens() {
-        return tokenRepository.deleteExpiredTokens(LocalDateTime.now())
-                .doOnSuccess(result -> log.info("Очищены истекшие токены восстановления пароля"));
-    }
 }
 
