@@ -59,22 +59,29 @@ public class EmailVerificationService {
         return tokenRepository.findByToken(token)
                 .flatMap(verificationToken -> {
                     log.info("Токен найден в БД: {} для пользователя ID: {}", token, verificationToken.getUserId());
-                    if (verificationToken.getExpiresAt().isBefore(LocalDateTime.now())) {
-                        log.warn("Токен подтверждения истек: {} (истекает: {}, сейчас: {})", 
-                                token, verificationToken.getExpiresAt(), LocalDateTime.now());
-                        return Mono.just(false);
-                    }
                     
-                    log.info("Токен действителен, обновляем статус пользователя ID: {}", verificationToken.getUserId());
-                    // Обновляем статус emailVerified у пользователя
+                    // Сначала проверяем, не подтвержден ли уже пользователь
                     return userService.findById(verificationToken.getUserId())
                             .flatMap(user -> {
+                                if (user.getEmailVerified() != null && user.getEmailVerified()) {
+                                    log.info("Email уже подтвержден для пользователя ID: {} ({}), возвращаем успех", 
+                                            user.getId(), user.getUsername());
+                                    return Mono.just(true);
+                                }
+                                
+                                if (verificationToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+                                    log.warn("Токен подтверждения истек: {} (истекает: {}, сейчас: {})", 
+                                            token, verificationToken.getExpiresAt(), LocalDateTime.now());
+                                    return Mono.just(false);
+                                }
+                                
+                                log.info("Токен действителен, обновляем статус пользователя ID: {}", verificationToken.getUserId());
                                 user.setEmailVerified(true);
-                                return userService.saveUser(user);
-                            })
-                            .then(tokenRepository.deleteById(verificationToken.getId()))
-                            .doOnSuccess(v -> log.info("Токен {} успешно удален после верификации", token))
-                            .then(Mono.just(true));
+                                return userService.saveUser(user)
+                                        .then(tokenRepository.deleteById(verificationToken.getId()))
+                                        .doOnSuccess(v -> log.info("Токен {} успешно удален после верификации", token))
+                                        .then(Mono.just(true));
+                            });
                 })
                 .switchIfEmpty(Mono.fromRunnable(() -> 
                         log.warn("Токен не найден в БД: {}", token))
