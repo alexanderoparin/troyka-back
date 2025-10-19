@@ -44,24 +44,28 @@ public class EmailVerificationService {
         // Сохраняем токен в базе данных и отправляем письмо
         return tokenRepository.save(verificationToken)
                 .doOnSuccess(savedToken -> {
-                    // Отправляем письмо
+                    log.info("Токен подтверждения сохранен в БД: {} для пользователя: {} <{}>", 
+                            token, user.getUsername(), user.getEmail());
                     sendVerificationEmail(user.getEmail(), user.getUsername(), token);
                     log.info("Письмо подтверждения отправлено пользователю: {} <{}>", user.getUsername(), user.getEmail());
                 })
-                .doOnError(error -> {
-                    log.error("Ошибка при отправке письма подтверждения пользователю: {}", user.getUsername(), error);
-                })
+                .doOnError(error -> log.error("Ошибка при сохранении токена подтверждения для пользователя: {} <{}>",
+                        user.getUsername(), user.getEmail(), error))
                 .then();
     }
 
     public Mono<Boolean> verifyEmail(String token) {
+        log.info("Попытка верификации токена: {}", token);
         return tokenRepository.findByToken(token)
                 .flatMap(verificationToken -> {
+                    log.info("Токен найден в БД: {} для пользователя ID: {}", token, verificationToken.getUserId());
                     if (verificationToken.getExpiresAt().isBefore(LocalDateTime.now())) {
-                        log.warn("Токен подтверждения истек: {}", token);
+                        log.warn("Токен подтверждения истек: {} (истекает: {}, сейчас: {})", 
+                                token, verificationToken.getExpiresAt(), LocalDateTime.now());
                         return Mono.just(false);
                     }
                     
+                    log.info("Токен действителен, обновляем статус пользователя ID: {}", verificationToken.getUserId());
                     // Обновляем статус emailVerified у пользователя
                     return userService.findById(verificationToken.getUserId())
                             .flatMap(user -> {
@@ -69,9 +73,12 @@ public class EmailVerificationService {
                                 return userService.saveUser(user);
                             })
                             .then(tokenRepository.deleteById(verificationToken.getId()))
+                            .doOnSuccess(v -> log.info("Токен {} успешно удален после верификации", token))
                             .then(Mono.just(true));
                 })
-                .switchIfEmpty(Mono.just(false));
+                .switchIfEmpty(Mono.fromRunnable(() -> 
+                        log.warn("Токен не найден в БД: {}", token))
+                        .then(Mono.just(false)));
     }
 
     private void sendVerificationEmail(String email, String username, String token) {
