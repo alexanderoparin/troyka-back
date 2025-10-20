@@ -23,6 +23,6 @@ public class RegisterRequest {
     @ToString.Exclude
     @NotBlank(message = "Пароль обязателен")
     @StrongPassword
-    @Schema(description = "Пароль (минимум 8 символов, включая заглавные и строчные буквы, цифры и специальные символы)", example = "SecurePass123!")
+    @Schema(description = "Пароль (минимум 8 символов, включая заглавные и строчные буквы, цифры)", example = "SecurePass123")
     private String password;
 }
