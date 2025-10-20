@@ -30,11 +30,7 @@ public class FalAIController {
         return SecurityUtil.getCurrentUserId(userService)
                 .doOnNext(userId -> log.info("Получен запрос на создание изображения от пользователя с ID: {}", userId))
                 .flatMap(userId -> falAIService.getImageResponse(rq, userId))
-                .map(ResponseEntity::ok)
-                .onErrorResume(e -> {
-                    log.error("Ошибка при генерации изображения", e);
-                    return Mono.just(ResponseEntity.badRequest().body(null));
-                });
+                .map(ResponseEntity::ok);
     }
 
     @Operation(summary = "Получение баланса пользователя",
