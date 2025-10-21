@@ -158,6 +158,10 @@ public class TelegramAuthService {
             
             // Проверяем актуальность данных (не старше 24 часов)
             long currentTime = Instant.now().getEpochSecond();
+            log.debug("Текущее время (Unix timestamp): {}", currentTime);
+            log.debug("Время авторизации (Unix timestamp): {}", request.getAuth_date());
+            log.debug("Разница во времени: {} секунд", currentTime - request.getAuth_date());
+            
             if (currentTime - request.getAuth_date() > 86400) { // 24 часа
                 throw new AuthException(HttpStatus.BAD_REQUEST, "Данные авторизации устарели");
             }
@@ -199,7 +203,12 @@ public class TelegramAuthService {
             log.debug("Вычисленная подпись: {}", calculatedHash);
             log.debug("Полученная подпись: {}", request.getHash());
             
-            if (!calculatedHash.equals(request.getHash())) {
+            // Пробуем альтернативный алгоритм валидации
+            String alternativeHash = calculateTelegramHash(dataCheckString, telegramBotToken);
+            log.debug("Альтернативная подпись (WebAppData): {}", alternativeHash);
+            
+            // Проверяем подпись (сначала стандартный алгоритм, потом альтернативный)
+            if (!calculatedHash.equals(request.getHash()) && !alternativeHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
             }
 
@@ -338,5 +347,30 @@ public class TelegramAuthService {
             result.append(String.format("%02x", b));
         }
         return result.toString();
+    }
+
+    /**
+     * Альтернативный метод валидации подписи Telegram с использованием WebAppData.
+     */
+    private String calculateTelegramHash(String dataCheckString, String botToken) {
+        try {
+            // Создаем секретный ключ: HMAC-SHA256("WebAppData", botToken)
+            String webAppData = "WebAppData";
+            Mac webAppMac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec webAppKeySpec = new SecretKeySpec(webAppData.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            webAppMac.init(webAppKeySpec);
+            byte[] secretKeyBytes = webAppMac.doFinal(botToken.getBytes(StandardCharsets.UTF_8));
+            
+            // Вычисляем подпись: HMAC-SHA256(secretKey, dataCheckString)
+            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKeyBytes, "HmacSHA256");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(secretKeySpec);
+            byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
+            
+            return bytesToHex(hash);
+        } catch (Exception e) {
+            log.error("Ошибка при вычислении альтернативной подписи Telegram", e);
+            return "";
+        }
     }
 }
