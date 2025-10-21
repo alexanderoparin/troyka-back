@@ -2,6 +2,7 @@ package ru.oparin.troyka.service.telegram;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -187,9 +188,10 @@ public class TelegramAuthService {
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
                     .collect(Collectors.joining("\n"));
 
-            // Вычисляем подпись
-            // Для Telegram Login Widget используется сам токен бота как секретный ключ
-            SecretKeySpec secretKeySpec = new SecretKeySpec(telegramBotToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            // Вычисляем подпись согласно официальной документации Telegram
+            // secret_key = SHA256(bot_token)
+            String secretKey = DigestUtils.sha256Hex(telegramBotToken);
+            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(secretKeySpec);
@@ -201,32 +203,11 @@ public class TelegramAuthService {
             log.debug("Строка для проверки: {}", dataCheckString);
             log.debug("Токен бота (первые 10 символов): {}", telegramBotToken.substring(0, Math.min(10, telegramBotToken.length())));
             log.debug("Полный токен бота: {}", telegramBotToken);
+            log.debug("Secret key (SHA256 токена): {}", secretKey);
             log.debug("Вычисленная подпись: {}", calculatedHash);
             log.debug("Полученная подпись: {}", request.getHash());
             
-            // Пробуем альтернативный алгоритм валидации
-            String alternativeHash = calculateTelegramHash(dataCheckString, telegramBotToken);
-            log.debug("Альтернативная подпись (WebAppData): {}", alternativeHash);
-            
-            // Пробуем третий алгоритм - с URL-encoded данными
-            String urlEncodedHash = calculateTelegramHashUrlEncoded(request, telegramBotToken);
-            log.debug("URL-encoded подпись: {}", urlEncodedHash);
-            
-            // Пробуем четвертый алгоритм - с токеном без префикса
-            String cleanToken = telegramBotToken.replace("bot", "").replace(":", "");
-            String cleanTokenHash = calculateTelegramHashUrlEncoded(request, cleanToken);
-            log.debug("Clean token подпись: {}", cleanTokenHash);
-            
-            // Пробуем пятый алгоритм - с оригинальным алгоритмом Telegram
-            String originalHash = calculateOriginalTelegramHash(request, telegramBotToken);
-            log.debug("Original Telegram подпись: {}", originalHash);
-            
-            // Проверяем подпись (пробуем все пять алгоритмов)
-            if (!calculatedHash.equals(request.getHash()) && 
-                !alternativeHash.equals(request.getHash()) && 
-                !urlEncodedHash.equals(request.getHash()) &&
-                !cleanTokenHash.equals(request.getHash()) &&
-                !originalHash.equals(request.getHash())) {
+            if (!calculatedHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
             }
 
@@ -266,9 +247,10 @@ public class TelegramAuthService {
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
                     .collect(Collectors.joining("\n"));
 
-            // Вычисляем подпись
-            // Для Telegram Login Widget используется сам токен бота как секретный ключ
-            SecretKeySpec secretKeySpec = new SecretKeySpec(telegramBotToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            // Вычисляем подпись согласно официальной документации Telegram
+            // secret_key = SHA256(bot_token)
+            String secretKey = DigestUtils.sha256Hex(telegramBotToken);
+            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(secretKeySpec);
@@ -300,7 +282,7 @@ public class TelegramAuthService {
                     .email(email)
                     .password(passwordEncoder.encode("telegram_auth_" + request.getId())) // Временный пароль
                     .role(Role.USER)
-                    .emailVerified(true) // Telegram пользователи считаются верифицированными
+                    .emailVerified(false) // Email не верифицирован, но Telegram подтвержден
                     .telegramId(request.getId())
                     .telegramUsername(request.getUsername())
                     .telegramFirstName(request.getFirst_name())
@@ -366,114 +348,4 @@ public class TelegramAuthService {
         }
         return result.toString();
     }
-
-    /**
-     * Оригинальный алгоритм валидации подписи Telegram (как в документации).
-     */
-    private String calculateOriginalTelegramHash(TelegramLoginRequest request, String botToken) {
-        try {
-            // Создаем строку для проверки в оригинальном формате
-            Map<String, String> params = new TreeMap<>();
-            params.put("id", request.getId().toString());
-            if (request.getFirst_name() != null) {
-                params.put("first_name", request.getFirst_name());
-            }
-            if (request.getLast_name() != null) {
-                params.put("last_name", request.getLast_name());
-            }
-            if (request.getUsername() != null) {
-                params.put("username", request.getUsername());
-            }
-            if (request.getPhoto_url() != null) {
-                params.put("photo_url", request.getPhoto_url());
-            }
-            params.put("auth_date", request.getAuth_date().toString());
-
-            // Создаем строку в формате key=value\nkey=value
-            String dataCheckString = params.entrySet().stream()
-                    .map(entry -> entry.getKey() + "=" + entry.getValue())
-                    .collect(Collectors.joining("\n"));
-
-            log.debug("Original строка для проверки: {}", dataCheckString);
-
-            // Используем оригинальный алгоритм: HMAC-SHA256(botToken, dataCheckString)
-            SecretKeySpec secretKeySpec = new SecretKeySpec(botToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(secretKeySpec);
-            byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
-            
-            return bytesToHex(hash);
-        } catch (Exception e) {
-            log.error("Ошибка при вычислении оригинальной подписи Telegram", e);
-            return "";
-        }
-    }
-
-    /**
-     * Альтернативный метод валидации подписи Telegram с использованием WebAppData.
-     */
-    private String calculateTelegramHash(String dataCheckString, String botToken) {
-        try {
-            // Создаем секретный ключ: HMAC-SHA256("WebAppData", botToken)
-            String webAppData = "WebAppData";
-            Mac webAppMac = Mac.getInstance("HmacSHA256");
-            SecretKeySpec webAppKeySpec = new SecretKeySpec(webAppData.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            webAppMac.init(webAppKeySpec);
-            byte[] secretKeyBytes = webAppMac.doFinal(botToken.getBytes(StandardCharsets.UTF_8));
-            
-            // Вычисляем подпись: HMAC-SHA256(secretKey, dataCheckString)
-            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKeyBytes, "HmacSHA256");
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(secretKeySpec);
-            byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
-            
-            return bytesToHex(hash);
-        } catch (Exception e) {
-            log.error("Ошибка при вычислении альтернативной подписи Telegram", e);
-            return "";
-        }
-    }
-
-    /**
-     * Метод валидации подписи Telegram с URL-encoded данными (как в оригинальном алгоритме).
-     */
-    private String calculateTelegramHashUrlEncoded(TelegramLoginRequest request, String botToken) {
-        try {
-            // Создаем строку для проверки в URL-encoded формате
-            Map<String, String> params = new TreeMap<>();
-            params.put("id", request.getId().toString());
-            if (request.getFirst_name() != null) {
-                params.put("first_name", request.getFirst_name());
-            }
-            if (request.getLast_name() != null) {
-                params.put("last_name", request.getLast_name());
-            }
-            if (request.getUsername() != null) {
-                params.put("username", request.getUsername());
-            }
-            if (request.getPhoto_url() != null) {
-                params.put("photo_url", request.getPhoto_url());
-            }
-            params.put("auth_date", request.getAuth_date().toString());
-
-            // Создаем строку в формате key=value&key=value
-            String dataCheckString = params.entrySet().stream()
-                    .map(entry -> entry.getKey() + "=" + entry.getValue())
-                    .collect(Collectors.joining("&"));
-
-            log.debug("URL-encoded строка для проверки: {}", dataCheckString);
-
-            // Используем стандартный алгоритм: HMAC-SHA256(botToken, dataCheckString)
-            SecretKeySpec secretKeySpec = new SecretKeySpec(botToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(secretKeySpec);
-            byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
-            
-            return bytesToHex(hash);
-        } catch (Exception e) {
-            log.error("Ошибка при вычислении URL-encoded подписи Telegram", e);
-            return "";
-        }
-    }
-
 }
