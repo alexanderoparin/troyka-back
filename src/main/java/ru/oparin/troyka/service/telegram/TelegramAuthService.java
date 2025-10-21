@@ -207,7 +207,23 @@ public class TelegramAuthService {
             log.debug("Вычисленная подпись: {}", calculatedHash);
             log.debug("Полученная подпись: {}", request.getHash());
             
-            if (!calculatedHash.equals(request.getHash())) {
+            // Пробуем альтернативный алгоритм - прямой токен
+            SecretKeySpec directSecretKeySpec = new SecretKeySpec(telegramBotToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            Mac directMac = Mac.getInstance("HmacSHA256");
+            directMac.init(directSecretKeySpec);
+            byte[] directHash = directMac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
+            String directCalculatedHash = bytesToHex(directHash);
+            
+            log.debug("Альтернативная подпись (прямой токен): {}", directCalculatedHash);
+            
+            // Пробуем третий алгоритм - фиксированный порядок как в примере
+            String fixedOrderHash = calculateFixedOrderHash(request, telegramBotToken);
+            log.debug("Фиксированный порядок подпись: {}", fixedOrderHash);
+            
+            // Проверяем все три варианта
+            if (!calculatedHash.equals(request.getHash()) && 
+                !directCalculatedHash.equals(request.getHash()) &&
+                !fixedOrderHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
             }
 
@@ -348,4 +364,50 @@ public class TelegramAuthService {
         }
         return result.toString();
     }
+
+    /**
+     * Альтернативный алгоритм с фиксированным порядком параметров (как в примере из интернета).
+     */
+    private String calculateFixedOrderHash(TelegramLoginRequest request, String botToken) {
+        try {
+            // Создаем строку в фиксированном порядке как в примере
+            StringBuilder dataCheckString = new StringBuilder();
+            
+            // Добавляем поля в определенном порядке (как в примере)
+            addField(dataCheckString, "auth_date", request.getAuth_date().toString());
+            addField(dataCheckString, "first_name", request.getFirst_name());
+            addField(dataCheckString, "id", request.getId().toString());
+            addField(dataCheckString, "last_name", request.getLast_name());
+            addField(dataCheckString, "photo_url", request.getPhoto_url());
+            addField(dataCheckString, "username", request.getUsername());
+            
+            // Убираем последний символ новой строки
+            if (dataCheckString.length() > 0) {
+                dataCheckString.setLength(dataCheckString.length() - 1);
+            }
+            
+            log.debug("Фиксированный порядок строка: {}", dataCheckString.toString());
+            
+            // Используем прямой токен как секретный ключ
+            SecretKeySpec secretKeySpec = new SecretKeySpec(botToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(secretKeySpec);
+            byte[] hash = mac.doFinal(dataCheckString.toString().getBytes(StandardCharsets.UTF_8));
+            
+            return bytesToHex(hash);
+        } catch (Exception e) {
+            log.error("Ошибка при вычислении фиксированного порядка подписи", e);
+            return "";
+        }
+    }
+
+    /**
+     * Добавление поля в строку для проверки (как в примере).
+     */
+    private void addField(StringBuilder sb, String key, String value) {
+        if (value != null && !value.isEmpty()) {
+            sb.append(key).append("=").append(value).append("\n");
+        }
+    }
+
 }
