@@ -76,7 +76,7 @@ public class TelegramAuthService {
                             }));
                 }))
                 .doOnSuccess(response -> log.info("Успешный вход через Telegram для пользователя: {}", response.getUsername()))
-                .doOnError(error -> log.error("Ошибка входа через Telegram для ID: {}", request.getId(), error));
+                .doOnError(error -> log.error("Ошибка входа через Telegram для ID: {}", request.getId()));
     }
 
     /**
