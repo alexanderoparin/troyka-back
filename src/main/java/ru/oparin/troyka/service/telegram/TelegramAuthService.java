@@ -184,6 +184,8 @@ public class TelegramAuthService {
             }
             params.put("auth_date", request.getAuth_date().toString());
 
+            log.debug("Отладка валидации Telegram, params = {}:", params);
+
             String dataCheckString = params.entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
                     .collect(Collectors.joining("\n"));
