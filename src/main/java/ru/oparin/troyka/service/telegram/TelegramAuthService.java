@@ -152,6 +152,10 @@ public class TelegramAuthService {
      */
     private Mono<Void> validateTelegramData(TelegramLoginRequest request) {
         return Mono.fromCallable(() -> {
+            log.info("Валидация данных Telegram для пользователя с ID: {}", request.getId());
+            log.debug("Данные запроса: id={}, first_name={}, username={}, auth_date={}", 
+                request.getId(), request.getFirst_name(), request.getUsername(), request.getAuth_date());
+            
             // Проверяем актуальность данных (не старше 24 часов)
             long currentTime = Instant.now().getEpochSecond();
             if (currentTime - request.getAuth_date() > 86400) { // 24 часа
@@ -189,6 +193,12 @@ public class TelegramAuthService {
             String calculatedHash = bytesToHex(hash);
 
             // Проверяем подпись
+            log.debug("Отладка валидации Telegram:");
+            log.debug("Строка для проверки: {}", dataCheckString);
+            log.debug("Токен бота (первые 10 символов): {}", telegramBotToken.substring(0, Math.min(10, telegramBotToken.length())));
+            log.debug("Вычисленная подпись: {}", calculatedHash);
+            log.debug("Полученная подпись: {}", request.getHash());
+            
             if (!calculatedHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
             }
