@@ -261,6 +261,8 @@ public class TelegramAuthService {
             }
             params.put("auth_date", request.getAuth_date().toString());
 
+            log.debug("Отладка валидации Telegram, params = {}:", params);
+
             String dataCheckString = params.entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
                     .collect(Collectors.joining("\n"));
@@ -300,7 +302,7 @@ public class TelegramAuthService {
                     .email(email)
                     .password(passwordEncoder.encode("telegram_auth_" + request.getId())) // Временный пароль
                     .role(Role.USER)
-                    .emailVerified(false) // Email не верифицирован, но Telegram подтвержден
+                    .emailVerified(false)
                     .telegramId(request.getId())
                     .telegramUsername(request.getUsername())
                     .telegramFirstName(request.getFirst_name())
@@ -384,10 +386,10 @@ public class TelegramAuthService {
             addField(dataCheckString, "username", request.getUsername());
             
             // Убираем последний символ новой строки
-            if (dataCheckString.length() > 0) {
+            if (!dataCheckString.isEmpty()) {
                 dataCheckString.setLength(dataCheckString.length() - 1);
             }
-            
+
             log.debug("Фиксированный порядок строка: {}", dataCheckString.toString());
             
             // Используем прямой токен как секретный ключ
