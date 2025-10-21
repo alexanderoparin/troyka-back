@@ -207,8 +207,14 @@ public class TelegramAuthService {
             String alternativeHash = calculateTelegramHash(dataCheckString, telegramBotToken);
             log.debug("Альтернативная подпись (WebAppData): {}", alternativeHash);
             
-            // Проверяем подпись (сначала стандартный алгоритм, потом альтернативный)
-            if (!calculatedHash.equals(request.getHash()) && !alternativeHash.equals(request.getHash())) {
+            // Пробуем третий алгоритм - с URL-encoded данными
+            String urlEncodedHash = calculateTelegramHashUrlEncoded(request, telegramBotToken);
+            log.debug("URL-encoded подпись: {}", urlEncodedHash);
+            
+            // Проверяем подпись (пробуем все три алгоритма)
+            if (!calculatedHash.equals(request.getHash()) && 
+                !alternativeHash.equals(request.getHash()) && 
+                !urlEncodedHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
             }
 
@@ -370,6 +376,48 @@ public class TelegramAuthService {
             return bytesToHex(hash);
         } catch (Exception e) {
             log.error("Ошибка при вычислении альтернативной подписи Telegram", e);
+            return "";
+        }
+    }
+
+    /**
+     * Метод валидации подписи Telegram с URL-encoded данными (как в оригинальном алгоритме).
+     */
+    private String calculateTelegramHashUrlEncoded(TelegramLoginRequest request, String botToken) {
+        try {
+            // Создаем строку для проверки в URL-encoded формате
+            Map<String, String> params = new TreeMap<>();
+            params.put("id", request.getId().toString());
+            if (request.getFirst_name() != null) {
+                params.put("first_name", request.getFirst_name());
+            }
+            if (request.getLast_name() != null) {
+                params.put("last_name", request.getLast_name());
+            }
+            if (request.getUsername() != null) {
+                params.put("username", request.getUsername());
+            }
+            if (request.getPhoto_url() != null) {
+                params.put("photo_url", request.getPhoto_url());
+            }
+            params.put("auth_date", request.getAuth_date().toString());
+
+            // Создаем строку в формате key=value&key=value
+            String dataCheckString = params.entrySet().stream()
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .collect(Collectors.joining("&"));
+
+            log.debug("URL-encoded строка для проверки: {}", dataCheckString);
+
+            // Используем стандартный алгоритм: HMAC-SHA256(botToken, dataCheckString)
+            SecretKeySpec secretKeySpec = new SecretKeySpec(botToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(secretKeySpec);
+            byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
+            
+            return bytesToHex(hash);
+        } catch (Exception e) {
+            log.error("Ошибка при вычислении URL-encoded подписи Telegram", e);
             return "";
         }
     }
