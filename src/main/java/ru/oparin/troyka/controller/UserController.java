@@ -12,7 +12,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.ImageGenerationHistoryDTO;
 import ru.oparin.troyka.model.dto.UserInfoDTO;
-import ru.oparin.troyka.model.dto.auth.TelegramLinkRequest;
+import ru.oparin.troyka.model.dto.auth.TelegramAuthRequest;
 import ru.oparin.troyka.service.FileService;
 import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.service.telegram.TelegramAuthService;
@@ -81,7 +81,7 @@ public class UserController {
     @Operation(summary = "Привязка Telegram к аккаунту",
             description = "Привязывает Telegram аккаунт к существующему пользователю")
     @PostMapping("/me/telegram/link")
-    public Mono<ResponseEntity<String>> linkTelegram(@Valid @RequestBody TelegramLinkRequest request) {
+    public Mono<ResponseEntity<String>> linkTelegram(@Valid @RequestBody TelegramAuthRequest request) {
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userService::findByUsernameOrThrow)
                 .flatMap(user -> telegramAuthService.linkTelegramToExistingUser(request, user.getId()))

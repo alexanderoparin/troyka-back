@@ -7,14 +7,15 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO для запроса входа через Telegram Login Widget.
+ * DTO для запроса аутентификации через Telegram Login Widget.
+ * Используется как для входа, так и для привязки Telegram к существующему аккаунту.
  * Содержит данные, полученные от Telegram после авторизации пользователя.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TelegramLoginRequest {
+public class TelegramAuthRequest {
 
     /**
      * ID пользователя в Telegram.
