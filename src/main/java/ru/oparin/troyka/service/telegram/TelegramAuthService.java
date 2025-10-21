@@ -2,7 +2,6 @@ package ru.oparin.troyka.service.telegram;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -181,8 +180,8 @@ public class TelegramAuthService {
                     .collect(Collectors.joining("\n"));
 
             // Вычисляем подпись
-            String secretKey = DigestUtils.sha256Hex(telegramBotToken);
-            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            // Для Telegram Login Widget используется сам токен бота как секретный ключ
+            SecretKeySpec secretKeySpec = new SecretKeySpec(telegramBotToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(secretKeySpec);
@@ -231,8 +230,8 @@ public class TelegramAuthService {
                     .collect(Collectors.joining("\n"));
 
             // Вычисляем подпись
-            String secretKey = DigestUtils.sha256Hex(telegramBotToken);
-            SecretKeySpec secretKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            // Для Telegram Login Widget используется сам токен бота как секретный ключ
+            SecretKeySpec secretKeySpec = new SecretKeySpec(telegramBotToken.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(secretKeySpec);
