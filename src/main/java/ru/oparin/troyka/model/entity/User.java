@@ -67,6 +67,38 @@ public class User {
     private Boolean emailVerified = false;
 
     /**
+     * ID пользователя в Telegram.
+     * Уникальный идентификатор для интеграции с Telegram.
+     */
+    private Long telegramId;
+
+    /**
+     * Username пользователя в Telegram (без @).
+     * Может быть null, если пользователь не указал username.
+     */
+    private String telegramUsername;
+
+    /**
+     * Имя пользователя в Telegram.
+     * Берется из профиля Telegram.
+     */
+    private String telegramFirstName;
+
+    /**
+     * URL фото профиля из Telegram.
+     * Ссылка на аватар пользователя в Telegram.
+     */
+    private String telegramPhotoUrl;
+
+    /**
+     * Включены ли уведомления в Telegram.
+     * true - пользователь получает уведомления в Telegram.
+     * По умолчанию true.
+     */
+    @Builder.Default
+    private Boolean telegramNotificationsEnabled = true;
+
+    /**
      * Дата и время создания записи пользователя.
      * Автоматически устанавливается при создании.
      */

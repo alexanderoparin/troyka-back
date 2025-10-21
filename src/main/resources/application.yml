@@ -97,3 +97,11 @@ robokassa:
   success-url: "https://24reshai.ru/payment/success"
   fail-url: "https://24reshai.ru/payment/fail"
   result-url: "https://24reshai.ru/api/payment/result"
+
+# Telegram
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN}
+    username: ${TELEGRAM_BOT_USERNAME:reshai24_bot}
+  login:
+    bot-token: ${TELEGRAM_LOGIN_BOT_TOKEN:${TELEGRAM_BOT_TOKEN}}

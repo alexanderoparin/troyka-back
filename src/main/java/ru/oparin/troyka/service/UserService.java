@@ -76,4 +76,46 @@ public class UserService {
                     } else return Mono.empty();
                 });
     }
+
+    public Mono<User> findByTelegramId(Long telegramId) {
+        return withRetry(userRepository.findByTelegramId(telegramId));
+    }
+
+    public Mono<Boolean> existsByTelegramId(Long telegramId) {
+        return withRetry(userRepository.existsByTelegramId(telegramId));
+    }
+
+    public Mono<Void> existsByUsernameOrEmailOrTelegramId(String username, String email, Long telegramId) {
+        return withRetry(userRepository.existsByUsername(username))
+                .flatMap(usernameExists -> {
+                    if (usernameExists) {
+                        return Mono.error(new AuthException(
+                                HttpStatus.CONFLICT,
+                                "Пользователь с таким именем уже существует"
+                        ));
+                    } else {
+                        return withRetry(userRepository.existsByEmail(email))
+                                .flatMap(emailExists -> {
+                                    if (emailExists) {
+                                        return Mono.error(new AuthException(
+                                                HttpStatus.CONFLICT,
+                                                "Пользователь с таким email уже существует"
+                                        ));
+                                    } else {
+                                        return withRetry(userRepository.existsByTelegramId(telegramId))
+                                                .flatMap(telegramExists -> {
+                                                    if (telegramExists) {
+                                                        return Mono.error(new AuthException(
+                                                                HttpStatus.CONFLICT,
+                                                                "Пользователь с таким Telegram ID уже существует"
+                                                        ));
+                                                    } else {
+                                                        return Mono.empty();
+                                                    }
+                                                });
+                                    }
+                                });
+                    }
+                });
+    }
 }

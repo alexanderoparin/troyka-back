@@ -13,6 +13,7 @@ import ru.oparin.troyka.service.AuthService;
 import ru.oparin.troyka.service.EmailVerificationService;
 import ru.oparin.troyka.service.PasswordResetService;
 import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.service.telegram.TelegramAuthService;
 import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
@@ -26,6 +27,7 @@ public class AuthController {
     private final PasswordResetService passwordResetService;
     private final EmailVerificationService emailVerificationService;
     private final UserService userService;
+    private final TelegramAuthService telegramAuthService;
 
     @Operation(summary = "Регистрация нового пользователя",
             description = "Создает нового пользователя в системе и возвращает JWT токен")
@@ -95,5 +97,14 @@ public class AuthController {
                     log.error("Ошибка при повторной отправке письма подтверждения", e);
                     return Mono.just(ResponseEntity.badRequest().body(new MessageResponse("Ошибка при отправке письма")));
                 });
+    }
+
+    @Operation(summary = "Вход через Telegram",
+            description = "Аутентификация пользователя через Telegram Login Widget")
+    @PostMapping("/telegram/login")
+    public Mono<ResponseEntity<AuthResponse>> loginWithTelegram(@Valid @RequestBody TelegramLoginRequest request) {
+        log.info("Получен запрос на вход через Telegram для пользователя с ID: {}", request.getId());
+        return telegramAuthService.loginWithTelegram(request)
+                .map(ResponseEntity::ok);
     }
 }
