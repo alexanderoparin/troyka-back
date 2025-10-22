@@ -16,6 +16,11 @@ public class UserInfoDTO {
     private String role;
     private String createdAt;
     private Boolean emailVerified;
+    private Long telegramId;
+    private String telegramUsername;
+    private String telegramFirstName;
+    private String telegramPhotoUrl;
+    private Boolean telegramNotificationsEnabled;
 
     public static UserInfoDTO fromUser(User user) {
         return UserInfoDTO.builder()
@@ -24,6 +29,11 @@ public class UserInfoDTO {
                 .role(user.getRole().name())
                 .createdAt(user.getCreatedAt().toString())
                 .emailVerified(user.getEmailVerified())
+                .telegramId(user.getTelegramId())
+                .telegramUsername(user.getTelegramUsername())
+                .telegramFirstName(user.getTelegramFirstName())
+                .telegramPhotoUrl(user.getTelegramPhotoUrl())
+                .telegramNotificationsEnabled(user.getTelegramNotificationsEnabled())
                 .build();
     }
 }
