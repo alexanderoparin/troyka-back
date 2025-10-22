@@ -7,13 +7,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.auth.*;
-import ru.oparin.troyka.service.AuthService;
-import ru.oparin.troyka.service.EmailVerificationService;
-import ru.oparin.troyka.service.PasswordResetService;
-import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.service.*;
 import ru.oparin.troyka.service.telegram.TelegramAuthService;
+import ru.oparin.troyka.util.JwtUtil;
 import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
@@ -28,6 +27,7 @@ public class AuthController {
     private final EmailVerificationService emailVerificationService;
     private final UserService userService;
     private final TelegramAuthService telegramAuthService;
+    private final JwtService jwtService;
 
     @Operation(summary = "Регистрация нового пользователя",
             description = "Создает нового пользователя в системе и возвращает JWT токен")
@@ -107,6 +107,26 @@ public class AuthController {
         log.debug("Данные запроса Telegram: {}", request);
         return telegramAuthService.loginWithTelegram(request)
                 .map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Выход из системы",
+            description = "Завершает сессию пользователя и инвалидирует JWT токен")
+    @PostMapping("/logout")
+    public Mono<ResponseEntity<MessageResponse>> logout(ServerWebExchange exchange) {
+        return SecurityUtil.getCurrentUsername()
+                .doOnNext(username -> log.info("Пользователь {} выходит из системы", username))
+                .then(JwtUtil.extractToken(exchange))
+                .doOnNext(token -> {
+                    if (token != null) {
+                        jwtService.invalidateToken(token);
+                        log.info("Токен пользователя инвалидирован");
+                    }
+                })
+                .then(Mono.just(ResponseEntity.ok(new MessageResponse("Успешный выход из системы"))))
+                .onErrorResume(e -> {
+                    log.error("Ошибка при выходе из системы", e);
+                    return Mono.just(ResponseEntity.ok(new MessageResponse("Выход выполнен")));
+                });
     }
 
     @PostMapping("/telegram/debug")

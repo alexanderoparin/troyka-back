@@ -1,5 +1,6 @@
 package ru.oparin.troyka.util;
 
+import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
  * 
  * TODO: В будущем заменить на Jackson или Gson для более надежной работы с JSON.
  */
+@UtilityClass
 @Slf4j
 public class JsonUtils {
 

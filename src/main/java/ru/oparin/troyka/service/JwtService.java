@@ -2,6 +2,7 @@ package ru.oparin.troyka.service;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.oparin.troyka.model.entity.User;
@@ -13,7 +14,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class JwtService {
+
+    private final TokenBlacklistService tokenBlacklistService;
 
     @Value("${jwt.secret}")
     private String secretKey;
@@ -42,6 +46,11 @@ public class JwtService {
 
     public boolean validateToken(String token) {
         try {
+            // Сначала проверяем, не заблокирован ли токен
+            if (tokenBlacklistService.isTokenBlacklisted(token)) {
+                return false;
+            }
+            
             Jwts.parser()
                     .verifyWith(getSigningKey())
                     .build()
@@ -60,4 +69,14 @@ public class JwtService {
                 .getPayload()
                 .getSubject();
     }
+
+    /**
+     * Инвалидирует токен, добавляя его в черный список.
+     * 
+     * @param token JWT токен для инвалидации
+     */
+    public void invalidateToken(String token) {
+        tokenBlacklistService.blacklistToken(token).subscribe();
+    }
+
 }
