@@ -41,7 +41,15 @@ public class ReceiptItem {
      */
     @JsonProperty("payment_method")
     @Builder.Default
-    private String paymentMethod = "service";
+    private String paymentMethod = "full_prepayment";
+
+    /**
+     * Способ расчета
+     * По умолчанию: service (услуга)
+     */
+    @JsonProperty("payment_object")
+    @Builder.Default
+    private String paymentObject = "service";
     
     /**
      * Налоговая ставка

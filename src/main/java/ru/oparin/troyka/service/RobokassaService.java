@@ -290,7 +290,8 @@ public class RobokassaService {
                 .name(description)
                 .quantity(1)
                 .sum(BigDecimal.valueOf(amount))
-                .paymentMethod("service")  // Услуга
+                .paymentMethod("full_prepayment")  // Предоплата 100%
+                .paymentObject("service")  // Услуга
                 .tax("none")  // Без НДС
                 .build();
         
