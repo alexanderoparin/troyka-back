@@ -242,25 +242,7 @@ public class TelegramAuthService {
                 throw new AuthException(HttpStatus.BAD_REQUEST, "Данные авторизации устарели");
             }
 
-            // Создаем строку для проверки подписи
-            Map<String, String> params = new TreeMap<>();
-            params.put("id", request.getId().toString());
-            if (request.getFirst_name() != null) {
-                params.put("first_name", request.getFirst_name());
-            }
-            if (request.getLast_name() != null) {
-                params.put("last_name", request.getLast_name());
-            }
-            if (request.getUsername() != null) {
-                params.put("username", request.getUsername());
-            }
-            if (request.getPhoto_url() != null) {
-                params.put("photo_url", request.getPhoto_url());
-            }
-            if (request.getEmail() != null) {
-                params.put("email", request.getEmail());
-            }
-            params.put("auth_date", request.getAuth_date().toString());
+            Map<String, String> params = paramsForHash(request);
 
             String dataCheckString = params.entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -285,6 +267,28 @@ public class TelegramAuthService {
 
             return null;
         });
+    }
+
+    /**
+     * Создаем строку для проверки подписи
+     */
+    private Map<String, String> paramsForHash(TelegramAuthRequest request) {
+        Map<String, String> params = new TreeMap<>();
+        params.put("id", request.getId().toString());
+        if (request.getFirst_name() != null) {
+            params.put("first_name", request.getFirst_name());
+        }
+        if (request.getLast_name() != null) {
+            params.put("last_name", request.getLast_name());
+        }
+        if (request.getUsername() != null) {
+            params.put("username", request.getUsername());
+        }
+        if (request.getPhoto_url() != null) {
+            params.put("photo_url", request.getPhoto_url());
+        }
+        params.put("auth_date", request.getAuth_date().toString());
+        return params;
     }
 
 
