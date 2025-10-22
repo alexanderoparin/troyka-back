@@ -126,6 +126,7 @@ public class TelegramAuthService {
      * @return JWT токен и обновленная информация о пользователе
      */
     public Mono<AuthResponse> linkTelegramToExistingUser(TelegramAuthRequest request, Long currentUserId) {
+        log.info("Привязка Telegram к существующему аккаунту, TelegramAuthRequest: {}", request);
         return validateTelegramData(request)
                 .then(Mono.defer(() -> {
                     // Проверяем, не привязан ли уже этот telegram_id к другому пользователю
@@ -281,7 +282,10 @@ public class TelegramAuthService {
             mac.init(secretKeySpec);
             byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
             String calculatedHash = bytesToHex(hash);
-            
+
+            log.debug("Подпись Telegram: {}", request.getHash());
+            log.debug("Рассчитанная подпись: {}", calculatedHash);
+
             if (!calculatedHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
             }
@@ -368,6 +372,7 @@ public class TelegramAuthService {
      * Включает сохранение пользователя, начисление бонусных баллов и создание JWT токена.
      */
     private Mono<AuthResponse> createNewUserAndAuthResponse(TelegramAuthRequest request) {
+        log.info("Создание нового пользователя из Telegram, TelegramAuthRequest: {}", request);
         return createNewUserFromTelegram(request)
                 .flatMap(user -> userService.saveUser(user)
                         .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
