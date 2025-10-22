@@ -106,15 +106,18 @@ public class TelegramAuthService {
      * @return JWT токен и обновленная информация о пользователе
      */
     public Mono<AuthResponse> linkTelegramToUser(TelegramAuthRequest request) {
-        // Если есть email - используем безопасную привязку по email
-        if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
-            return linkTelegramByEmail(request);
-        } else {
-            // Иначе - обычная привязка для авторизованного пользователя
-            return SecurityUtil.getCurrentUsername()
-                    .flatMap(userService::findByUsernameOrThrow)
-                    .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
-        }
+        return SecurityUtil.getCurrentUsername()
+                .doOnNext(username -> log.debug("Привязка телеграмм к аккаунту с username {}: {}", username, request))
+                .flatMap(username -> {
+                    // Если есть email - используем безопасную привязку по email
+                    if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
+                        return linkTelegramByEmail(request);
+                    } else {
+                        // Иначе - обычная привязка для авторизованного пользователя
+                        return userService.findByUsernameOrThrow(username)
+                                .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
+                    }
+                });
     }
 
     /**

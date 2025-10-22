@@ -85,10 +85,7 @@ public class UserController {
     public Mono<ResponseEntity<String>> linkTelegram(@Valid @RequestBody TelegramAuthRequest request) {
         return telegramAuthService.linkTelegramToUser(request)
                 .map(response -> ResponseEntity.ok("Telegram успешно привязан к аккаунту"))
-                .onErrorResume(e -> {
-                    log.error("Ошибка при привязке Telegram", e);
-                    return Mono.just(ResponseEntity.badRequest().body("Ошибка при привязке Telegram: " + e.getMessage()));
-                });
+                .onErrorResume(e -> Mono.just(ResponseEntity.badRequest().body("Ошибка при привязке Telegram")));
     }
 
     @Operation(summary = "Обновление имени пользователя",
