@@ -65,6 +65,10 @@ public class UserService {
                 });
     }
 
+    public Mono<Boolean> existsByUsername(String username) {
+        return withRetry(userRepository.existsByUsername(username));
+    }
+
     public Mono<Void> existsByEmail(String email) {
         return withRetry(userRepository.existsByEmail(email))
                 .flatMap(emailExists -> {

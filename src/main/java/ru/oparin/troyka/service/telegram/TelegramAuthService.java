@@ -277,13 +277,24 @@ public class TelegramAuthService {
      * Рекурсивная генерация уникального username.
      */
     private Mono<String> generateUniqueUsernameRecursive(String baseUsername, int counter) {
+        // Ограничиваем количество попыток (максимум 100)
+        if (counter > 100) {
+            return Mono.just(baseUsername + "_" + System.currentTimeMillis());
+        }
+        
         String username = counter == 1 ? baseUsername : baseUsername + "_" + counter;
         
-        return userService.findByUsernameOrThrow(username)
-                .then(Mono.just(username))
-                .onErrorResume(AuthException.class, e -> 
-                    generateUniqueUsernameRecursive(baseUsername, counter + 1)
-                );
+        // Проверяем, существует ли пользователь с таким username
+        return userService.existsByUsername(username)
+                .flatMap(exists -> {
+                    if (exists) {
+                        // Username занят, пробуем следующий
+                        return generateUniqueUsernameRecursive(baseUsername, counter + 1);
+                    } else {
+                        // Username свободен
+                        return Mono.just(username);
+                    }
+                });
     }
 
     /**
