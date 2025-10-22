@@ -97,10 +97,8 @@ public class TelegramAuthService {
     }
 
     /**
-     * Универсальная привязка Telegram к пользователю.
-     * Автоматически выбирает наиболее подходящий способ привязки:
-     * - Если есть email - использует безопасную привязку по email
-     * - Иначе - использует обычную привязку для авторизованного пользователя
+     * Привязка Telegram к текущему авторизованному пользователю.
+     * Используется в настройках аккаунта для привязки Telegram.
      *
      * @param request данные от Telegram Login Widget
      * @return JWT токен и обновленная информация о пользователе
@@ -108,16 +106,8 @@ public class TelegramAuthService {
     public Mono<AuthResponse> linkTelegramToUser(TelegramAuthRequest request) {
         return SecurityUtil.getCurrentUsername()
                 .doOnNext(username -> log.debug("Привязка телеграмм к аккаунту с username {}: {}", username, request))
-                .flatMap(username -> {
-                    // Если есть email - используем безопасную привязку по email
-                    if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
-                        return linkTelegramByEmail(request);
-                    } else {
-                        // Иначе - обычная привязка для авторизованного пользователя
-                        return userService.findByUsernameOrThrow(username)
-                                .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
-                    }
-                });
+                .flatMap(userService::findByUsernameOrThrow)
+                .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
     }
 
     /**
@@ -164,11 +154,11 @@ public class TelegramAuthService {
      * @return JWT токен и обновленная информация о пользователе
      */
     public Mono<AuthResponse> linkTelegramByEmail(TelegramAuthRequest request) {
+        // Если нет email в Telegram профиле - используем обычную привязку
         if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
-            return Mono.error(new AuthException(
-                    HttpStatus.BAD_REQUEST,
-                    "Email не предоставлен в Telegram профиле"
-            ));
+            return SecurityUtil.getCurrentUsername()
+                    .flatMap(userService::findByUsernameOrThrow)
+                    .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
         }
 
         return validateTelegramData(request)
