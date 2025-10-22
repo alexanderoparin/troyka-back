@@ -12,7 +12,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.ImageGenerationHistoryDTO;
 import ru.oparin.troyka.model.dto.UserInfoDTO;
+import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.auth.TelegramAuthRequest;
+import ru.oparin.troyka.model.dto.auth.UpdateEmailRequest;
+import ru.oparin.troyka.model.dto.auth.UpdateUsernameRequest;
 import ru.oparin.troyka.service.FileService;
 import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.service.telegram.TelegramAuthService;
@@ -85,6 +88,30 @@ public class UserController {
                 .onErrorResume(e -> {
                     log.error("Ошибка при привязке Telegram", e);
                     return Mono.just(ResponseEntity.badRequest().body("Ошибка при привязке Telegram: " + e.getMessage()));
+                });
+    }
+
+    @Operation(summary = "Обновление имени пользователя",
+            description = "Обновляет имя пользователя текущего авторизованного пользователя")
+    @PutMapping("/me/username")
+    public Mono<ResponseEntity<MessageResponse>> updateUsername(@Valid @RequestBody UpdateUsernameRequest request) {
+        return userService.updateUsername(request.getUsername())
+                .map(response -> ResponseEntity.ok(new MessageResponse("Имя пользователя успешно обновлено")))
+                .onErrorResume(e -> {
+                    log.error("Ошибка при обновлении имени пользователя", e);
+                    return Mono.just(ResponseEntity.badRequest().body(new MessageResponse("Ошибка при обновлении имени пользователя: " + e.getMessage())));
+                });
+    }
+
+    @Operation(summary = "Обновление email",
+            description = "Обновляет email адрес текущего авторизованного пользователя")
+    @PutMapping("/me/email")
+    public Mono<ResponseEntity<MessageResponse>> updateEmail(@Valid @RequestBody UpdateEmailRequest request) {
+        return userService.updateEmail(request.getEmail())
+                .map(response -> ResponseEntity.ok(new MessageResponse("Email адрес успешно обновлен")))
+                .onErrorResume(e -> {
+                    log.error("Ошибка при обновлении email", e);
+                    return Mono.just(ResponseEntity.badRequest().body(new MessageResponse("Ошибка при обновлении email: " + e.getMessage())));
                 });
     }
 

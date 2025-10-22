@@ -134,4 +134,74 @@ public class UserService {
                     }
                 });
     }
+
+    /**
+     * Обновление имени пользователя текущего авторизованного пользователя.
+     */
+    public Mono<User> updateUsername(String newUsername) {
+        return SecurityUtil.getCurrentUsername()
+                .flatMap(currentUsername -> {
+                    // Проверяем, что новое имя отличается от текущего
+                    if (currentUsername.equals(newUsername)) {
+                        return Mono.error(new AuthException(
+                                HttpStatus.BAD_REQUEST,
+                                "Новое имя пользователя должно отличаться от текущего"
+                        ));
+                    }
+                    
+                    // Проверяем, что новое имя не занято
+                    return existsByUsername(newUsername)
+                            .flatMap(exists -> {
+                                if (exists) {
+                                    return Mono.error(new AuthException(
+                                            HttpStatus.CONFLICT,
+                                            "Пользователь с таким именем уже существует"
+                                    ));
+                                }
+                                
+                                // Обновляем имя пользователя
+                                return findByUsernameOrThrow(currentUsername)
+                                        .flatMap(user -> {
+                                            user.setUsername(newUsername);
+                                            return saveUser(user);
+                                        });
+                            });
+                });
+    }
+
+    /**
+     * Обновление email текущего авторизованного пользователя.
+     */
+    public Mono<User> updateEmail(String newEmail) {
+        return SecurityUtil.getCurrentUsername()
+                .flatMap(currentUsername -> {
+                    // Получаем текущего пользователя
+                    return findByUsernameOrThrow(currentUsername)
+                            .flatMap(user -> {
+                                // Проверяем, что новый email отличается от текущего
+                                if (newEmail.equals(user.getEmail())) {
+                                    return Mono.error(new AuthException(
+                                            HttpStatus.BAD_REQUEST,
+                                            "Новый email должен отличаться от текущего"
+                                    ));
+                                }
+                                
+                                // Проверяем, что новый email не занят
+                                return withRetry(userRepository.existsByEmail(newEmail))
+                                        .flatMap(exists -> {
+                                            if (exists) {
+                                                return Mono.error(new AuthException(
+                                                        HttpStatus.CONFLICT,
+                                                        "Пользователь с таким email уже существует"
+                                                ));
+                                            }
+                                            
+                                            // Обновляем email и сбрасываем статус подтверждения
+                                            user.setEmail(newEmail);
+                                            user.setEmailVerified(false);
+                                            return saveUser(user);
+                                        });
+                            });
+                });
+    }
 }
