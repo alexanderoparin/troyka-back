@@ -74,6 +74,7 @@ public class PaymentService {
                 .creditsAmount(payment.getCreditsAmount())
                 .paidAt(payment.getPaidAt() != null ? payment.getPaidAt().toString() : null)
                 .createdAt(payment.getCreatedAt().toString())
+                .isTest(payment.getIsTest())
                 .build();
     }
 }

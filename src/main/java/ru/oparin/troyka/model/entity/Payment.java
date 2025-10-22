@@ -89,6 +89,14 @@ public class Payment {
     private String robokassaResponse;
 
     /**
+     * Флаг тестового платежа.
+     * Указывает, был ли платеж выполнен в тестовом режиме.
+     * По умолчанию false.
+     */
+    @Builder.Default
+    private Boolean isTest = false;
+
+    /**
      * Дата и время создания платежа.
      * Автоматически устанавливается при создании.
      */

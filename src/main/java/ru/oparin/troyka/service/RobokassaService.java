@@ -1,5 +1,6 @@
 package ru.oparin.troyka.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -7,6 +8,8 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.payment.PaymentRequest;
 import ru.oparin.troyka.model.dto.payment.PaymentResponse;
+import ru.oparin.troyka.model.dto.payment.Receipt;
+import ru.oparin.troyka.model.dto.payment.ReceiptItem;
 import ru.oparin.troyka.model.entity.Payment;
 import ru.oparin.troyka.model.enums.PaymentStatus;
 import ru.oparin.troyka.repository.PaymentRepository;
@@ -17,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Сервис для работы с платежной системой Робокасса
@@ -28,6 +32,7 @@ public class RobokassaService {
 
     private final PaymentRepository paymentRepository;
     private final UserPointsService userPointsService;
+    private final ObjectMapper objectMapper;
 
     /**
      * Логин мерчанта в Робокассе
@@ -82,13 +87,14 @@ public class RobokassaService {
         // Используем количество поинтов из запроса
         Integer creditsAmount = request.getCredits();
 
-        // Создаем платеж в БД без orderId (будет использоваться ID)
+        // Создаем платеж в БД
         Payment payment = Payment.builder()
                 .userId(request.getUserId())
                 .amount(BigDecimal.valueOf(request.getAmount()))
                 .description(request.getDescription())
                 .status(PaymentStatus.CREATED)
                 .creditsAmount(creditsAmount)
+                .isTest(isTest)
                 .build();
 
         return paymentRepository.save(payment)
@@ -97,11 +103,14 @@ public class RobokassaService {
                         // Используем ID платежа как InvId для Robokassa
                         String invId = savedPayment.getId().toString();
 
-                        // Создаем подпись для запроса
-                        String signature = createSignature(request.getAmount(), invId);
+                        // Создаем Receipt для фискализации
+                        Receipt receipt = createDefaultReceipt(request.getDescription(), request.getAmount());
+
+                        // Создаем подпись для запроса (включая Receipt)
+                        String signature = createSignature(request.getAmount(), invId, receipt);
 
                         // Формируем URL для оплаты
-                        String paymentUrl = buildPaymentUrl(request.getAmount(), invId, request.getDescription(), signature);
+                        String paymentUrl = buildPaymentUrl(request.getAmount(), invId, request.getDescription(), signature, receipt);
 
                         // Обновляем платеж с подписью и URL
                         savedPayment.setRobokassaSignature(signature);
@@ -203,16 +212,26 @@ public class RobokassaService {
 
     /**
      * Создает подпись для запроса к Робокассе
-     * Согласно документации: MerchantLogin:OutSum:InvId:Password#1
-     * где InvId может быть пустым, но должен присутствовать
+     * Согласно документации: MerchantLogin:OutSum:InvId:Receipt:Password#1
+     * где Receipt включается в подпись если присутствует
      * 
      * @param amount сумма платежа
      * @param orderId идентификатор заказа
+     * @param receipt данные чека для фискализации
      * @return MD5 подпись
      */
-    private String createSignature(Double amount, String orderId) {
-        String checkString = String.format("%s:%s:%s:%s", merchantLogin, amount, orderId, password1);
-        return md5(checkString);
+    private String createSignature(Double amount, String orderId, Receipt receipt) {
+        try {
+            String receiptJson = objectMapper.writeValueAsString(receipt);
+            // Для подписи используем одинарное URL-кодирование
+            String receiptUrlEncoded = URLEncoder.encode(receiptJson, StandardCharsets.UTF_8);
+            String checkString = String.format("%s:%s:%s:%s:%s", 
+                merchantLogin, amount, orderId, receiptUrlEncoded, password1);
+            return md5(checkString);
+        } catch (Exception e) {
+            log.error("Ошибка создания подписи с Receipt: {}", e.getMessage());
+            throw new RuntimeException("Не удалось создать подпись для платежа", e);
+        }
     }
 
     /**
@@ -222,9 +241,10 @@ public class RobokassaService {
      * @param orderId идентификатор заказа
      * @param description описание платежа
      * @param signature подпись запроса
+     * @param receipt данные чека для фискализации
      * @return URL для перенаправления на оплату
      */
-    private String buildPaymentUrl(Double amount, String orderId, String description, String signature) {
+    private String buildPaymentUrl(Double amount, String orderId, String description, String signature, Receipt receipt) {
         StringBuilder url = new StringBuilder();
         url.append("https://auth.robokassa.ru/Merchant/Index.aspx");
         url.append("?MerchantLogin=").append(merchantLogin);
@@ -238,11 +258,46 @@ public class RobokassaService {
         url.append("&SuccessURL=").append(URLEncoder.encode(successUrl, StandardCharsets.UTF_8));
         url.append("&FailURL=").append(URLEncoder.encode(failUrl, StandardCharsets.UTF_8));
 
+        // Добавляем параметр Receipt для фискализации (двойное URL-кодирование)
+        try {
+            String receiptJson = objectMapper.writeValueAsString(receipt);
+            // Первое кодирование
+            String receiptUrlEncoded = URLEncoder.encode(receiptJson, StandardCharsets.UTF_8);
+            // Второе кодирование
+            String receiptDoubleEncoded = URLEncoder.encode(receiptUrlEncoded, StandardCharsets.UTF_8);
+            url.append("&Receipt=").append(receiptDoubleEncoded);
+        } catch (Exception e) {
+            log.error("Ошибка сериализации Receipt: {}", e.getMessage());
+        }
+
         if (isTest) {
             url.append("&IsTest=1");
         }
 
+        log.info("URL для оплаты: {}", url);
         return url.toString();
+    }
+
+    /**
+     * Создает Receipt для фискализации с настройками по умолчанию
+     * 
+     * @param description описание услуги
+     * @param amount сумма платежа
+     * @return Receipt с настройками по умолчанию
+     */
+    public Receipt createDefaultReceipt(String description, Double amount) {
+        ReceiptItem item = ReceiptItem.builder()
+                .name(description)
+                .quantity(1)
+                .sum(BigDecimal.valueOf(amount))
+                .paymentMethod("service")  // Услуга
+                .tax("none")  // Без НДС
+                .build();
+        
+        return Receipt.builder()
+                .sno("usn_income")  // УСН доходы
+                .items(List.of(item))
+                .build();
     }
 
     /**

@@ -48,4 +48,9 @@ public class PaymentHistory {
      * Время создания платежа
      */
     private String createdAt;
+    
+    /**
+     * Флаг тестового платежа
+     */
+    private Boolean isTest;
 }
