@@ -87,7 +87,6 @@ public class JsonUtils {
             
             // Проверяем, что это JSON массив
             if (!content.startsWith("[") || !content.endsWith("]")) {
-                log.warn("Некорректный JSON формат, ожидается массив: {}", json);
                 return List.of();
             }
             
@@ -118,7 +117,6 @@ public class JsonUtils {
                     .collect(Collectors.toList());
                     
         } catch (Exception e) {
-            log.warn("Ошибка при парсинге JSON: {}", json, e);
             return List.of();
         }
     }
@@ -158,7 +156,6 @@ public class JsonUtils {
             // Подсчитываем элементы по запятым (упрощенный подход)
             return content.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)").length;
         } catch (Exception e) {
-            log.warn("Ошибка при подсчете размера JSON массива: {}", json, e);
             return 0;
         }
     }

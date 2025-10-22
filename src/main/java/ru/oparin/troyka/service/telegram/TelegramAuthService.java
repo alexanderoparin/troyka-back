@@ -17,6 +17,7 @@ import ru.oparin.troyka.model.enums.Role;
 import ru.oparin.troyka.service.JwtService;
 import ru.oparin.troyka.service.UserPointsService;
 import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.util.SecurityUtil;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -51,53 +52,69 @@ public class TelegramAuthService {
     /**
      * Вход через Telegram Login Widget.
      * Создает нового пользователя или находит существующего по telegram_id.
+     * Если есть email - предлагает привязку к существующему аккаунту.
+     * БЕЗОПАСНО: Не привязывает автоматически по username для предотвращения атак.
      *
      * @param request данные от Telegram Login Widget
      * @return JWT токен и информация о пользователе
      */
     public Mono<AuthResponse> loginWithTelegram(TelegramAuthRequest request) {
-        log.info("Попытка входа через Telegram для пользователя с ID: {}", request.getId());
-
         return validateTelegramData(request)
                 .then(Mono.defer(() -> {
-                    // Ищем пользователя по telegram_id
+                    // Ищем пользователя по telegram_id (безопасно)
                     return userService.findByTelegramId(request.getId())
                             .flatMap(existingUser -> {
-                                log.info("Найден существующий пользователь с telegram_id: {}", request.getId());
                                 return updateTelegramData(existingUser, request)
                                         .flatMap(userService::saveUser)
                                         .map(this::createAuthResponse);
                             })
                             .switchIfEmpty(Mono.defer(() -> {
-                                // Проверяем, есть ли пользователь с таким username
-                                if (request.getUsername() != null) {
-                                    return userService.findByUsernameOrThrow(request.getUsername())
+                                // Если есть email - предлагаем привязку к существующему аккаунту
+                                if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
+                                    return userService.findByEmail(request.getEmail())
                                             .flatMap(existingUser -> {
-                                                log.info("Найден существующий пользователь с username: {}, привязываем Telegram", request.getUsername());
+                                                // Проверяем, подтвержден ли email
+                                                if (existingUser.getEmailVerified() == null || !existingUser.getEmailVerified()) {
+                                                // Создаем нового пользователя, если email не подтвержден
+                                                return createNewUserAndAuthResponse(request);
+                                                }
+                                                
                                                 return updateTelegramData(existingUser, request)
                                                         .flatMap(userService::saveUser)
                                                         .map(this::createAuthResponse);
                                             })
-                                            .onErrorResume(AuthException.class, e -> {
-                                                // Пользователь не найден, создаем нового
-                                                log.info("Создание нового пользователя для telegram_id: {}", request.getId());
-                                                return createUserFromTelegram(request)
-                                                        .flatMap(user -> userService.saveUser(user)
-                                                                .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
-                                                                        .then(Mono.just(createAuthResponse(savedUser)))));
-                                            });
+                                            .switchIfEmpty(Mono.defer(() -> {
+                                                // Пользователь с таким email не найден, создаем нового
+                                                return createNewUserAndAuthResponse(request);
+                                            }));
                                 } else {
-                                    // Создаем нового пользователя без username
-                                    log.info("Создание нового пользователя для telegram_id: {}", request.getId());
-                                    return createUserFromTelegram(request)
-                                            .flatMap(user -> userService.saveUser(user)
-                                                    .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
-                                                            .then(Mono.just(createAuthResponse(savedUser)))));
+                                    // Создаем нового пользователя без email
+                                    return createNewUserAndAuthResponse(request);
                                 }
                             }));
                 }))
-                .doOnSuccess(response -> log.info("Успешный вход через Telegram для пользователя: {}", response.getUsername()))
                 .doOnError(error -> log.error("Ошибка входа через Telegram для ID: {}", request.getId(), error));
+    }
+
+    /**
+     * Универсальная привязка Telegram к пользователю.
+     * Автоматически выбирает наиболее подходящий способ привязки:
+     * - Если есть email - использует безопасную привязку по email
+     * - Иначе - использует обычную привязку для авторизованного пользователя
+     *
+     * @param request данные от Telegram Login Widget
+     * @return JWT токен и обновленная информация о пользователе
+     */
+    public Mono<AuthResponse> linkTelegramToUser(TelegramAuthRequest request) {
+        // Если есть email - используем безопасную привязку по email
+        if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
+            return linkTelegramByEmail(request);
+        } else {
+            // Иначе - обычная привязка для авторизованного пользователя
+            return SecurityUtil.getCurrentUsername()
+                    .flatMap(userService::findByUsernameOrThrow)
+                    .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
+        }
     }
 
     /**
@@ -109,8 +126,6 @@ public class TelegramAuthService {
      * @return JWT токен и обновленная информация о пользователе
      */
     public Mono<AuthResponse> linkTelegramToExistingUser(TelegramAuthRequest request, Long currentUserId) {
-        log.info("Привязка Telegram к существующему пользователю: {}", currentUserId);
-
         return validateTelegramData(request)
                 .then(Mono.defer(() -> {
                     // Проверяем, не привязан ли уже этот telegram_id к другому пользователю
@@ -126,18 +141,63 @@ public class TelegramAuthService {
                             })
                             .switchIfEmpty(Mono.defer(() -> {
                                 // Получаем текущего пользователя и привязываем Telegram
-                                return userService.findById(currentUserId)
-                                        .switchIfEmpty(Mono.error(new AuthException(
-                                                HttpStatus.NOT_FOUND,
-                                                "Пользователь не найден"
-                                        )))
+                                return userService.findByIdOrThrow(currentUserId)
                                         .flatMap(user -> updateTelegramData(user, request)
                                                 .flatMap(userService::saveUser));
                             }));
                 }))
-                .map(this::createAuthResponse)
-                .doOnSuccess(response -> log.info("Telegram успешно привязан к пользователю: {}", response.getUsername()))
-                .doOnError(error -> log.error("Ошибка привязки Telegram к пользователю: {}", currentUserId, error));
+                .map(this::createAuthResponse);
+    }
+
+    /**
+     * Безопасная привязка Telegram по email.
+     * Если пользователь с таким email существует и подтвержден - привязывает Telegram.
+     * Если пользователя нет - создает новый аккаунт с этим email.
+     * Требует подтверждения email для привязки к существующему аккаунту.
+     * Это более безопасный способ привязки, чем по username.
+     *
+     * @param request данные от Telegram Login Widget
+     * @return JWT токен и обновленная информация о пользователе
+     */
+    public Mono<AuthResponse> linkTelegramByEmail(TelegramAuthRequest request) {
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            return Mono.error(new AuthException(
+                    HttpStatus.BAD_REQUEST,
+                    "Email не предоставлен в Telegram профиле"
+            ));
+        }
+
+        return validateTelegramData(request)
+                .then(Mono.defer(() -> {
+                    // Проверяем, не привязан ли уже этот telegram_id
+                    return userService.findByTelegramId(request.getId())
+                            .flatMap(existingUser -> {
+                                return updateTelegramData(existingUser, request)
+                                        .flatMap(userService::saveUser)
+                                        .map(this::createAuthResponse);
+                            })
+                            .switchIfEmpty(Mono.defer(() -> {
+                                // Ищем пользователя по email
+                                return userService.findByEmail(request.getEmail())
+                                        .flatMap(existingUser -> {
+                                            // Проверяем, подтвержден ли email
+                                            if (!existingUser.getEmailVerified()) {
+                                                // Email не подтвержден - создаем новый аккаунт
+                                                return createNewUserAndAuthResponse(request);
+                                            }
+                                            
+                                            // Email подтвержден - привязываем Telegram
+                                            return updateTelegramData(existingUser, request)
+                                                    .flatMap(userService::saveUser)
+                                                    .map(this::createAuthResponse);
+                                        })
+                                        .switchIfEmpty(Mono.defer(() -> {
+                                            // Пользователя с таким email нет - создаем новый аккаунт
+                                            return createNewUserAndAuthResponse(request);
+                                        }));
+                            }));
+                }))
+                .doOnError(error -> log.error("Ошибка привязки Telegram по email для ID: {}", request.getId(), error));
     }
 
     /**
@@ -147,8 +207,6 @@ public class TelegramAuthService {
      * @return результат операции
      */
     public Mono<Void> unlinkTelegram(Long userId) {
-        log.info("Отвязка Telegram от пользователя: {}", userId);
-
         return userService.findById(userId)
                 .switchIfEmpty(Mono.error(new AuthException(
                         HttpStatus.NOT_FOUND,
@@ -163,9 +221,18 @@ public class TelegramAuthService {
 
                     return userService.saveUser(user);
                 })
-                .then()
-                .doOnSuccess(v -> log.info("Telegram отвязан от пользователя: {}", userId))
-                .doOnError(error -> log.error("Ошибка отвязки Telegram от пользователя: {}", userId, error));
+                .then();
+    }
+
+    /**
+     * Отвязка Telegram от текущего авторизованного пользователя.
+     *
+     * @return результат операции
+     */
+    public Mono<Void> unlinkTelegramFromCurrentUser() {
+        return SecurityUtil.getCurrentUsername()
+                .flatMap(userService::findByUsernameOrThrow)
+                .flatMap(user -> unlinkTelegram(user.getId()));
     }
 
     /**
@@ -174,15 +241,8 @@ public class TelegramAuthService {
      */
     private Mono<Void> validateTelegramData(TelegramAuthRequest request) {
         return Mono.fromCallable(() -> {
-            log.info("Валидация данных Telegram для пользователя с ID: {}", request.getId());
-            log.debug("Данные запроса: id={}, first_name={}, username={}, auth_date={}", 
-                request.getId(), request.getFirst_name(), request.getUsername(), request.getAuth_date());
-            
             // Проверяем актуальность данных (не старше 24 часов)
             long currentTime = Instant.now().getEpochSecond();
-            log.debug("Текущее время (Unix timestamp): {}", currentTime);
-            log.debug("Время авторизации (Unix timestamp): {}", request.getAuth_date());
-            log.debug("Разница во времени: {} секунд", currentTime - request.getAuth_date());
             
             if (currentTime - request.getAuth_date() > 86400) { // 24 часа
                 throw new AuthException(HttpStatus.BAD_REQUEST, "Данные авторизации устарели");
@@ -203,9 +263,10 @@ public class TelegramAuthService {
             if (request.getPhoto_url() != null) {
                 params.put("photo_url", request.getPhoto_url());
             }
+            if (request.getEmail() != null) {
+                params.put("email", request.getEmail());
+            }
             params.put("auth_date", request.getAuth_date().toString());
-
-            log.debug("Отладка валидации Telegram, params = {}:", params);
 
             String dataCheckString = params.entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -220,15 +281,6 @@ public class TelegramAuthService {
             mac.init(secretKeySpec);
             byte[] hash = mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8));
             String calculatedHash = bytesToHex(hash);
-
-            // Проверяем подпись
-            log.debug("Отладка валидации Telegram:");
-            log.debug("Строка для проверки: {}", dataCheckString);
-            log.debug("Токен бота (первые 10 символов): {}", telegramBotToken.substring(0, Math.min(10, telegramBotToken.length())));
-            log.debug("Полный токен бота: {}", telegramBotToken);
-            log.debug("Secret key (SHA256 байты): {}", bytesToHex(secretKeyBytes));
-            log.debug("Вычисленная подпись: {}", calculatedHash);
-            log.debug("Полученная подпись: {}", request.getHash());
             
             if (!calculatedHash.equals(request.getHash())) {
                 throw new AuthException(HttpStatus.UNAUTHORIZED, "Неверная подпись Telegram");
@@ -241,18 +293,25 @@ public class TelegramAuthService {
 
     /**
      * Создание нового пользователя из данных Telegram.
+     * Использует email из Telegram, если он предоставлен, иначе оставляет поле пустым.
      */
-    private Mono<User> createUserFromTelegram(TelegramAuthRequest request) {
+    private Mono<User> createNewUserFromTelegram(TelegramAuthRequest request) {
         return generateUniqueUsername(request.getUsername(), request.getId())
                 .map(username -> {
-                    String email = "telegram_" + request.getId() + "@telegram.local";
+                    // Используем email из Telegram, если он предоставлен, иначе null
+                    String email = (request.getEmail() != null && !request.getEmail().trim().isEmpty()) 
+                            ? request.getEmail() 
+                            : null;
+                    
+                    // Email подтвержден только если он предоставлен в Telegram
+                    boolean emailVerified = (request.getEmail() != null && !request.getEmail().trim().isEmpty());
 
                     return User.builder()
                             .username(username)
                             .email(email)
                             .password(passwordEncoder.encode("telegram_auth_" + request.getId())) // Временный пароль
                             .role(Role.USER)
-                            .emailVerified(false)
+                            .emailVerified(emailVerified)
                             .telegramId(request.getId())
                             .telegramUsername(request.getUsername())
                             .telegramFirstName(request.getFirst_name())
@@ -302,6 +361,17 @@ public class TelegramAuthService {
      */
     private Mono<User> updateTelegramData(User user, TelegramAuthRequest request) {
         return Mono.fromCallable(() -> telegramMapper.updateUserFromTelegramRequest(user, request));
+    }
+
+    /**
+     * Создание нового пользователя из Telegram и возврат ответа аутентификации.
+     * Включает сохранение пользователя, начисление бонусных баллов и создание JWT токена.
+     */
+    private Mono<AuthResponse> createNewUserAndAuthResponse(TelegramAuthRequest request) {
+        return createNewUserFromTelegram(request)
+                .flatMap(user -> userService.saveUser(user)
+                        .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
+                                .then(Mono.just(createAuthResponse(savedUser)))));
     }
 
     /**

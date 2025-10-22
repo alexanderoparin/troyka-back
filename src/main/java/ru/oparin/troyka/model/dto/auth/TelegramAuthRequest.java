@@ -49,6 +49,12 @@ public class TelegramAuthRequest {
     private String photo_url;
 
     /**
+     * Email пользователя в Telegram (если указан).
+     * Может быть null, так как Telegram не всегда предоставляет email.
+     */
+    private String email;
+
+    /**
      * Дата авторизации в формате Unix timestamp.
      * Используется для проверки актуальности данных.
      */

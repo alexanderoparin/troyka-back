@@ -19,10 +19,8 @@ public class TelegramBotConfig {
     public TelegramBotsApi telegramBotsApi() {
         try {
             TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
-            log.info("TelegramBotsApi инициализирован");
             return botsApi;
         } catch (TelegramApiException e) {
-            log.error("Ошибка инициализации TelegramBotsApi", e);
             throw new RuntimeException("Не удалось инициализировать TelegramBotsApi", e);
         }
     }

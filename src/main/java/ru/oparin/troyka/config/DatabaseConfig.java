@@ -33,9 +33,6 @@ public class DatabaseConfig {
     public static <T> Mono<T> withRetry(Mono<T> mono) {
         return mono.retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
                 .maxBackoff(Duration.ofSeconds(5))
-                .jitter(0.1)
-                .doBeforeRetry(retrySignal -> 
-                    System.out.println("Retrying database operation, attempt: " + retrySignal.totalRetries())
-                ));
+                .jitter(0.1));
     }
 }

@@ -33,8 +33,6 @@ public class TelegramBotSessionService {
      * @return специальная сессия для бота
      */
     public Mono<Session> getOrCreateTelegramBotSession(Long userId, Long chatId) {
-        log.info("Получение или создание специальной сессии для пользователя {} и чата {}", userId, chatId);
-
         return telegramBotSessionRepository.findByUserId(userId)
                 .flatMap(telegramBotSession -> {
                     // Обновляем chat_id если изменился
@@ -48,7 +46,6 @@ public class TelegramBotSessionService {
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Создаем новую специальную сессию
-                    log.info("Создание новой специальной сессии для пользователя {}", userId);
                     return sessionService.createSession(userId, "Telegram Bot Chat")
                             .flatMap(createResponse -> {
                                 // Создаем запись в telegram_bot_session
@@ -61,9 +58,7 @@ public class TelegramBotSessionService {
                                 return telegramBotSessionRepository.save(telegramBotSession)
                                         .then(sessionRepository.findById(createResponse.getId()));
                             });
-                }))
-                .doOnSuccess(session -> log.info("Получена специальная сессия {} для пользователя {}", session.getId(), userId))
-                .doOnError(error -> log.error("Ошибка получения специальной сессии для пользователя {}", userId, error));
+                }));
     }
 
     /**
@@ -74,9 +69,7 @@ public class TelegramBotSessionService {
      */
     public Mono<Session> getTelegramBotSessionByUserId(Long userId) {
         return telegramBotSessionRepository.findByUserId(userId)
-                .flatMap(telegramBotSession -> sessionRepository.findById(telegramBotSession.getSessionId()))
-                .doOnSuccess(session -> log.info("Найдена специальная сессия {} для пользователя {}", session.getId(), userId))
-                .doOnError(error -> log.error("Ошибка поиска специальной сессии для пользователя {}", userId, error));
+                .flatMap(telegramBotSession -> sessionRepository.findById(telegramBotSession.getSessionId()));
     }
 
     /**
@@ -87,9 +80,7 @@ public class TelegramBotSessionService {
      */
     public Mono<Session> getTelegramBotSessionByChatId(Long chatId) {
         return telegramBotSessionRepository.findByChatId(chatId)
-                .flatMap(telegramBotSession -> sessionRepository.findById(telegramBotSession.getSessionId()))
-                .doOnSuccess(session -> log.info("Найдена специальная сессия {} для чата {}", session.getId(), chatId))
-                .doOnError(error -> log.error("Ошибка поиска специальной сессии для чата {}", chatId, error));
+                .flatMap(telegramBotSession -> sessionRepository.findById(telegramBotSession.getSessionId()));
     }
 
 
@@ -100,8 +91,6 @@ public class TelegramBotSessionService {
      * @return true если сессия существует, false иначе
      */
     public Mono<Boolean> existsTelegramBotSession(Long userId) {
-        return telegramBotSessionRepository.existsByUserId(userId)
-                .doOnSuccess(exists -> log.debug("Специальная сессия для пользователя {} существует: {}", userId, exists))
-                .doOnError(error -> log.error("Ошибка проверки существования специальной сессии для пользователя {}", userId, error));
+        return telegramBotSessionRepository.existsByUserId(userId);
     }
 }

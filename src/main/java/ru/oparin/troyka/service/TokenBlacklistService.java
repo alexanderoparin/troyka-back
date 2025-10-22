@@ -28,7 +28,6 @@ public class TokenBlacklistService {
     public Mono<Void> blacklistToken(String token) {
         return Mono.fromRunnable(() -> {
             blacklistedTokens.put(token, Instant.now());
-            log.debug("Токен добавлен в черный список: {}", token.substring(0, Math.min(20, token.length())) + "...");
         });
     }
 

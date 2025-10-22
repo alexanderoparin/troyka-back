@@ -16,7 +16,6 @@ import ru.oparin.troyka.model.dto.auth.TelegramAuthRequest;
 import ru.oparin.troyka.service.FileService;
 import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.service.telegram.TelegramAuthService;
-import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
 @RestController
@@ -34,7 +33,6 @@ public class UserController {
     @GetMapping("/me")
     public Mono<ResponseEntity<UserInfoDTO>> getCurrentUserInfo() {
         return userService.getCurrentUser()
-                .doOnNext(userInfoDTO -> log.info("Получен запрос на получение информации о пользователе: {}", userInfoDTO.getUsername()))
                 .map(ResponseEntity::ok);
     }
 
@@ -43,7 +41,6 @@ public class UserController {
     @GetMapping("/me/image-history")
     public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
         return userService.getCurrentUser()
-                .doOnNext(userInfoDTO -> log.info("Получен запрос на получение истории генерации изображений от пользователя: {}", userInfoDTO.getUsername()))
                 .flatMapMany(userInfoDTO -> userService.getCurrentUserImageHistory());
     }
 
@@ -79,14 +76,12 @@ public class UserController {
     }
 
     @Operation(summary = "Привязка Telegram к аккаунту",
-            description = "Привязывает Telegram аккаунт к существующему пользователю")
+            description = "Привязывает Telegram аккаунт к существующему пользователю. " +
+                        "Автоматически выбирает безопасный способ привязки по email или обычную привязку.")
     @PostMapping("/me/telegram/link")
     public Mono<ResponseEntity<String>> linkTelegram(@Valid @RequestBody TelegramAuthRequest request) {
-        return SecurityUtil.getCurrentUsername()
-                .flatMap(userService::findByUsernameOrThrow)
-                .flatMap(user -> telegramAuthService.linkTelegramToExistingUser(request, user.getId()))
-                .then(Mono.just(ResponseEntity.ok("Telegram успешно привязан к аккаунту")))
-                .doOnNext(response -> log.info("Telegram привязан к аккаунту пользователя"))
+        return telegramAuthService.linkTelegramToUser(request)
+                .map(response -> ResponseEntity.ok("Telegram успешно привязан к аккаунту"))
                 .onErrorResume(e -> {
                     log.error("Ошибка при привязке Telegram", e);
                     return Mono.just(ResponseEntity.badRequest().body("Ошибка при привязке Telegram: " + e.getMessage()));
@@ -97,11 +92,8 @@ public class UserController {
             description = "Отвязывает Telegram аккаунт от пользователя")
     @DeleteMapping("/me/telegram/unlink")
     public Mono<ResponseEntity<String>> unlinkTelegram() {
-        return SecurityUtil.getCurrentUsername()
-                .flatMap(userService::findByUsernameOrThrow)
-                .flatMap(user -> telegramAuthService.unlinkTelegram(user.getId()))
+        return telegramAuthService.unlinkTelegramFromCurrentUser()
                 .then(Mono.just(ResponseEntity.ok("Telegram отвязан от аккаунта")))
-                .doOnNext(response -> log.info("Telegram отвязан от аккаунта пользователя"))
                 .onErrorResume(e -> {
                     log.error("Ошибка при отвязке Telegram", e);
                     return Mono.just(ResponseEntity.badRequest().body("Ошибка при отвязке Telegram: " + e.getMessage()));

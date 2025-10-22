@@ -103,8 +103,6 @@ public class AuthController {
             description = "Аутентификация пользователя через Telegram Login Widget")
     @PostMapping("/telegram/login")
     public Mono<ResponseEntity<AuthResponse>> loginWithTelegram(@Valid @RequestBody TelegramAuthRequest request) {
-        log.info("Получен запрос на вход через Telegram для пользователя с ID: {}", request.getId());
-        log.debug("Данные запроса Telegram: {}", request);
         return telegramAuthService.loginWithTelegram(request)
                 .map(ResponseEntity::ok);
     }
@@ -114,12 +112,10 @@ public class AuthController {
     @PostMapping("/logout")
     public Mono<ResponseEntity<MessageResponse>> logout(ServerWebExchange exchange) {
         return SecurityUtil.getCurrentUsername()
-                .doOnNext(username -> log.info("Пользователь {} выходит из системы", username))
                 .then(JwtUtil.extractToken(exchange))
                 .doOnNext(token -> {
                     if (token != null) {
                         jwtService.invalidateToken(token);
-                        log.info("Токен пользователя инвалидирован");
                     }
                 })
                 .then(Mono.just(ResponseEntity.ok(new MessageResponse("Успешный выход из системы"))))
@@ -131,7 +127,6 @@ public class AuthController {
 
     @PostMapping("/telegram/debug")
     public Mono<ResponseEntity<String>> debugTelegram(@RequestBody TelegramAuthRequest request) {
-        log.debug("Отладочный запрос Telegram: {}", request);
         return Mono.just(ResponseEntity.ok("Отладочные данные записаны в лог"));
     }
 }

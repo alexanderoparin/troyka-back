@@ -1,6 +1,5 @@
 package ru.oparin.troyka.mapper;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.oparin.troyka.model.dto.auth.TelegramAuthRequest;
 import ru.oparin.troyka.model.entity.User;
@@ -10,7 +9,6 @@ import ru.oparin.troyka.model.entity.User;
  * Предоставляет методы для маппинга Telegram запросов в данные пользователя.
  */
 @Component
-@Slf4j
 public class TelegramMapper {
 
     /**
@@ -24,8 +22,6 @@ public class TelegramMapper {
         if (user == null || request == null) {
             return user;
         }
-        
-        log.debug("Обновление данных пользователя {} из TelegramAuthRequest", user.getId());
         
         user.setTelegramId(request.getId());
         user.setTelegramUsername(request.getUsername());

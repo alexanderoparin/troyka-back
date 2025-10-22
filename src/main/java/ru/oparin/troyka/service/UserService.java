@@ -53,6 +53,18 @@ public class UserService {
                 )));
     }
 
+    public Mono<User> findByIdOrThrow(Long id) {
+        return withRetry(userRepository.findById(id))
+                .switchIfEmpty(Mono.error(new AuthException(
+                        HttpStatus.NOT_FOUND,
+                        "Пользователь не найден"
+                )));
+    }
+
+    public Mono<User> findByEmail(String email) {
+        return withRetry(userRepository.findByEmail(email));
+    }
+
     public Mono<Void> existsByUsernameOrEmail(String username, String email) {
         return withRetry(userRepository.existsByUsername(username))
                 .flatMap(usernameExists -> {
