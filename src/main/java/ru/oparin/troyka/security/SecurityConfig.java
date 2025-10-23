@@ -55,6 +55,7 @@ public class SecurityConfig {
                         .pathMatchers("/auth/**").permitAll()
                         .pathMatchers("/pricing/**").permitAll()
                         .pathMatchers("/contact/**").permitAll()
+                        .pathMatchers("/api/telegram/**").permitAll()
                         .pathMatchers("/files/upload").authenticated()
                         .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()
