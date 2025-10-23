@@ -5,9 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.FalAIService;
+import ru.oparin.troyka.service.ImageGenerationHistoryService;
 import ru.oparin.troyka.service.UserPointsService;
 
 import java.util.List;
@@ -25,6 +27,9 @@ public class TelegramBotService {
     private final TelegramBotSessionService telegramBotSessionService;
     private final UserPointsService userPointsService;
     private final FalAIService falAIService;
+    private final TelegramMessageService telegramMessageService;
+    private final ImageGenerationHistoryService imageGenerationHistoryService;
+    private final TelegramFileService telegramFileService;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -127,6 +132,34 @@ public class TelegramBotService {
     }
 
     /**
+     * Обработать команду /settings.
+     *
+     * @param chatId ID чата
+     * @param telegramId ID пользователя в Telegram
+     */
+    public Mono<Void> handleSettingsCommand(Long chatId, Long telegramId) {
+        log.info("Обработка команды /settings для чата {} и пользователя {}", chatId, telegramId);
+
+        return userRepository.findByTelegramId(telegramId)
+                .switchIfEmpty(Mono.defer(() -> {
+                    return sendMessage(chatId, "❌ Пользователь не найден. Используйте /start для регистрации.")
+                            .then(Mono.empty());
+                }))
+                .flatMap(user -> {
+                    String message = "⚙️ *Настройки*\n\n" +
+                            "🔔 *Уведомления Telegram:* " + (user.getTelegramNotificationsEnabled() ? "✅ Включены" : "❌ Отключены") + "\n" +
+                            "📧 *Email:* " + user.getEmail() + "\n" +
+                            "👤 *Имя пользователя:* " + user.getUsername() + "\n\n" +
+                            "🌐 *Изменить настройки:* https://24reshai.ru/account/edit\n" +
+                            "💳 *Пополнить баланс:* https://24reshai.ru/pricing";
+
+                    return sendMessage(chatId, message);
+                })
+                .doOnSuccess(v -> log.info("Команда /settings обработана для чата {}", chatId))
+                .doOnError(error -> log.error("Ошибка обработки команды /settings для чата {}", chatId, error));
+    }
+
+    /**
      * Обработать команду /history.
      *
      * @param chatId ID чата
@@ -141,11 +174,37 @@ public class TelegramBotService {
                             .then(Mono.empty());
                 }))
                 .flatMap(user -> {
-                    // Здесь будет логика получения истории генераций
-                    // Пока что отправляем заглушку
-                    return sendMessage(chatId, "📚 *История генераций*\n\n" +
-                            "🔄 Функция в разработке...\n" +
-                            "Пока что вы можете посмотреть историю на сайте: https://24reshai.ru/history");
+                    // Получаем историю генераций пользователя
+                    return imageGenerationHistoryService.getUserImageHistory(user.getId())
+                            .take(10)
+                            .collectList()
+                            .flatMap(histories -> {
+                                if (histories.isEmpty()) {
+                                    return sendMessage(chatId, "📚 *История генераций*\n\n" +
+                                            "🔄 У вас пока нет сгенерированных изображений.\n" +
+                                            "🎨 Отправьте описание изображения, чтобы начать!");
+                                }
+
+                                StringBuilder message = new StringBuilder("📚 *История генераций*\n\n");
+                                
+                                for (int i = 0; i < Math.min(histories.size(), 5); i++) {
+                                    var history = histories.get(i);
+                                    message.append(String.format("🎨 *%d.* %s\n", i + 1, 
+                                            history.getPrompt().length() > 50 ? 
+                                            history.getPrompt().substring(0, 50) + "..." : 
+                                            history.getPrompt()));
+                                    message.append(String.format("📅 %s\n\n", 
+                                            history.getCreatedAt().toString().substring(0, 16)));
+                                }
+
+                                if (histories.size() > 5) {
+                                    message.append("... и еще ").append(histories.size() - 5).append(" генераций\n\n");
+                                }
+
+                                message.append("🌐 *Полная история:* https://24reshai.ru/history");
+
+                                return sendMessage(chatId, message.toString());
+                            });
                 })
                 .doOnSuccess(v -> log.info("Команда /history обработана для чата {}", chatId))
                 .doOnError(error -> log.error("Ошибка обработки команды /history для чата {}", chatId, error));
@@ -180,10 +239,11 @@ public class TelegramBotService {
                                 // Получаем специальную сессию
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
                                         .flatMap(session -> {
-                                            // Отправляем сообщение о начале генерации
-                                            return sendMessage(chatId, "🎨 *Генерация изображения...*\n\n" +
-                                                    "📝 *Промпт:* " + prompt + "\n" +
-                                                    "⏱️ *Ожидайте 5-10 секунд*")
+                                            // Отправляем typing indicator и сообщение о начале генерации
+                                            return telegramMessageService.sendTypingAction(chatId)
+                                                    .then(sendMessage(chatId, "🎨 *Генерация изображения...*\n\n" +
+                                                            "📝 *Промпт:* " + prompt + "\n" +
+                                                            "⏱️ *Ожидайте 5-10 секунд*"))
                                                     .then(generateImage(user.getId(), session.getId(), prompt, List.of()));
                                         });
                             });
@@ -222,11 +282,12 @@ public class TelegramBotService {
                                 // Получаем специальную сессию
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
                                         .flatMap(session -> {
-                                            // Отправляем сообщение о начале генерации
-                                            return sendMessage(chatId, "🎨 *Генерация изображения с референсом...*\n\n" +
-                                                    "📝 *Промпт:* " + caption + "\n" +
-                                                    "🖼️ *Референс:* загружен\n" +
-                                                    "⏱️ *Ожидайте 5-10 секунд*")
+                                            // Отправляем typing indicator и сообщение о начале генерации
+                                            return telegramMessageService.sendTypingAction(chatId)
+                                                    .then(sendMessage(chatId, "🎨 *Генерация изображения с референсом...*\n\n" +
+                                                            "📝 *Промпт:* " + caption + "\n" +
+                                                            "🖼️ *Референс:* загружен\n" +
+                                                            "⏱️ *Ожидайте 5-10 секунд*"))
                                                     .then(generateImage(user.getId(), session.getId(), caption, List.of(photoUrl)));
                                         });
                             });
@@ -260,12 +321,39 @@ public class TelegramBotService {
      * Генерировать изображение.
      */
     private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
-        // Здесь будет интеграция с FalAIService
-        // Пока что отправляем заглушку
-        return Mono.fromRunnable(() -> {
-            log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {}", userId, sessionId, prompt);
-            // TODO: Интеграция с FalAIService
-        });
+        log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {}", userId, sessionId, prompt);
+
+        // Создаем запрос для FAL AI
+        ImageRq imageRq = ImageRq.builder()
+                .prompt(prompt)
+                .sessionId(sessionId)
+                .numImages(1)
+                .inputImageUrls(inputImageUrls)
+                .build();
+
+        return falAIService.getImageResponse(imageRq, userId)
+                .flatMap(imageResponse -> {
+                    // Отправляем сгенерированные изображения
+                    if (imageResponse.getImageUrls().isEmpty()) {
+                        return telegramMessageService.sendErrorMessage(sessionId, "Не удалось сгенерировать изображение. Попробуйте еще раз.");
+                    }
+
+                    // Отправляем первое изображение с подписью
+                    String caption = String.format(
+                            "🎨 *Изображение сгенерировано!*\n\n" +
+                            "📝 *Промпт:* %s\n" +
+                            "💰 *Стоимость:* 3 поинта\n\n" +
+                            "🔄 *Хотите еще?* Просто отправьте новое описание!",
+                            prompt
+                    );
+
+                    return telegramMessageService.sendPhoto(sessionId, imageResponse.getImageUrls().get(0), caption);
+                })
+                .onErrorResume(error -> {
+                    log.error("Ошибка генерации изображения для пользователя {}: {}", userId, error.getMessage());
+                    return telegramMessageService.sendErrorMessage(sessionId, 
+                            "Произошла ошибка при генерации изображения: " + error.getMessage());
+                });
     }
 
     /**
@@ -287,12 +375,97 @@ public class TelegramBotService {
     }
 
     /**
+     * Обработать обновление от Telegram.
+     *
+     * @param update объект обновления от Telegram
+     * @return результат обработки
+     */
+    public Mono<Void> processUpdate(ru.oparin.troyka.model.dto.telegram.TelegramUpdate update) {
+        log.info("Обработка обновления от Telegram: {}", update);
+
+        if (update.getMessage() == null) {
+            log.debug("Обновление не содержит сообщения, пропускаем");
+            return Mono.empty();
+        }
+
+        ru.oparin.troyka.model.dto.telegram.TelegramMessage message = update.getMessage();
+        Long chatId = message.getChat().getId();
+        Long userId = message.getFrom().getId();
+        String username = message.getFrom().getUsername();
+
+        log.debug("Обработка сообщения от пользователя {} в чате {}: {}", userId, chatId, 
+                message.getText() != null ? message.getText() : "медиа");
+
+        try {
+            // Обработка команд
+            if (message.getText() != null && message.getText().startsWith("/")) {
+                return handleCommand(chatId, userId, username, message.getText());
+            }
+
+            // Обработка фото с подписью
+            if (message.getPhoto() != null && !message.getPhoto().isEmpty() && message.getCaption() != null) {
+                ru.oparin.troyka.model.dto.telegram.TelegramPhoto photo = message.getPhoto().get(message.getPhoto().size() - 1); // Берем фото наибольшего размера
+                return telegramFileService.getFileUrl(photo.getFileId())
+                        .flatMap(photoUrl -> handlePhotoMessage(chatId, userId, photoUrl, message.getCaption()))
+                        .onErrorResume(error -> {
+                            log.error("Ошибка получения URL фото для пользователя {}: {}", userId, error.getMessage());
+                            return sendMessage(chatId, "❌ *Ошибка загрузки фото*\n\nНе удалось обработать изображение. Попробуйте еще раз.");
+                        });
+            }
+
+            // Обработка текстового сообщения (промпт)
+            if (message.getText() != null && !message.getText().trim().isEmpty()) {
+                return handleTextMessage(chatId, userId, message.getText());
+            }
+
+            // Неизвестный тип сообщения
+            log.debug("Получено сообщение неизвестного типа от пользователя {} в чате {}", userId, chatId);
+            return sendMessage(chatId, "🤔 *Не понимаю*\n\n" +
+                    "Отправьте текстовое описание для генерации изображения или фото с подписью.");
+
+        } catch (Exception error) {
+            log.error("Ошибка обработки сообщения от пользователя {} в чате {}: {}", userId, chatId, error.getMessage(), error);
+            return sendMessage(chatId, "❌ *Произошла ошибка*\n\n" +
+                    "Попробуйте еще раз или обратитесь в поддержку: https://24reshai.ru/contacts");
+        }
+    }
+
+    /**
+     * Обработать команды.
+     */
+    private Mono<Void> handleCommand(Long chatId, Long userId, String username, String command) {
+        return switch (command) {
+            case "/start" -> handleStartCommand(chatId, userId, username);
+            case "/help" -> handleHelpCommand(chatId);
+            case "/balance" -> handleBalanceCommand(chatId, userId);
+            case "/history" -> handleHistoryCommand(chatId, userId);
+            case "/settings" -> handleSettingsCommand(chatId, userId);
+            default -> handleUnknownCommand(chatId, command);
+        };
+    }
+
+    /**
+     * Обработать неизвестную команду.
+     */
+    private Mono<Void> handleUnknownCommand(Long chatId, String command) {
+        log.info("Получена неизвестная команда: {} в чате {}", command, chatId);
+        
+        return sendMessage(chatId, 
+                "❓ *Неизвестная команда*\n\n" +
+                "🤖 *Команда:* " + command + "\n" +
+                "📋 *Доступные команды:*\n" +
+                "• /start - Начать работу с ботом\n" +
+                "• /help - Справка\n" +
+                "• /balance - Баланс поинтов\n" +
+                "• /history - История генераций\n" +
+                "• /settings - Настройки\n\n" +
+                "💡 *Или просто отправьте описание изображения для генерации!*");
+    }
+
+    /**
      * Отправить текстовое сообщение.
      */
     public Mono<Void> sendMessage(Long chatId, String message) {
-        // Здесь будет логика отправки сообщений через Telegram Bot API
-        // Пока что просто логируем
-        log.info("Отправка сообщения в чат {}: {}", chatId, message);
-        return Mono.empty();
+        return telegramMessageService.sendMessage(chatId, message);
     }
 }

@@ -3,6 +3,7 @@ package ru.oparin.troyka.model.dto.fal;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -13,6 +14,7 @@ import java.util.List;
  * Поддерживает работу с сессиями для организации истории генераций.
  */
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Schema(description = "Запрос для генерации изображения с помощью промпта от FAL AI")
