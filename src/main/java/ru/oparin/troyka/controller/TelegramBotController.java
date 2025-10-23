@@ -15,7 +15,7 @@ import ru.oparin.troyka.service.telegram.TelegramBotService;
  * Контроллер для обработки webhook от Telegram Bot API.
  */
 @RestController
-@RequestMapping("/api/telegram")
+@RequestMapping("/telegram")
 @RequiredArgsConstructor
 @Slf4j
 public class TelegramBotController {
