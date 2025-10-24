@@ -113,6 +113,7 @@ public class FalAIService {
                                                     .flatMap(response -> {
                                                         // Сохраняем историю в сессии
                                                         return imageGenerationHistoryService.saveHistories(
+                                                                userId,
                                                                 response.getImageUrls(), 
                                                                 prompt, 
                                                                 session.getId(), 
