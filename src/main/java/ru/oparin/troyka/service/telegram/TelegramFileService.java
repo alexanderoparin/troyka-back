@@ -67,6 +67,40 @@ public class TelegramFileService {
     }
 
     /**
+     * Скачать файл с Telegram.
+     *
+     * @param fileId ID файла в Telegram
+     * @return содержимое файла в виде байтов
+     */
+    public Mono<byte[]> downloadFile(String fileId) {
+        log.info("Скачивание файла с Telegram для file_id: {}", fileId);
+
+        WebClient webClient = webClientBuilder
+                .baseUrl(TELEGRAM_API_URL + botToken)
+                .build();
+
+        return webClient.get()
+                .uri("/getFile?file_id=" + fileId)
+                .retrieve()
+                .bodyToMono(TelegramFileResponse.class)
+                .timeout(TIMEOUT)
+                .flatMap(response -> {
+                    if (response.isOk() && response.getResult() != null) {
+                        String filePath = response.getResult().getFilePath();
+                        
+                        // Скачиваем файл
+                        return webClient.get()
+                                .uri(filePath)
+                                .retrieve()
+                                .bodyToMono(byte[].class)
+                                .doOnSuccess(bytes -> log.info("Файл скачан, размер: {} байт", bytes.length));
+                    }
+                    return Mono.error(new RuntimeException("Не удалось получить путь к файлу: " + response.getDescription()));
+                })
+                .doOnError(error -> log.error("Ошибка скачивания файла: {}", error.getMessage()));
+    }
+
+    /**
      * Скачать файл с Telegram и получить его содержимое в base64.
      *
      * @param fileId ID файла в Telegram

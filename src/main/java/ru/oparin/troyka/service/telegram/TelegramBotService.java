@@ -455,10 +455,11 @@ public class TelegramBotService {
             // Обработка фото с подписью
             if (message.getPhoto() != null && !message.getPhoto().isEmpty() && message.getCaption() != null) {
                 TelegramPhoto photo = message.getPhoto().get(message.getPhoto().size() - 1); // Берем фото наибольшего размера
-                return telegramFileService.getFileUrl(photo.getFileId())
-                        .flatMap(photoUrl -> handlePhotoMessage(chatId, telegramId, photoUrl, message.getCaption()))
+                // Используем прокси URL вместо прямого URL от Telegram
+                String proxyUrl = "https://24reshai.ru/api/telegram/file/" + photo.getFileId();
+                return handlePhotoMessage(chatId, telegramId, proxyUrl, message.getCaption())
                         .onErrorResume(error -> {
-                            log.error("Ошибка получения URL фото для пользователя {}: {}", telegramId, error.getMessage());
+                            log.error("Ошибка обработки фото для пользователя {}: {}", telegramId, error.getMessage());
                             return sendMessage(chatId, "❌ *Ошибка загрузки фото*\n\nНе удалось обработать изображение. Попробуйте еще раз.");
                         });
             }
