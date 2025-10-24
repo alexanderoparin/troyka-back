@@ -90,7 +90,7 @@ public class TelegramFileService {
                         
                         // Скачиваем файл
                         return webClient.get()
-                                .uri(filePath)
+                                .uri("/" + filePath)
                                 .retrieve()
                                 .bodyToMono(byte[].class)
                                 .doOnSuccess(bytes -> log.info("Файл скачан, размер: {} байт", bytes.length));
