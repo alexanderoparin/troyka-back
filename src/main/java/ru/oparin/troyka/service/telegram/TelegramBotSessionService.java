@@ -2,6 +2,10 @@ package ru.oparin.troyka.service.telegram;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.query.Query;
+import org.springframework.data.relational.core.query.Update;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.Session;
@@ -9,6 +13,8 @@ import ru.oparin.troyka.model.entity.TelegramBotSession;
 import ru.oparin.troyka.repository.SessionRepository;
 import ru.oparin.troyka.repository.TelegramBotSessionRepository;
 import ru.oparin.troyka.service.SessionService;
+
+import java.time.LocalDateTime;
 
 
 /**
@@ -23,6 +29,7 @@ public class TelegramBotSessionService {
     private final TelegramBotSessionRepository telegramBotSessionRepository;
     private final SessionRepository sessionRepository;
     private final SessionService sessionService;
+    private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
     /**
      * Получить или создать специальную сессию для Telegram чата.
@@ -33,30 +40,40 @@ public class TelegramBotSessionService {
      * @return специальная сессия для бота
      */
     public Mono<Session> getOrCreateTelegramBotSession(Long userId, Long chatId) {
+        log.info("Получение или создание специальной сессии для пользователя {} и чата {}", userId, chatId);
+        
         return telegramBotSessionRepository.findByUserId(userId)
                 .flatMap(telegramBotSession -> {
                     // Обновляем chat_id если изменился
                     if (!telegramBotSession.getChatId().equals(chatId)) {
-                        telegramBotSession.setChatId(chatId);
-                        telegramBotSession.setUpdatedAt(java.time.LocalDateTime.now());
-                        return telegramBotSessionRepository.save(telegramBotSession)
+                        log.info("Обновление chat_id для пользователя {}: {} -> {}", userId, telegramBotSession.getChatId(), chatId);
+                        return r2dbcEntityTemplate.update(TelegramBotSession.class)
+                                .matching(Query.query(Criteria.where("userId").is(userId)))
+                                .apply(Update.update("chatId", chatId)
+                                        .set("updatedAt", LocalDateTime.now()))
                                 .then(sessionRepository.findById(telegramBotSession.getSessionId()));
                     }
                     return sessionRepository.findById(telegramBotSession.getSessionId());
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Создаем новую специальную сессию
+                    log.info("Создание новой специальной сессии для пользователя {} и чата {}", userId, chatId);
                     return sessionService.createSession(userId, "Telegram Bot Chat")
                             .flatMap(createResponse -> {
-                                // Создаем запись в telegram_bot_session
+                                // Создаем запись в telegram_bot_session используя upsert подход
                                 TelegramBotSession telegramBotSession = TelegramBotSession.builder()
                                         .userId(userId)
                                         .sessionId(createResponse.getId())
                                         .chatId(chatId)
+                                        .createdAt(LocalDateTime.now())
+                                        .updatedAt(LocalDateTime.now())
                                         .build();
 
-                                return telegramBotSessionRepository.save(telegramBotSession)
-                                        .then(sessionRepository.findById(createResponse.getId()));
+                                return r2dbcEntityTemplate.insert(TelegramBotSession.class)
+                                        .using(telegramBotSession)
+                                        .then(sessionRepository.findById(createResponse.getId()))
+                                        .doOnNext(session -> log.info("Специальная сессия {} создана для пользователя {} и чата {}", 
+                                                createResponse.getId(), userId, chatId));
                             });
                 }));
     }
