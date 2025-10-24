@@ -87,6 +87,7 @@ public class TelegramFileService {
                 .flatMap(response -> {
                     if (response.isOk() && response.getResult() != null) {
                         String filePath = response.getResult().getFilePath();
+                        log.info("Получен filePath от Telegram: '{}'", filePath);
                         
                         // Скачиваем файл
                         return webClient.get()
