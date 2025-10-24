@@ -435,46 +435,46 @@ public class TelegramBotService {
 
         TelegramMessage message = update.getMessage();
         Long chatId = message.getChat().getId();
-        Long userId = message.getFrom().getId();
+        Long telegramId = message.getFrom().getId();
         String username = message.getFrom().getUsername();
 
-        log.debug("Обработка сообщения от пользователя {} в чате {}: {}", userId, chatId, 
+        log.debug("Обработка сообщения от пользователя {} в чате {}: {}", telegramId, chatId, 
                 message.getText() != null ? message.getText() : "медиа");
 
         try {
             // Обработка ответов на сообщения (диалог с изображениями)
             if (message.getReplyToMessage() != null) {
-                return handleReplyMessage(chatId, userId, message);
+                return handleReplyMessage(chatId, telegramId, message);
             }
 
             // Обработка команд
             if (message.getText() != null && message.getText().startsWith("/")) {
-                return handleCommand(chatId, userId, username, message.getText());
+                return handleCommand(chatId, telegramId, username, message.getText());
             }
 
             // Обработка фото с подписью
             if (message.getPhoto() != null && !message.getPhoto().isEmpty() && message.getCaption() != null) {
                 TelegramPhoto photo = message.getPhoto().get(message.getPhoto().size() - 1); // Берем фото наибольшего размера
                 return telegramFileService.getFileUrl(photo.getFileId())
-                        .flatMap(photoUrl -> handlePhotoMessage(chatId, userId, photoUrl, message.getCaption()))
+                        .flatMap(photoUrl -> handlePhotoMessage(chatId, telegramId, photoUrl, message.getCaption()))
                         .onErrorResume(error -> {
-                            log.error("Ошибка получения URL фото для пользователя {}: {}", userId, error.getMessage());
+                            log.error("Ошибка получения URL фото для пользователя {}: {}", telegramId, error.getMessage());
                             return sendMessage(chatId, "❌ *Ошибка загрузки фото*\n\nНе удалось обработать изображение. Попробуйте еще раз.");
                         });
             }
 
             // Обработка текстового сообщения (промпт)
             if (message.getText() != null && !message.getText().trim().isEmpty()) {
-                return handleTextMessage(chatId, userId, message.getText());
+                return handleTextMessage(chatId, telegramId, message.getText());
             }
 
             // Неизвестный тип сообщения
-            log.debug("Получено сообщение неизвестного типа от пользователя {} в чате {}", userId, chatId);
+            log.debug("Получено сообщение неизвестного типа от пользователя {} в чате {}", telegramId, chatId);
             return sendMessage(chatId, "🤔 *Не понимаю*\n\n" +
                     "Отправьте текстовое описание для генерации изображения или фото с подписью.");
 
         } catch (Exception error) {
-            log.error("Ошибка обработки сообщения от пользователя {} в чате {}: {}", userId, chatId, error.getMessage(), error);
+            log.error("Ошибка обработки сообщения от пользователя {} в чате {}: {}", telegramId, chatId, error.getMessage(), error);
             return sendMessage(chatId, "❌ *Произошла ошибка*\n\n" +
                     "Попробуйте еще раз или обратитесь в поддержку: https://24reshai.ru/contacts");
         }
@@ -484,19 +484,19 @@ public class TelegramBotService {
      * Обработать ответ на сообщение (диалог с изображениями).
      *
      * @param chatId ID чата
-     * @param userId ID пользователя
+     * @param telegramId ID пользователя в Telegram
      * @param message сообщение-ответ
      * @return результат обработки
      */
-    private Mono<Void> handleReplyMessage(Long chatId, Long userId, TelegramMessage message) {
-        log.info("Обработка ответа на сообщение от пользователя {} в чате {}", userId, chatId);
+    private Mono<Void> handleReplyMessage(Long chatId, Long telegramId, TelegramMessage message) {
+        log.info("Обработка ответа на сообщение от пользователя {} в чате {}", telegramId, chatId);
         
         TelegramMessage replyToMessage = message.getReplyToMessage();
         Long replyToMessageId = replyToMessage.getMessageId();
         
         // Сначала находим пользователя по Telegram ID, затем ищем lastGeneratedMessageId
-        return userRepository.findByTelegramId(userId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Пользователь с Telegram ID " + userId + " не найден")))
+        return userRepository.findByTelegramId(telegramId)
+                .switchIfEmpty(Mono.error(new RuntimeException("Пользователь с Telegram ID " + telegramId + " не найден")))
                 .flatMap(user -> {
                     log.info("Найден пользователь в базе: ID={}, Telegram ID={}", user.getId(), user.getTelegramId());
                     return telegramBotSessionService.getLastGeneratedMessageId(user.getId())
@@ -527,8 +527,8 @@ public class TelegramBotService {
                                             log.info("Диалог с изображением: пользователь {} изменил промпт на '{}'", user.getId(), displayPrompt);
                                             
                                             // Генерируем новое изображение с предыдущим как input
-                                            return telegramBotSessionService.getOrCreateTelegramBotSession(userId, chatId)
-                                                    .flatMap(session -> generateImage(userId, session.getId(), newPrompt, displayPrompt, List.of(previousImageUrl)));
+                                            return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
+                                                    .flatMap(session -> generateImage(user.getId(), session.getId(), newPrompt, displayPrompt, List.of(previousImageUrl)));
                                         });
                             });
                 });
