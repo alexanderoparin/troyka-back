@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.util.JsonUtils;
@@ -73,5 +74,31 @@ public class ImageGenerationHistoryService {
         return imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(userId)
                 .doOnNext(history -> log.debug("Получена запись истории: ID={}, сессия={}", history.getId(), history.getSessionId()))
                 .doOnError(error -> log.error("Ошибка при получении истории генераций для пользователя {}", userId, error));
+    }
+
+    /**
+     * Получить URL последнего сгенерированного изображения из конкретной сессии.
+     *
+     * @param userId идентификатор пользователя
+     * @param sessionId идентификатор сессии
+     * @return URL последнего изображения из сессии или пустой результат
+     */
+    public Mono<String> getLastGeneratedImageUrlFromSession(Long userId, Long sessionId) {
+        log.info("Получение URL последнего сгенерированного изображения для пользователя {} из сессии {}", userId, sessionId);
+        
+        return imageGenerationHistoryRepository.findByUserIdAndSessionIdOrderByCreatedAtDesc(userId, sessionId)
+                .next() // Берем только первую (последнюю) запись из сессии
+                .flatMap(history -> {
+                    List<String> imageUrls = JsonUtils.parseJsonToList(history.getImageUrls());
+                    if (imageUrls != null && !imageUrls.isEmpty()) {
+                        String lastImageUrl = imageUrls.get(imageUrls.size() - 1); // Берем последнее изображение
+                        log.info("Найден URL последнего изображения для пользователя {} из сессии {}: {}", userId, sessionId, lastImageUrl);
+                        return Mono.just(lastImageUrl);
+                    } else {
+                        log.warn("Нет изображений в последней записи истории для пользователя {} из сессии {}", userId, sessionId);
+                        return Mono.empty();
+                    }
+                })
+                .doOnError(error -> log.error("Ошибка при получении URL последнего изображения для пользователя {} из сессии {}", userId, sessionId, error));
     }
 }

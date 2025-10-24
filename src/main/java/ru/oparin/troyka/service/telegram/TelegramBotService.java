@@ -503,8 +503,9 @@ public class TelegramBotService {
                                             "Отвечайте только на последнее сгенерированное изображение.");
                                 }
                                 
-                                // Получаем изображение из reply_to_message
-                                return extractImageFromReplyMessage(replyToMessage)
+                                // Получаем последнее сгенерированное изображение из Telegram сессии
+                                return telegramBotSessionService.getTelegramBotSessionByUserId(user.getId())
+                                        .flatMap(session -> imageGenerationHistoryService.getLastGeneratedImageUrlFromSession(user.getId(), session.getId()))
                                         .flatMap(previousImageUrl -> {
                                             String newPrompt = message.getText();
                                             if (newPrompt == null || newPrompt.trim().isEmpty()) {

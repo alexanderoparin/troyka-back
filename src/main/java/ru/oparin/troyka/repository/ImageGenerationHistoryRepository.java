@@ -23,6 +23,15 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
     Flux<ImageGenerationHistory> findByUserIdOrderByCreatedAtDesc(Long userId);
 
     /**
+     * Найти все записи истории пользователя из конкретной сессии, отсортированные по дате создания (новые первые).
+     *
+     * @param userId идентификатор пользователя
+     * @param sessionId идентификатор сессии
+     * @return поток записей истории пользователя из сессии
+     */
+    Flux<ImageGenerationHistory> findByUserIdAndSessionIdOrderByCreatedAtDesc(Long userId, Long sessionId);
+
+    /**
      * Найти все записи истории сессии, отсортированные по дате создания (по порядку диалога).
      *
      * @param sessionId идентификатор сессии
