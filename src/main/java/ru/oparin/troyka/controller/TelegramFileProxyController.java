@@ -17,7 +17,7 @@ import ru.oparin.troyka.service.telegram.TelegramFileService;
  * Предоставляет публичный доступ к файлам Telegram через наш домен.
  */
 @RestController
-@RequestMapping("/api/telegram/file")
+@RequestMapping("/telegram/proxy")
 @RequiredArgsConstructor
 @Slf4j
 public class TelegramFileProxyController {

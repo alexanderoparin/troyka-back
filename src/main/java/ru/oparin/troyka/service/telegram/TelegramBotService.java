@@ -456,7 +456,7 @@ public class TelegramBotService {
             if (message.getPhoto() != null && !message.getPhoto().isEmpty() && message.getCaption() != null) {
                 TelegramPhoto photo = message.getPhoto().get(message.getPhoto().size() - 1); // Берем фото наибольшего размера
                 // Используем прокси URL вместо прямого URL от Telegram
-                String proxyUrl = "https://24reshai.ru/api/telegram/file/" + photo.getFileId();
+                String proxyUrl = "https://24reshai.ru/api/telegram/proxy/" + photo.getFileId();
                 return handlePhotoMessage(chatId, telegramId, proxyUrl, message.getCaption())
                         .onErrorResume(error -> {
                             log.error("Ошибка обработки фото для пользователя {}: {}", telegramId, error.getMessage());
