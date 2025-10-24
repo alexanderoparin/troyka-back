@@ -521,12 +521,7 @@ public class TelegramBotService {
                                             // Генерируем новое изображение с предыдущим как input
                                             return handleTextMessage(chatId, userId, contextualPrompt, List.of(previousImageUrl));
                                         });
-                            })
-                            .switchIfEmpty(Mono.defer(() -> {
-                                log.warn("Нет lastGeneratedMessageId для пользователя {} - возможно, не было сгенерировано изображений", user.getId());
-                                return sendMessage(chatId, "❌ *Нет контекста*\n\n" +
-                                        "Сначала сгенерируйте изображение, а затем ответьте на него.");
-                            }));
+                            });
                 });
     }
 
