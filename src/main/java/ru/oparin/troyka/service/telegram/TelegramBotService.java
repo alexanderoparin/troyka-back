@@ -333,26 +333,36 @@ public class TelegramBotService {
 
         return falAIService.getImageResponse(imageRq, userId)
                 .flatMap(imageResponse -> {
-                    // Отправляем сгенерированные изображения
-                    if (imageResponse.getImageUrls().isEmpty()) {
-                        return telegramMessageService.sendErrorMessage(sessionId, "Не удалось сгенерировать изображение. Попробуйте еще раз.");
-                    }
+                    // Получаем chatId из специальной сессии
+                    return telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId)
+                            .flatMap(telegramBotSession -> {
+                                Long chatId = telegramBotSession.getChatId();
+                                
+                                // Отправляем сгенерированные изображения
+                                if (imageResponse.getImageUrls().isEmpty()) {
+                                    return telegramMessageService.sendErrorMessage(chatId, "Не удалось сгенерировать изображение. Попробуйте еще раз.");
+                                }
 
-                    // Отправляем первое изображение с подписью
-                    String caption = String.format(
-                            "🎨 *Изображение сгенерировано!*\n\n" +
-                            "📝 *Промпт:* %s\n" +
-                            "💰 *Стоимость:* 3 поинта\n\n" +
-                            "🔄 *Хотите еще?* Просто отправьте новое описание!",
-                            prompt
-                    );
+                                // Отправляем первое изображение с подписью
+                                String caption = String.format(
+                                        "🎨 *Изображение сгенерировано!*\n\n" +
+                                        "📝 *Промпт:* %s\n" +
+                                        "💰 *Стоимость:* 3 поинта\n\n" +
+                                        "🔄 *Хотите еще?* Просто отправьте новое описание!",
+                                        prompt
+                                );
 
-                    return telegramMessageService.sendPhoto(sessionId, imageResponse.getImageUrls().get(0), caption);
+                                return telegramMessageService.sendPhoto(chatId, imageResponse.getImageUrls().get(0), caption);
+                            });
                 })
                 .onErrorResume(error -> {
                     log.error("Ошибка генерации изображения для пользователя {}: {}", userId, error.getMessage());
-                    return telegramMessageService.sendErrorMessage(sessionId, 
-                            "Произошла ошибка при генерации изображения: " + error.getMessage());
+                    return telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId)
+                            .flatMap(telegramBotSession -> {
+                                Long chatId = telegramBotSession.getChatId();
+                                return telegramMessageService.sendErrorMessage(chatId, 
+                                        "Произошла ошибка при генерации изображения: " + error.getMessage());
+                            });
                 });
     }
 

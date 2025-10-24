@@ -90,6 +90,16 @@ public class TelegramBotSessionService {
     }
 
     /**
+     * Получить TelegramBotSession по ID пользователя.
+     *
+     * @param userId ID пользователя
+     * @return TelegramBotSession или пустой результат
+     */
+    public Mono<TelegramBotSession> getTelegramBotSessionEntityByUserId(Long userId) {
+        return telegramBotSessionRepository.findByUserId(userId);
+    }
+
+    /**
      * Получить специальную сессию по ID чата.
      *
      * @param chatId ID чата в Telegram
