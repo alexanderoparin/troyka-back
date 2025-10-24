@@ -483,43 +483,48 @@ public class TelegramBotService {
         TelegramMessage replyToMessage = message.getReplyToMessage();
         Long replyToMessageId = replyToMessage.getMessageId();
         
-        // Проверяем, что это ответ на последнее сгенерированное сообщение
-        return telegramBotSessionService.getLastGeneratedMessageId(userId)
-                .doOnNext(lastGeneratedMessageId -> 
-                    log.info("Получен lastGeneratedMessageId для пользователя {}: {}, replyToMessageId: {}", 
-                            userId, lastGeneratedMessageId, replyToMessageId))
-                .flatMap(lastGeneratedMessageId -> {
-                    if (!replyToMessageId.equals(lastGeneratedMessageId)) {
-                        log.warn("Пользователь {} ответил на старое сообщение: {} != {}", 
-                                userId, replyToMessageId, lastGeneratedMessageId);
-                        return sendMessage(chatId, "❌ *Нельзя ответить на старое сообщение*\n\n" +
-                                "Отвечайте только на последнее сгенерированное изображение.");
-                    }
-                    
-                    // Получаем изображение из reply_to_message
-                    return extractImageFromReplyMessage(replyToMessage)
-                            .flatMap(previousImageUrl -> {
-                                String newPrompt = message.getText();
-                                if (newPrompt == null || newPrompt.trim().isEmpty()) {
-                                    return sendMessage(chatId, "❌ *Пустой запрос*\n\n" +
-                                            "Отправьте текстовое описание для изменения изображения.");
+        // Сначала находим пользователя по Telegram ID, затем ищем lastGeneratedMessageId
+        return userRepository.findByTelegramId(userId)
+                .switchIfEmpty(Mono.error(new RuntimeException("Пользователь с Telegram ID " + userId + " не найден")))
+                .flatMap(user -> {
+                    log.info("Найден пользователь в базе: ID={}, Telegram ID={}", user.getId(), user.getTelegramId());
+                    return telegramBotSessionService.getLastGeneratedMessageId(user.getId())
+                            .flatMap(lastGeneratedMessageId -> {
+                                log.info("Получен lastGeneratedMessageId для пользователя {}: {}, replyToMessageId: {}", 
+                                        user.getId(), lastGeneratedMessageId, replyToMessageId);
+                                
+                                if (!replyToMessageId.equals(lastGeneratedMessageId)) {
+                                    log.warn("Пользователь {} ответил на старое сообщение: {} != {}", 
+                                            user.getId(), replyToMessageId, lastGeneratedMessageId);
+                                    return sendMessage(chatId, "❌ *Нельзя ответить на старое сообщение*\n\n" +
+                                            "Отвечайте только на последнее сгенерированное изображение.");
                                 }
                                 
-                                // Создаем новый промпт с контекстом
-                                String contextualPrompt = String.format("Исходное изображение: %s. %s", 
-                                        "изображение", newPrompt);
-                                
-                                log.info("Диалог с изображением: пользователь {} изменил промпт на '{}'", userId, contextualPrompt);
-                                
-                                // Генерируем новое изображение с предыдущим как input
-                                return handleTextMessage(chatId, userId, contextualPrompt, List.of(previousImageUrl));
-                            });
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.warn("Нет lastGeneratedMessageId для пользователя {} - возможно, не было сгенерировано изображений", userId);
-                    return sendMessage(chatId, "❌ *Нет контекста*\n\n" +
-                            "Сначала сгенерируйте изображение, а затем ответьте на него.");
-                }));
+                                // Получаем изображение из reply_to_message
+                                return extractImageFromReplyMessage(replyToMessage)
+                                        .flatMap(previousImageUrl -> {
+                                            String newPrompt = message.getText();
+                                            if (newPrompt == null || newPrompt.trim().isEmpty()) {
+                                                return sendMessage(chatId, "❌ *Пустой запрос*\n\n" +
+                                                        "Отправьте текстовое описание для изменения изображения.");
+                                            }
+                                            
+                                            // Создаем новый промпт с контекстом
+                                            String contextualPrompt = String.format("Исходное изображение: %s. %s", 
+                                                    "изображение", newPrompt);
+                                            
+                                            log.info("Диалог с изображением: пользователь {} изменил промпт на '{}'", user.getId(), contextualPrompt);
+                                            
+                                            // Генерируем новое изображение с предыдущим как input
+                                            return handleTextMessage(chatId, userId, contextualPrompt, List.of(previousImageUrl));
+                                        });
+                            })
+                            .switchIfEmpty(Mono.defer(() -> {
+                                log.warn("Нет lastGeneratedMessageId для пользователя {} - возможно, не было сгенерировано изображений", user.getId());
+                                return sendMessage(chatId, "❌ *Нет контекста*\n\n" +
+                                        "Сначала сгенерируйте изображение, а затем ответьте на него.");
+                            }));
+                });
     }
 
     /**
