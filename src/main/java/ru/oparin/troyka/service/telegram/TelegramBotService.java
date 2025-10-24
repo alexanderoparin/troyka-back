@@ -385,7 +385,8 @@ public class TelegramBotService {
                             .flatMap(telegramBotSession -> {
                                 Long chatId = telegramBotSession.getChatId();
                                 return telegramMessageService.sendErrorMessage(chatId, 
-                                        "Произошла ошибка при генерации изображения: " + error.getMessage());
+                                        "❌ *Ошибка генерации*\n\n" +
+                                        "Произошла ошибка при создании изображения. Попробуйте еще раз.");
                             });
                 });
     }
