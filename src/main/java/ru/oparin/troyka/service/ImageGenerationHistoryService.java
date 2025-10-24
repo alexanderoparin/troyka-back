@@ -28,7 +28,7 @@ public class ImageGenerationHistoryService {
 
     /**
      * Сохранить историю генерации изображений в рамках сессии.
-     * Автоматически вычисляет номер итерации и обновляет время сессии.
+     * Для веб-сайта, где есть Spring Security контекст.
      *
      * @param imageUrls список URL сгенерированных изображений
      * @param prompt промпт пользователя
@@ -42,29 +42,49 @@ public class ImageGenerationHistoryService {
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userRepository::findByUsername)
                 .flatMapMany(user -> {
-                    // Преобразуем списки в JSON строки
-                    List<String> imageUrlsList = new ArrayList<>();
-                    imageUrls.forEach(imageUrlsList::add);
-                    String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
-                    String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
-                    
-                    log.info("Сгенерированные изображения: {}", imageUrlsJson);
-                    log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
-                    
-                    // Создаем ОДНУ запись истории для всех сгенерированных изображений
-                    return imageGenerationHistoryRepository.saveWithJsonb(
-                            user.getId(),
-                            imageUrlsJson,
-                            prompt,
-                            LocalDateTime.now(),
-                            sessionId,
-                            inputImageUrlsJson
-                    )
-                    .doOnNext(history -> 
-                            log.info("Запись истории сохранена: ID={}, сессия={}, изображений={}", 
-                                    history.getId(), sessionId, imageUrlsList.size()));
+                    // Вызываем перегруженный метод с userId
+                    return saveHistories(user.getId(), imageUrls, prompt, sessionId, inputImageUrls);
                 });
     }
+
+    /**
+     * Сохранить историю генерации изображений для конкретного пользователя.
+     * Перегрузка метода для случаев, когда userId известен напрямую (например, Telegram бот).
+     *
+     * @param userId ID пользователя
+     * @param imageUrls список URL сгенерированных изображений
+     * @param prompt промпт пользователя
+     * @param sessionId идентификатор сессии
+     * @param inputImageUrls список URL входных изображений (для отображения в истории)
+     * @return сохраненные записи истории
+     */
+    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls) {
+        log.info("Сохранение истории генерации для пользователя {} в сессии {}, промпт: {}, используемые в запросе изображения {}", userId, sessionId, prompt, inputImageUrls);
+        
+        // Преобразуем списки в JSON строки
+        List<String> imageUrlsList = new ArrayList<>();
+        imageUrls.forEach(imageUrlsList::add);
+        String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
+        String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
+        
+        log.info("Сгенерированные изображения: {}", imageUrlsJson);
+        log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
+        
+        // Создаем ОДНУ запись истории для всех сгенерированных изображений
+        return imageGenerationHistoryRepository.saveWithJsonb(
+                userId,
+                imageUrlsJson,
+                prompt,
+                LocalDateTime.now(),
+                sessionId,
+                inputImageUrlsJson
+        )
+        .doOnNext(history -> 
+                log.info("Запись истории сохранена: ID={}, пользователь={}, сессия={}, изображений={}", 
+                        history.getId(), userId, sessionId, imageUrlsList.size()))
+        .flux();
+    }
+
 
     /**
      * Сохранить историю генерации изображений (старый метод для обратной совместимости).
