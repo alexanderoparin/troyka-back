@@ -339,6 +339,13 @@ public class TelegramBotService {
      * Генерировать изображение.
      */
     private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
+        return generateImage(userId, sessionId, prompt, prompt, inputImageUrls);
+    }
+
+    /**
+     * Генерировать изображение с отдельным промптом для отображения.
+     */
+    private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, String displayPrompt, List<String> inputImageUrls) {
         log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {}", userId, sessionId, prompt);
 
         // Создаем запрос для FAL AI
@@ -367,7 +374,7 @@ public class TelegramBotService {
                                         "📝 *Промпт:* %s\n" +
                                         "💰 *Стоимость:* 3 поинта\n\n" +
                                         "🔄 *Хотите еще?* Просто отправьте новое описание!",
-                                        prompt
+                                        displayPrompt
                                 );
 
                                 return telegramMessageService.sendPhotoWithMessageId(chatId, imageResponse.getImageUrls().get(0), caption)
@@ -392,6 +399,7 @@ public class TelegramBotService {
                             });
                 });
     }
+
 
     /**
      * Отправить приветственное сообщение.
@@ -513,14 +521,14 @@ public class TelegramBotService {
                                                         "Отправьте текстовое описание для изменения изображения.");
                                             }
                                             
-                                            // Создаем новый промпт с контекстом
-                                            String contextualPrompt = String.format("Исходное изображение: %s. %s", 
-                                                    "изображение", newPrompt);
+                                            // Для FAL AI используем оригинальный промпт, для отображения - красивый формат
+                                            String displayPrompt = String.format("<исходное изображение> %s", newPrompt);
                                             
-                                            log.info("Диалог с изображением: пользователь {} изменил промпт на '{}'", user.getId(), contextualPrompt);
+                                            log.info("Диалог с изображением: пользователь {} изменил промпт на '{}'", user.getId(), displayPrompt);
                                             
                                             // Генерируем новое изображение с предыдущим как input
-                                            return handleTextMessage(chatId, userId, contextualPrompt, List.of(previousImageUrl));
+                                            return telegramBotSessionService.getOrCreateTelegramBotSession(userId, chatId)
+                                                    .flatMap(session -> generateImage(userId, session.getId(), newPrompt, displayPrompt, List.of(previousImageUrl)));
                                         });
                             });
                 });
