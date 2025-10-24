@@ -44,15 +44,65 @@ public class TelegramFileService {
                 .retrieve()
                 .bodyToMono(TelegramFileResponse.class)
                 .timeout(TIMEOUT)
+                .doOnNext(response -> {
+                    log.info("Ответ от Telegram getFile API: ok={}, description={}", response.isOk(), response.getDescription());
+                    if (response.getResult() != null) {
+                        log.info("Детали файла: fileId={}, filePath={}, fileSize={}", 
+                                response.getResult().getFileId(), 
+                                response.getResult().getFilePath(), 
+                                response.getResult().getFileSize());
+                    }
+                })
                 .map(response -> {
                     if (response.isOk() && response.getResult() != null) {
                         String filePath = response.getResult().getFilePath();
-                        return TELEGRAM_API_URL + botToken + "/" + filePath;
+                        String fullUrl = TELEGRAM_API_URL + botToken + "/" + filePath;
+                        log.info("Сформированный URL: {}", fullUrl);
+                        return fullUrl;
                     }
                     throw new RuntimeException("Не удалось получить URL файла: " + response.getDescription());
                 })
                 .doOnSuccess(url -> log.info("URL файла получен: {}", url))
                 .doOnError(error -> log.error("Ошибка получения URL файла: {}", error.getMessage()));
+    }
+
+    /**
+     * Скачать файл с Telegram и получить его содержимое в base64.
+     *
+     * @param fileId ID файла в Telegram
+     * @return содержимое файла в base64
+     */
+    public Mono<String> downloadFileAsBase64(String fileId) {
+        log.info("Скачивание файла с Telegram для file_id: {}", fileId);
+
+        WebClient webClient = webClientBuilder
+                .baseUrl(TELEGRAM_API_URL + botToken)
+                .build();
+
+        return webClient.get()
+                .uri("/getFile?file_id=" + fileId)
+                .retrieve()
+                .bodyToMono(TelegramFileResponse.class)
+                .timeout(TIMEOUT)
+                .flatMap(response -> {
+                    if (response.isOk() && response.getResult() != null) {
+                        String filePath = response.getResult().getFilePath();
+                        String fileUrl = TELEGRAM_API_URL + botToken + "/" + filePath;
+                        
+                        // Скачиваем файл
+                        return webClient.get()
+                                .uri(filePath)
+                                .retrieve()
+                                .bodyToMono(byte[].class)
+                                .map(bytes -> {
+                                    String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
+                                    log.info("Файл скачан и конвертирован в base64, размер: {} байт", bytes.length);
+                                    return base64;
+                                });
+                    }
+                    return Mono.error(new RuntimeException("Не удалось получить путь к файлу: " + response.getDescription()));
+                })
+                .doOnError(error -> log.error("Ошибка скачивания файла: {}", error.getMessage()));
     }
 
     /**
