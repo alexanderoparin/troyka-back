@@ -384,9 +384,11 @@ public class TelegramBotService {
                     return telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId)
                             .flatMap(telegramBotSession -> {
                                 Long chatId = telegramBotSession.getChatId();
-                                return telegramMessageService.sendErrorMessage(chatId, 
-                                        "❌ *Ошибка генерации*\n\n" +
-                                        "Произошла ошибка при создании изображения. Попробуйте еще раз.");
+                                // Отправляем сообщение об ошибке
+                                return sendMessage(chatId, """
+                                        ❌ *Ошибка генерации*
+                                        Произошла ошибка при создании изображения. Попробуйте еще раз.""")
+                                        .then();
                             });
                 });
     }
