@@ -89,7 +89,6 @@ public class TelegramBotService {
                 "• /start - Начать работу с ботом\n" +
                 "• /help - Показать эту справку\n" +
                 "• /balance - Проверить баланс поинтов\n" +
-                "• /history - История генераций\n" +
                 "• /settings - Настройки уведомлений\n\n" +
                 "🎨 *Генерация изображений:*\n" +
                 "• Отправьте текстовое описание\n" +
@@ -162,56 +161,6 @@ public class TelegramBotService {
                 .doOnError(error -> log.error("Ошибка обработки команды /settings для чата {}", chatId, error));
     }
 
-    /**
-     * Обработать команду /history.
-     *
-     * @param chatId ID чата
-     * @param telegramId ID пользователя в Telegram
-     */
-    public Mono<Void> handleHistoryCommand(Long chatId, Long telegramId) {
-        log.info("Обработка команды /history для чата {} и пользователя {}", chatId, telegramId);
-
-        return userRepository.findByTelegramId(telegramId)
-                .switchIfEmpty(Mono.defer(() -> {
-                    return sendMessage(chatId, "❌ Пользователь не найден. Используйте /start для регистрации.")
-                            .then(Mono.empty());
-                }))
-                .flatMap(user -> {
-                    // Получаем историю генераций пользователя
-                    return imageGenerationHistoryService.getUserImageHistory(user.getId())
-                            .take(10)
-                            .collectList()
-                            .flatMap(histories -> {
-                                if (histories.isEmpty()) {
-                                    return sendMessage(chatId, "📚 *История генераций*\n\n" +
-                                            "🔄 У вас пока нет сгенерированных изображений.\n" +
-                                            "🎨 Отправьте описание изображения, чтобы начать!");
-                                }
-
-                                StringBuilder message = new StringBuilder("📚 *История генераций*\n\n");
-                                
-                                for (int i = 0; i < Math.min(histories.size(), 5); i++) {
-                                    var history = histories.get(i);
-                                    message.append(String.format("🎨 *%d.* %s\n", i + 1, 
-                                            history.getPrompt().length() > 50 ? 
-                                            history.getPrompt().substring(0, 50) + "..." : 
-                                            history.getPrompt()));
-                                    message.append(String.format("📅 %s\n\n", 
-                                            history.getCreatedAt().toString().substring(0, 16)));
-                                }
-
-                                if (histories.size() > 5) {
-                                    message.append("... и еще ").append(histories.size() - 5).append(" генераций\n\n");
-                                }
-
-                                message.append("🌐 *Полная история:* https://24reshai.ru/history");
-
-                                return sendMessage(chatId, message.toString());
-                            });
-                })
-                .doOnSuccess(v -> log.info("Команда /history обработана для чата {}", chatId))
-                .doOnError(error -> log.error("Ошибка обработки команды /history для чата {}", chatId, error));
-    }
 
     /**
      * Обработать текстовое сообщение (промпт для генерации).
@@ -560,7 +509,6 @@ public class TelegramBotService {
             case "/start" -> handleStartCommand(chatId, userId, username);
             case "/help" -> handleHelpCommand(chatId);
             case "/balance" -> handleBalanceCommand(chatId, userId);
-            case "/history" -> handleHistoryCommand(chatId, userId);
             case "/settings" -> handleSettingsCommand(chatId, userId);
             default -> handleUnknownCommand(chatId, command);
         };
@@ -579,7 +527,6 @@ public class TelegramBotService {
                 "• /start - Начать работу с ботом\n" +
                 "• /help - Справка\n" +
                 "• /balance - Баланс поинтов\n" +
-                "• /history - История генераций\n" +
                 "• /settings - Настройки\n\n" +
                 "💡 *Или просто отправьте описание изображения для генерации!*");
     }
