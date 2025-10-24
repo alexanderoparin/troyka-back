@@ -135,7 +135,8 @@ public class TelegramBotSessionService {
                 .matching(Query.query(Criteria.where("userId").is(userId)))
                 .apply(Update.update("lastGeneratedMessageId", messageId)
                         .set("updatedAt", LocalDateTime.now()))
-                .doOnNext(updated -> log.info("lastGeneratedMessageId обновлен для пользователя {}: {}", userId, messageId))
+                .doOnNext(updated -> log.info("lastGeneratedMessageId обновлен для пользователя {}: {} (обновлено записей: {})", userId, messageId, updated))
+                .doOnError(error -> log.error("Ошибка обновления lastGeneratedMessageId для пользователя {}: {}", userId, error.getMessage()))
                 .then();
     }
 
@@ -146,7 +147,11 @@ public class TelegramBotSessionService {
      * @return ID последнего сообщения или null
      */
     public Mono<Long> getLastGeneratedMessageId(Long userId) {
+        log.info("Получение lastGeneratedMessageId для пользователя {}", userId);
         return telegramBotSessionRepository.findByUserId(userId)
-                .map(TelegramBotSession::getLastGeneratedMessageId);
+                .doOnNext(session -> log.info("Найдена сессия для пользователя {}: lastGeneratedMessageId = {}", userId, session.getLastGeneratedMessageId()))
+                .map(TelegramBotSession::getLastGeneratedMessageId)
+                .doOnNext(messageId -> log.info("Возвращаем lastGeneratedMessageId для пользователя {}: {}", userId, messageId))
+                .doOnError(error -> log.error("Ошибка получения lastGeneratedMessageId для пользователя {}: {}", userId, error.getMessage()));
     }
 }

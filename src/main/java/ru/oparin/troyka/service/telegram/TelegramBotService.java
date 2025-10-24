@@ -371,7 +371,11 @@ public class TelegramBotService {
                                 );
 
                                 return telegramMessageService.sendPhotoWithMessageId(chatId, imageResponse.getImageUrls().get(0), caption)
-                                        .flatMap(messageId -> telegramBotSessionService.updateLastGeneratedMessageId(userId, messageId))
+                                        .flatMap(messageId -> {
+                                            log.info("Сохранение messageId {} для пользователя {}", messageId, userId);
+                                            return telegramBotSessionService.updateLastGeneratedMessageId(userId, messageId)
+                                                    .then(Mono.just(messageId));
+                                        })
                                         .then();
                             });
                 })
@@ -481,8 +485,13 @@ public class TelegramBotService {
         
         // Проверяем, что это ответ на последнее сгенерированное сообщение
         return telegramBotSessionService.getLastGeneratedMessageId(userId)
+                .doOnNext(lastGeneratedMessageId -> 
+                    log.info("Получен lastGeneratedMessageId для пользователя {}: {}, replyToMessageId: {}", 
+                            userId, lastGeneratedMessageId, replyToMessageId))
                 .flatMap(lastGeneratedMessageId -> {
                     if (!replyToMessageId.equals(lastGeneratedMessageId)) {
+                        log.warn("Пользователь {} ответил на старое сообщение: {} != {}", 
+                                userId, replyToMessageId, lastGeneratedMessageId);
                         return sendMessage(chatId, "❌ *Нельзя ответить на старое сообщение*\n\n" +
                                 "Отвечайте только на последнее сгенерированное изображение.");
                     }
@@ -507,6 +516,7 @@ public class TelegramBotService {
                             });
                 })
                 .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Нет lastGeneratedMessageId для пользователя {} - возможно, не было сгенерировано изображений", userId);
                     return sendMessage(chatId, "❌ *Нет контекста*\n\n" +
                             "Сначала сгенерируйте изображение, а затем ответьте на него.");
                 }));
