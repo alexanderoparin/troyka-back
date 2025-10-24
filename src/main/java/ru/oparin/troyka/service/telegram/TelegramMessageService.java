@@ -1,5 +1,6 @@
 package ru.oparin.troyka.service.telegram;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +11,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.dto.telegram.TelegramApiResponse;
 
 import java.time.Duration;
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.List;
 public class TelegramMessageService {
 
     private final WebClient.Builder webClientBuilder;
+    private final ObjectMapper objectMapper;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -80,6 +83,18 @@ public class TelegramMessageService {
      * @return результат отправки
      */
     public Mono<Void> sendPhoto(Long chatId, String photoUrl, String caption) {
+        return sendPhotoWithMessageId(chatId, photoUrl, caption).then();
+    }
+
+    /**
+     * Отправить фото с подписью и получить messageId.
+     *
+     * @param chatId ID чата
+     * @param photoUrl URL фото
+     * @param caption подпись к фото
+     * @return messageId отправленного сообщения
+     */
+    public Mono<Long> sendPhotoWithMessageId(Long chatId, String photoUrl, String caption) {
         log.info("Отправка фото в чат {}: {}", chatId, photoUrl);
 
         WebClient webClient = webClientBuilder
@@ -99,11 +114,18 @@ public class TelegramMessageService {
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData(body))
                 .retrieve()
-                .bodyToMono(String.class)
+                .bodyToMono(TelegramApiResponse.class)
                 .timeout(TIMEOUT)
-                .doOnSuccess(response -> log.info("Фото успешно отправлено в чат {}: {}", chatId, response))
-                .doOnError(error -> log.error("Ошибка отправки фото в чат {}: {}", chatId, error.getMessage()))
-                .then();
+                .map(response -> {
+                    if (response.getOk() && response.getResult() != null) {
+                        return response.getResult().getMessageId();
+                    } else {
+                        log.warn("Telegram API вернул ошибку: {} - {}", response.getErrorCode(), response.getDescription());
+                        return 0L;
+                    }
+                })
+                .doOnSuccess(messageId -> log.info("Фото успешно отправлено в чат {} с messageId: {}", chatId, messageId))
+                .doOnError(error -> log.error("Ошибка отправки фото в чат {}: {}", chatId, error.getMessage()));
     }
 
     /**
@@ -204,5 +226,38 @@ public class TelegramMessageService {
     public Mono<Void> sendSuccessMessage(Long chatId, String successMessage) {
         String message = "✅ *Успешно*\n\n" + successMessage;
         return sendMessage(chatId, message);
+    }
+
+    /**
+     * Получить сообщение по ID.
+     *
+     * @param chatId ID чата
+     * @param messageId ID сообщения
+     * @return сообщение или пустой результат
+     */
+    public Mono<ru.oparin.troyka.model.dto.telegram.TelegramMessage> getMessageById(Long chatId, Long messageId) {
+        log.debug("Получение сообщения {} из чата {}", messageId, chatId);
+
+        WebClient webClient = webClientBuilder
+                .baseUrl(TELEGRAM_API_URL + botToken)
+                .build();
+
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("chat_id", String.valueOf(chatId));
+        body.add("message_id", String.valueOf(messageId));
+
+        return webClient.post()
+                .uri("/getUpdates")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData(body))
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(TIMEOUT)
+                .map(response -> {
+                    // Парсим ответ и извлекаем сообщение
+                    // TODO: Реализовать парсинг JSON ответа
+                    return (ru.oparin.troyka.model.dto.telegram.TelegramMessage) null; // Временная заглушка
+                })
+                .doOnError(error -> log.error("Ошибка получения сообщения {} из чата {}: {}", messageId, chatId, error.getMessage()));
     }
 }

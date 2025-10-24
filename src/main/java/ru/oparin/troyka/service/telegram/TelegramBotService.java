@@ -6,6 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
+import ru.oparin.troyka.model.dto.telegram.TelegramMessage;
+import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
+import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.FalAIService;
@@ -218,7 +221,20 @@ public class TelegramBotService {
      * @param prompt промпт для генерации
      */
     public Mono<Void> handleTextMessage(Long chatId, Long telegramId, String prompt) {
-        log.info("Обработка текстового сообщения для чата {} и пользователя {}: {}", chatId, telegramId, prompt);
+        return handleTextMessage(chatId, telegramId, prompt, List.of());
+    }
+
+    /**
+     * Обработать текстовое сообщение с входными изображениями.
+     *
+     * @param chatId ID чата
+     * @param telegramId ID пользователя в Telegram
+     * @param prompt промпт для генерации
+     * @param inputImageUrls список URL входных изображений
+     */
+    public Mono<Void> handleTextMessage(Long chatId, Long telegramId, String prompt, List<String> inputImageUrls) {
+        log.info("Обработка текстового сообщения для чата {} и пользователя {}: {} (входных изображений: {})", 
+                chatId, telegramId, prompt, inputImageUrls.size());
 
         return userRepository.findByTelegramId(telegramId)
                 .switchIfEmpty(Mono.defer(() -> {
@@ -240,11 +256,13 @@ public class TelegramBotService {
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
                                         .flatMap(session -> {
                                             // Отправляем typing indicator и сообщение о начале генерации
+                                            String generationMessage = inputImageUrls.isEmpty() 
+                                                    ? "🎨 *Генерация изображения...*\n\n📝 *Промпт:* " + prompt + "\n⏱️ *Ожидайте 5-10 секунд*"
+                                                    : "🎨 *Редактирование изображения...*\n\n📝 *Промпт:* " + prompt + "\n⏱️ *Ожидайте 5-10 секунд*";
+                                            
                                             return telegramMessageService.sendTypingAction(chatId)
-                                                    .then(sendMessage(chatId, "🎨 *Генерация изображения...*\n\n" +
-                                                            "📝 *Промпт:* " + prompt + "\n" +
-                                                            "⏱️ *Ожидайте 5-10 секунд*"))
-                                                    .then(generateImage(user.getId(), session.getId(), prompt, List.of()));
+                                                    .then(sendMessage(chatId, generationMessage))
+                                                    .then(generateImage(user.getId(), session.getId(), prompt, inputImageUrls));
                                         });
                             });
                 })
@@ -352,7 +370,9 @@ public class TelegramBotService {
                                         prompt
                                 );
 
-                                return telegramMessageService.sendPhoto(chatId, imageResponse.getImageUrls().get(0), caption);
+                                return telegramMessageService.sendPhotoWithMessageId(chatId, imageResponse.getImageUrls().get(0), caption)
+                                        .flatMap(messageId -> telegramBotSessionService.updateLastGeneratedMessageId(userId, messageId))
+                                        .then();
                             });
                 })
                 .onErrorResume(error -> {
@@ -390,7 +410,7 @@ public class TelegramBotService {
      * @param update объект обновления от Telegram
      * @return результат обработки
      */
-    public Mono<Void> processUpdate(ru.oparin.troyka.model.dto.telegram.TelegramUpdate update) {
+    public Mono<Void> processUpdate(TelegramUpdate update) {
         log.info("Обработка обновления от Telegram: {}", update);
 
         if (update.getMessage() == null) {
@@ -398,7 +418,7 @@ public class TelegramBotService {
             return Mono.empty();
         }
 
-        ru.oparin.troyka.model.dto.telegram.TelegramMessage message = update.getMessage();
+        TelegramMessage message = update.getMessage();
         Long chatId = message.getChat().getId();
         Long userId = message.getFrom().getId();
         String username = message.getFrom().getUsername();
@@ -407,6 +427,11 @@ public class TelegramBotService {
                 message.getText() != null ? message.getText() : "медиа");
 
         try {
+            // Обработка ответов на сообщения (диалог с изображениями)
+            if (message.getReplyToMessage() != null) {
+                return handleReplyMessage(chatId, userId, message);
+            }
+
             // Обработка команд
             if (message.getText() != null && message.getText().startsWith("/")) {
                 return handleCommand(chatId, userId, username, message.getText());
@@ -414,7 +439,7 @@ public class TelegramBotService {
 
             // Обработка фото с подписью
             if (message.getPhoto() != null && !message.getPhoto().isEmpty() && message.getCaption() != null) {
-                ru.oparin.troyka.model.dto.telegram.TelegramPhoto photo = message.getPhoto().get(message.getPhoto().size() - 1); // Берем фото наибольшего размера
+                TelegramPhoto photo = message.getPhoto().get(message.getPhoto().size() - 1); // Берем фото наибольшего размера
                 return telegramFileService.getFileUrl(photo.getFileId())
                         .flatMap(photoUrl -> handlePhotoMessage(chatId, userId, photoUrl, message.getCaption()))
                         .onErrorResume(error -> {
@@ -438,6 +463,70 @@ public class TelegramBotService {
             return sendMessage(chatId, "❌ *Произошла ошибка*\n\n" +
                     "Попробуйте еще раз или обратитесь в поддержку: https://24reshai.ru/contacts");
         }
+    }
+
+    /**
+     * Обработать ответ на сообщение (диалог с изображениями).
+     *
+     * @param chatId ID чата
+     * @param userId ID пользователя
+     * @param message сообщение-ответ
+     * @return результат обработки
+     */
+    private Mono<Void> handleReplyMessage(Long chatId, Long userId, TelegramMessage message) {
+        log.info("Обработка ответа на сообщение от пользователя {} в чате {}", userId, chatId);
+        
+        TelegramMessage replyToMessage = message.getReplyToMessage();
+        Long replyToMessageId = replyToMessage.getMessageId();
+        
+        // Проверяем, что это ответ на последнее сгенерированное сообщение
+        return telegramBotSessionService.getLastGeneratedMessageId(userId)
+                .flatMap(lastGeneratedMessageId -> {
+                    if (!replyToMessageId.equals(lastGeneratedMessageId)) {
+                        return sendMessage(chatId, "❌ *Нельзя ответить на старое сообщение*\n\n" +
+                                "Отвечайте только на последнее сгенерированное изображение.");
+                    }
+                    
+                    // Получаем изображение из reply_to_message
+                    return extractImageFromReplyMessage(replyToMessage)
+                            .flatMap(previousImageUrl -> {
+                                String newPrompt = message.getText();
+                                if (newPrompt == null || newPrompt.trim().isEmpty()) {
+                                    return sendMessage(chatId, "❌ *Пустой запрос*\n\n" +
+                                            "Отправьте текстовое описание для изменения изображения.");
+                                }
+                                
+                                // Создаем новый промпт с контекстом
+                                String contextualPrompt = String.format("Исходное изображение: %s. %s", 
+                                        "изображение", newPrompt);
+                                
+                                log.info("Диалог с изображением: пользователь {} изменил промпт на '{}'", userId, contextualPrompt);
+                                
+                                // Генерируем новое изображение с предыдущим как input
+                                return handleTextMessage(chatId, userId, contextualPrompt, List.of(previousImageUrl));
+                            });
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    return sendMessage(chatId, "❌ *Нет контекста*\n\n" +
+                            "Сначала сгенерируйте изображение, а затем ответьте на него.");
+                }));
+    }
+
+    /**
+     * Извлечь изображение из сообщения-ответа.
+     *
+     * @param replyMessage сообщение-ответ
+     * @return URL изображения или пустой результат
+     */
+    private Mono<String> extractImageFromReplyMessage(TelegramMessage replyMessage) {
+        // Проверяем, есть ли фото в сообщении
+        if (replyMessage.getPhoto() != null && !replyMessage.getPhoto().isEmpty()) {
+            TelegramPhoto photo = replyMessage.getPhoto().get(replyMessage.getPhoto().size() - 1);
+            return telegramFileService.getFileUrl(photo.getFileId());
+        }
+        
+        // Если нет фото, возвращаем пустой результат
+        return Mono.empty();
     }
 
     /**

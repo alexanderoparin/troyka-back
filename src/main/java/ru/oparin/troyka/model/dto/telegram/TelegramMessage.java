@@ -20,4 +20,7 @@ public class TelegramMessage {
     private String text;
     private String caption;
     private List<TelegramPhoto> photo;
+    
+    @JsonProperty("reply_to_message")
+    private TelegramMessage replyToMessage;
 }

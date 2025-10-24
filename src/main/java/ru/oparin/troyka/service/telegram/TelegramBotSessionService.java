@@ -120,4 +120,33 @@ public class TelegramBotSessionService {
     public Mono<Boolean> existsTelegramBotSession(Long userId) {
         return telegramBotSessionRepository.existsByUserId(userId);
     }
+
+    /**
+     * Обновить ID последнего сгенерированного сообщения.
+     *
+     * @param userId ID пользователя
+     * @param messageId ID сообщения с изображением
+     * @return результат обновления
+     */
+    public Mono<Void> updateLastGeneratedMessageId(Long userId, Long messageId) {
+        log.info("Обновление lastGeneratedMessageId для пользователя {}: {}", userId, messageId);
+        
+        return r2dbcEntityTemplate.update(TelegramBotSession.class)
+                .matching(Query.query(Criteria.where("userId").is(userId)))
+                .apply(Update.update("lastGeneratedMessageId", messageId)
+                        .set("updatedAt", LocalDateTime.now()))
+                .doOnNext(updated -> log.info("lastGeneratedMessageId обновлен для пользователя {}: {}", userId, messageId))
+                .then();
+    }
+
+    /**
+     * Получить ID последнего сгенерированного сообщения.
+     *
+     * @param userId ID пользователя
+     * @return ID последнего сообщения или null
+     */
+    public Mono<Long> getLastGeneratedMessageId(Long userId) {
+        return telegramBotSessionRepository.findByUserId(userId)
+                .map(TelegramBotSession::getLastGeneratedMessageId);
+    }
 }

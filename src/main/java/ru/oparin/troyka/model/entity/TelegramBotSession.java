@@ -42,6 +42,12 @@ public class TelegramBotSession {
     private Long chatId;
 
     /**
+     * ID последнего сгенерированного сообщения в Telegram.
+     * Используется для обработки ответов на сгенерированные изображения.
+     */
+    private Long lastGeneratedMessageId;
+
+    /**
      * Дата и время создания записи.
      * Автоматически устанавливается при создании.
      */
