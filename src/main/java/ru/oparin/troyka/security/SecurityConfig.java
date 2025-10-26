@@ -15,6 +15,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+import reactor.core.publisher.Mono;
 import ru.oparin.troyka.service.JwtService;
 
 @RequiredArgsConstructor
@@ -66,6 +67,12 @@ public class SecurityConfig {
                 )
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
                 .addFilterAt(jwtAuthenticationFilter(), SecurityWebFiltersOrder.AUTHENTICATION)
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((exchange, ex) -> {
+                            // Удаляем WWW-Authenticate заголовок для предотвращения браузерного диалога
+                            exchange.getResponse().getHeaders().remove("WWW-Authenticate");
+                            return Mono.empty();
+                        }))
                 .build();
     }
 
