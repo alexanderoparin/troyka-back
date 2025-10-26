@@ -47,7 +47,7 @@ public class TelegramBotService {
      * @param telegramId ID пользователя в Telegram
      * @param username имя пользователя в Telegram
      */
-    public Mono<Void> handleStartCommand(Long chatId, Long telegramId, String username) {
+    public Mono<Void> handleStartCommand(Long chatId, Long telegramId, String username, String firstName, String lastName) {
         log.info("Обработка команды /start для чата {} и пользователя {}", chatId, telegramId);
 
         return userRepository.findByTelegramId(telegramId)
@@ -67,7 +67,7 @@ public class TelegramBotService {
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Новый пользователь - создаем аккаунт
-                    return createUserFromTelegram(telegramId, username)
+                    return createUserFromTelegram(telegramId, username, firstName, lastName)
                             .flatMap(user -> userRepository.save(user)
                                     .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
                                             .then(telegramBotSessionService.getOrCreateTelegramBotSession(savedUser.getId(), chatId))
@@ -237,19 +237,21 @@ public class TelegramBotService {
     /**
      * Создать пользователя из данных Telegram.
      */
-    private Mono<User> createUserFromTelegram(Long telegramId, String username) {
+    private Mono<User> createUserFromTelegram(Long telegramId, String username, String firstName, String lastName) {
         return Mono.fromCallable(() -> {
-            String email = "telegram_" + telegramId + "@telegram.local";
             String generatedUsername = username != null ? username : "tg_" + telegramId;
+            String fullName = firstName != null 
+                    ? (lastName != null ? firstName + " " + lastName : firstName)
+                    : username != null ? username : "tg_" + telegramId;
 
             return User.builder()
                     .username(generatedUsername)
-                    .email(email)
+                    .email(null) // Для пользователей из Telegram email не требуется
                     .password("telegram_auth_" + telegramId) // Временный пароль
-                    .emailVerified(true) // Telegram пользователи считаются верифицированными
+                    .emailVerified(false) // У пользователей без email верификация не требуется
                     .telegramId(telegramId)
                     .telegramUsername(username)
-                    .telegramFirstName(username)
+                    .telegramFirstName(fullName)
                     .build();
         });
     }
@@ -357,6 +359,8 @@ public class TelegramBotService {
         Long chatId = message.getChat().getId();
         Long telegramId = message.getFrom().getId();
         String username = message.getFrom().getUsername();
+        String firstName = message.getFrom().getFirstName();
+        String lastName = message.getFrom().getLastName();
 
         log.debug("Обработка сообщения от пользователя {} в чате {}: {}", telegramId, chatId, 
                 message.getText() != null ? message.getText() : "медиа");
@@ -369,7 +373,7 @@ public class TelegramBotService {
 
             // Обработка команд
             if (message.getText() != null && message.getText().startsWith("/")) {
-                return handleCommand(chatId, telegramId, username, message.getText());
+                return handleCommand(chatId, telegramId, username, firstName, lastName, message.getText());
             }
 
             // Обработка фото с подписью
@@ -475,9 +479,9 @@ public class TelegramBotService {
     /**
      * Обработать команды.
      */
-    private Mono<Void> handleCommand(Long chatId, Long userId, String username, String command) {
+    private Mono<Void> handleCommand(Long chatId, Long userId, String username, String firstName, String lastName, String command) {
         return switch (command) {
-            case "/start" -> handleStartCommand(chatId, userId, username);
+            case "/start" -> handleStartCommand(chatId, userId, username, firstName, lastName);
             case "/help" -> handleHelpCommand(chatId);
             case "/balance" -> handleBalanceCommand(chatId, userId);
             default -> handleUnknownCommand(chatId, command);
