@@ -111,11 +111,17 @@ public class AuthController {
             description = "Завершает сессию пользователя и инвалидирует JWT токен")
     @PostMapping("/logout")
     public Mono<ResponseEntity<MessageResponse>> logout(ServerWebExchange exchange) {
+        log.info("Получен запрос на выход из системы");
+        
         return SecurityUtil.getCurrentUsername()
+                .doOnNext(username -> log.info("Выход пользователя: {}", username))
                 .then(JwtUtil.extractToken(exchange))
                 .doOnNext(token -> {
                     if (token != null) {
                         jwtService.invalidateToken(token);
+                        log.info("Токен инвалидирован");
+                    } else {
+                        log.warn("Токен не найден при выходе");
                     }
                 })
                 .then(Mono.just(ResponseEntity.ok(new MessageResponse("Успешный выход из системы"))))
