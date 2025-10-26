@@ -100,28 +100,6 @@ public class TelegramBotSessionService {
     }
 
     /**
-     * Получить специальную сессию по ID чата.
-     *
-     * @param chatId ID чата в Telegram
-     * @return специальная сессия или пустой результат
-     */
-    public Mono<Session> getTelegramBotSessionByChatId(Long chatId) {
-        return telegramBotSessionRepository.findByChatId(chatId)
-                .flatMap(telegramBotSession -> sessionRepository.findById(telegramBotSession.getSessionId()));
-    }
-
-
-    /**
-     * Проверить существование специальной сессии для пользователя.
-     *
-     * @param userId ID пользователя
-     * @return true если сессия существует, false иначе
-     */
-    public Mono<Boolean> existsTelegramBotSession(Long userId) {
-        return telegramBotSessionRepository.existsByUserId(userId);
-    }
-
-    /**
      * Обновить ID последнего сгенерированного сообщения.
      *
      * @param userId ID пользователя

@@ -14,7 +14,6 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.telegram.TelegramApiResponse;
 
 import java.time.Duration;
-import java.util.List;
 
 /**
  * Сервис для отправки сообщений и медиа через Telegram Bot API.
@@ -75,18 +74,6 @@ public class TelegramMessageService {
     }
 
     /**
-     * Отправить фото с подписью.
-     *
-     * @param chatId ID чата
-     * @param photoUrl URL фото
-     * @param caption подпись к фото
-     * @return результат отправки
-     */
-    public Mono<Void> sendPhoto(Long chatId, String photoUrl, String caption) {
-        return sendPhotoWithMessageId(chatId, photoUrl, caption).then();
-    }
-
-    /**
      * Отправить фото с подписью и получить messageId.
      *
      * @param chatId ID чата
@@ -129,54 +116,6 @@ public class TelegramMessageService {
     }
 
     /**
-     * Отправить несколько фото в виде медиа-группы.
-     *
-     * @param chatId ID чата
-     * @param photoUrls список URL фото
-     * @param caption подпись к группе фото
-     * @return результат отправки
-     */
-    public Mono<Void> sendPhotoGroup(Long chatId, List<String> photoUrls, String caption) {
-        if (photoUrls.isEmpty()) {
-            return Mono.empty();
-        }
-
-        if (photoUrls.size() == 1) {
-            return sendPhoto(chatId, photoUrls.get(0), caption);
-        }
-
-        log.info("Отправка группы фото в чат {}: {} изображений", chatId, photoUrls.size());
-
-        WebClient webClient = webClientBuilder
-                .baseUrl(TELEGRAM_API_URL + botToken)
-                .build();
-
-        // Создаем медиа-группу
-        StringBuilder mediaGroup = new StringBuilder();
-        for (int i = 0; i < photoUrls.size(); i++) {
-            if (i > 0) {
-                mediaGroup.append(",");
-            }
-            mediaGroup.append("{\"type\":\"photo\",\"media\":\"").append(photoUrls.get(i)).append("\"}");
-        }
-
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("chat_id", String.valueOf(chatId));
-        body.add("media", "[" + mediaGroup + "]");
-
-        return webClient.post()
-                .uri("/sendMediaGroup")
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(BodyInserters.fromFormData(body))
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(TIMEOUT)
-                .doOnSuccess(response -> log.info("Группа фото успешно отправлена в чат {}: {}", chatId, response))
-                .doOnError(error -> log.error("Ошибка отправки группы фото в чат {}: {}", chatId, error.getMessage()))
-                .then();
-    }
-
-    /**
      * Отправить сообщение "печатает..." (typing indicator).
      *
      * @param chatId ID чата
@@ -213,18 +152,6 @@ public class TelegramMessageService {
      */
     public Mono<Void> sendErrorMessage(Long chatId, String errorMessage) {
         String message = "❌ *Ошибка*\n\n" + errorMessage;
-        return sendMessage(chatId, message);
-    }
-
-    /**
-     * Отправить сообщение об успехе.
-     *
-     * @param chatId ID чата
-     * @param successMessage сообщение об успехе
-     * @return результат отправки
-     */
-    public Mono<Void> sendSuccessMessage(Long chatId, String successMessage) {
-        String message = "✅ *Успешно*\n\n" + successMessage;
         return sendMessage(chatId, message);
     }
 

@@ -144,57 +144,6 @@ public class TelegramAuthService {
     }
 
     /**
-     * Безопасная привязка Telegram по email.
-     * Если пользователь с таким email существует и подтвержден - привязывает Telegram.
-     * Если пользователя нет - создает новый аккаунт с этим email.
-     * Требует подтверждения email для привязки к существующему аккаунту.
-     * Это более безопасный способ привязки, чем по username.
-     *
-     * @param request данные от Telegram Login Widget
-     * @return JWT токен и обновленная информация о пользователе
-     */
-    public Mono<AuthResponse> linkTelegramByEmail(TelegramAuthRequest request) {
-        // Если нет email в Telegram профиле - используем обычную привязку
-        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
-            return SecurityUtil.getCurrentUsername()
-                    .flatMap(userService::findByUsernameOrThrow)
-                    .flatMap(user -> linkTelegramToExistingUser(request, user.getId()));
-        }
-
-        return validateTelegramData(request)
-                .then(Mono.defer(() -> {
-                    // Проверяем, не привязан ли уже этот telegram_id
-                    return userService.findByTelegramId(request.getId())
-                            .flatMap(existingUser -> {
-                                return updateTelegramData(existingUser, request)
-                                        .flatMap(userService::saveUser)
-                                        .map(this::createAuthResponse);
-                            })
-                            .switchIfEmpty(Mono.defer(() -> {
-                                // Ищем пользователя по email
-                                return userService.findByEmail(request.getEmail())
-                                        .flatMap(existingUser -> {
-                                            // Проверяем, подтвержден ли email
-                                            if (!existingUser.getEmailVerified()) {
-                                                // Email не подтвержден - создаем новый аккаунт
-                                                return createNewUserAndAuthResponse(request);
-                                            }
-                                            
-                                            // Email подтвержден - привязываем Telegram
-                                            return updateTelegramData(existingUser, request)
-                                                    .flatMap(userService::saveUser)
-                                                    .map(this::createAuthResponse);
-                                        })
-                                        .switchIfEmpty(Mono.defer(() -> {
-                                            // Пользователя с таким email нет - создаем новый аккаунт
-                                            return createNewUserAndAuthResponse(request);
-                                        }));
-                            }));
-                }))
-                .doOnError(error -> log.error("Ошибка привязки Telegram по email для ID: {}", request.getId(), error));
-    }
-
-    /**
      * Отвязка Telegram от аккаунта.
      *
      * @param userId ID пользователя
