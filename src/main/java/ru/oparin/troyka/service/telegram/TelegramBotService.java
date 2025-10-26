@@ -89,8 +89,7 @@ public class TelegramBotService {
                 "📝 *Основные команды:*\n" +
                 "• /start - Начать работу с ботом\n" +
                 "• /help - Показать эту справку\n" +
-                "• /balance - Проверить баланс поинтов\n" +
-                "• /settings - Настройки уведомлений\n\n" +
+                "• /balance - Проверить баланс поинтов\n\n" +
                 "🎨 *Генерация изображений:*\n" +
                 "• Отправьте текстовое описание\n" +
                 "• Приложите фото + описание для генерации с референсом\n" +
@@ -133,34 +132,6 @@ public class TelegramBotService {
                 .doOnSuccess(v -> log.info("Команда /balance обработана для чата {}", chatId))
                 .doOnError(error -> log.error("Ошибка обработки команды /balance для чата {}", chatId, error));
     }
-
-    /**
-     * Обработать команду /settings.
-     *
-     * @param chatId ID чата
-     * @param telegramId ID пользователя в Telegram
-     */
-    public Mono<Void> handleSettingsCommand(Long chatId, Long telegramId) {
-        log.info("Обработка команды /settings для чата {} и пользователя {}", chatId, telegramId);
-
-        return userRepository.findByTelegramId(telegramId)
-                .switchIfEmpty(Mono.defer(() -> {
-                    return sendMessage(chatId, "❌ Пользователь не найден. Используйте /start для регистрации.")
-                            .then(Mono.empty());
-                }))
-                .flatMap(user -> {
-                    String message = "⚙️ *Настройки*\n\n" +
-                            "📧 *Email:* " + user.getEmail() + "\n" +
-                            "👤 *Имя пользователя:* " + user.getUsername() + "\n\n" +
-                            "🌐 *Изменить настройки:* https://24reshai.ru/account/edit\n" +
-                            "💳 *Пополнить баланс:* https://24reshai.ru/pricing";
-
-                    return sendMessage(chatId, message);
-                })
-                .doOnSuccess(v -> log.info("Команда /settings обработана для чата {}", chatId))
-                .doOnError(error -> log.error("Ошибка обработки команды /settings для чата {}", chatId, error));
-    }
-
 
     /**
      * Обработать текстовое сообщение (промпт для генерации).
@@ -509,7 +480,6 @@ public class TelegramBotService {
             case "/start" -> handleStartCommand(chatId, userId, username);
             case "/help" -> handleHelpCommand(chatId);
             case "/balance" -> handleBalanceCommand(chatId, userId);
-            case "/settings" -> handleSettingsCommand(chatId, userId);
             default -> handleUnknownCommand(chatId, command);
         };
     }
@@ -526,8 +496,7 @@ public class TelegramBotService {
                 "📋 *Доступные команды:*\n" +
                 "• /start - Начать работу с ботом\n" +
                 "• /help - Справка\n" +
-                "• /balance - Баланс поинтов\n" +
-                "• /settings - Настройки\n\n" +
+                "• /balance - Баланс поинтов\n\n" +
                 "💡 *Или просто отправьте описание изображения для генерации!*");
     }
 
