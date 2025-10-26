@@ -64,6 +64,7 @@ public class SecurityConfig {
                         .pathMatchers("/users/**").authenticated()
                         .pathMatchers("/api/sessions/**").authenticated()
                         .pathMatchers("/payment/**").permitAll()
+                        .pathMatchers("/art-styles/**").authenticated()
                         .anyExchange().authenticated()
                 )
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
