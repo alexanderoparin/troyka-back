@@ -28,10 +28,6 @@ public class TelegramMapper {
         user.setTelegramFirstName(request.getFirst_name());
         user.setTelegramPhotoUrl(request.getPhoto_url());
         
-        if (user.getTelegramNotificationsEnabled() == null) {
-            user.setTelegramNotificationsEnabled(true);
-        }
-        
         return user;
     }
 }

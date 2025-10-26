@@ -20,7 +20,6 @@ public class UserInfoDTO {
     private String telegramUsername;
     private String telegramFirstName;
     private String telegramPhotoUrl;
-    private Boolean telegramNotificationsEnabled;
 
     public static UserInfoDTO fromUser(User user) {
         return UserInfoDTO.builder()
@@ -33,7 +32,6 @@ public class UserInfoDTO {
                 .telegramUsername(user.getTelegramUsername())
                 .telegramFirstName(user.getTelegramFirstName())
                 .telegramPhotoUrl(user.getTelegramPhotoUrl())
-                .telegramNotificationsEnabled(user.getTelegramNotificationsEnabled())
                 .build();
     }
 }

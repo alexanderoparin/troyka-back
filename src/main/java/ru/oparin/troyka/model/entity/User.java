@@ -91,14 +91,6 @@ public class User {
     private String telegramPhotoUrl;
 
     /**
-     * Включены ли уведомления в Telegram.
-     * true - пользователь получает уведомления в Telegram.
-     * По умолчанию true.
-     */
-    @Builder.Default
-    private Boolean telegramNotificationsEnabled = true;
-
-    /**
      * Дата и время создания записи пользователя.
      * Автоматически устанавливается при создании.
      */

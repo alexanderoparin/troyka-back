@@ -150,7 +150,6 @@ public class TelegramBotService {
                 }))
                 .flatMap(user -> {
                     String message = "⚙️ *Настройки*\n\n" +
-                            "🔔 *Уведомления Telegram:* " + (user.getTelegramNotificationsEnabled() ? "✅ Включены" : "❌ Отключены") + "\n" +
                             "📧 *Email:* " + user.getEmail() + "\n" +
                             "👤 *Имя пользователя:* " + user.getUsername() + "\n\n" +
                             "🌐 *Изменить настройки:* https://24reshai.ru/account/edit\n" +
@@ -280,7 +279,6 @@ public class TelegramBotService {
                     .telegramId(telegramId)
                     .telegramUsername(username)
                     .telegramFirstName(username)
-                    .telegramNotificationsEnabled(true)
                     .build();
         });
     }

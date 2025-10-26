@@ -211,7 +211,6 @@ public class TelegramAuthService {
                     user.setTelegramUsername(null);
                     user.setTelegramFirstName(null);
                     user.setTelegramPhotoUrl(null);
-                    user.setTelegramNotificationsEnabled(false);
 
                     return userService.saveUser(user);
                 })
@@ -317,7 +316,6 @@ public class TelegramAuthService {
                             .telegramUsername(request.getUsername())
                             .telegramFirstName(request.getFirst_name())
                             .telegramPhotoUrl(request.getPhoto_url())
-                            .telegramNotificationsEnabled(true)
                             .build();
                 });
     }
