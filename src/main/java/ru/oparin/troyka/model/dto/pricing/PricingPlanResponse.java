@@ -16,7 +16,7 @@ public class PricingPlanResponse {
     private String description;
     private Integer credits;
     private Integer priceRub; // цена в копейках
-    private Integer unitPriceRubComputed; // цена за поинт в копейках
+    private Integer unitPriceRubComputed; // цена за генерацию в копейках
     private Boolean isActive;
     private Boolean isPopular;
     private Integer sortOrder;

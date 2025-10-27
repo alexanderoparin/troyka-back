@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.model.dto.pricing.PricingPlanResponse;
 import ru.oparin.troyka.model.entity.PricingPlan;
 import ru.oparin.troyka.repository.PricingPlanRepository;
@@ -14,6 +15,7 @@ import ru.oparin.troyka.repository.PricingPlanRepository;
 public class PricingService {
 
     private final PricingPlanRepository pricingPlanRepository;
+    private final GenerationProperties generationProperties;
 
     public Flux<PricingPlanResponse> getActivePricingPlans() {
         return pricingPlanRepository.findByIsActiveTrueOrderBySortOrderAsc()
@@ -28,10 +30,14 @@ public class PricingService {
     }
 
     private PricingPlanResponse mapToResponse(PricingPlan entity) {
-        // Рассчитываем цену за поинт (цена в копейках / количество поинтов)
-        Integer unitPrice = entity.getCredits() != null && entity.getCredits() > 0 
-                ? entity.getPriceRub() / entity.getCredits() 
-                : null;
+        // Рассчитываем цену за одну генерацию (цена в копейках / количество поинтов * поинты за генерацию)
+        Integer unitPrice = null;
+        if (entity.getCredits() != null && entity.getCredits() > 0 && generationProperties.getPointsPerImage() > 0) {
+            int generationsCount = entity.getCredits() / generationProperties.getPointsPerImage();
+            if (generationsCount > 0) {
+                unitPrice = entity.getPriceRub() / generationsCount;
+            }
+        }
         
         return PricingPlanResponse.builder()
                 .id(entity.getId())
