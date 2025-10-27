@@ -132,4 +132,26 @@ public class TelegramBotSessionService {
                 .doOnNext(messageId -> log.info("Возвращаем lastGeneratedMessageId для пользователя {}: {}", userId, messageId))
                 .doOnError(error -> log.error("Ошибка получения lastGeneratedMessageId для пользователя {}: {}", userId, error.getMessage()));
     }
+
+    /**
+     * Сохранить текущий промпт пользователя.
+     */
+    public Mono<Void> updateCurrentPrompt(Long userId, String prompt) {
+        return r2dbcEntityTemplate.update(TelegramBotSession.class)
+                .matching(Query.query(Criteria.where("userId").is(userId)))
+                .apply(Update.update("currentPrompt", prompt)
+                        .set("updatedAt", LocalDateTime.now()))
+                .then();
+    }
+
+    /**
+     * Установить флаг ожидания выбора стиля.
+     */
+    public Mono<Void> updateWaitingStyle(Long userId, Integer waitingStyle) {
+        return r2dbcEntityTemplate.update(TelegramBotSession.class)
+                .matching(Query.query(Criteria.where("userId").is(userId)))
+                .apply(Update.update("waitingStyle", waitingStyle)
+                        .set("updatedAt", LocalDateTime.now()))
+                .then();
+    }
 }
