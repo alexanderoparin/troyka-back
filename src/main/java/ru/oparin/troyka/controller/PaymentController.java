@@ -52,27 +52,26 @@ public class PaymentController {
     public Mono<ResponseEntity<String>> handleResult(
             @RequestParam Map<String, String> allParams) {
         
-        return Mono.fromCallable(() -> {
-            try {
-                log.info("Получен результат платежа: {}", allParams);
-                
-                String outSum = allParams.get("OutSum");
-                String invId = allParams.get("InvId");
-                String signature = allParams.get("SignatureValue");
+        log.info("Получен результат платежа: {}", allParams);
+        
+        String outSum = allParams.get("OutSum");
+        String invId = allParams.get("InvId");
+        String signature = allParams.get("SignatureValue");
 
-                if (robokassaService.verifyPayment(outSum, invId, signature)) {
-                    log.info("Платеж успешно проверен для заказа: {}", invId);
-                    return ResponseEntity.ok("OK");
-                } else {
-                    log.warn("Проверка платежа не удалась для заказа: {}", invId);
-                    return ResponseEntity.badRequest().body("FAIL");
-                }
-
-            } catch (Exception e) {
-                log.error("Ошибка обработки результата платежа: {}", e.getMessage());
-                return ResponseEntity.badRequest().body("ERROR");
-            }
-        });
+        return robokassaService.verifyPayment(outSum, invId, signature)
+                .map(isValid -> {
+                    if (isValid) {
+                        log.info("Платеж успешно проверен для заказа: {}", invId);
+                        return ResponseEntity.ok("OK");
+                    } else {
+                        log.warn("Проверка платежа не удалась для заказа: {}", invId);
+                        return ResponseEntity.ok("FAIL");
+                    }
+                })
+                .onErrorResume(e -> {
+                    log.error("Ошибка обработки результата платежа: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.ok("ERROR"));
+                });
     }
 
     @Operation(summary = "Получить историю платежей",

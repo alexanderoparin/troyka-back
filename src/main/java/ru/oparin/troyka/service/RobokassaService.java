@@ -23,7 +23,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Сервис для работы с платежной системой Робокасса
+ * Сервис для работы с платежной системой Робокасса.
+ * Обрабатывает создание платежей, формирование URL для оплаты и обработку callback'ов.
  */
 @Service
 @RequiredArgsConstructor
@@ -77,10 +78,10 @@ public class RobokassaService {
     private String resultUrl;
 
     /**
-     * Создает платеж в системе Робокасса
+     * Создает платеж в системе Робокасса и формирует URL для перенаправления на оплату.
      * 
-     * @param request данные для создания платежа
-     * @return ответ с URL для оплаты
+     * @param request данные для создания платежа (сумма, описание, количество поинтов)
+     * @return Mono с URL для оплаты и идентификатором платежа
      * @throws RuntimeException если произошла ошибка при создании платежа
      */
     public Mono<PaymentResponse> createPayment(PaymentRequest request) {
@@ -138,10 +139,10 @@ public class RobokassaService {
     }
 
     /**
-     * Отменяет платеж (устанавливает статус CANCELLED)
+     * Отменяет платеж, устанавливая статус CANCELLED.
      * 
-     * @param paymentId ID платежа для отмены
-     * @return Mono<Void>
+     * @param paymentId идентификатор платежа для отмены
+     * @return Mono<Void> завершается после сохранения отмененного платежа
      */
     private Mono<Void> cancelPayment(Long paymentId) {
         return paymentRepository.findById(paymentId)
@@ -155,14 +156,15 @@ public class RobokassaService {
     }
 
     /**
-     * Проверяет подпись платежа от Робокассы
+     * Проверяет подпись платежа от Робокассы и обрабатывает его.
+     * Если платеж уже был обработан ранее, возвращает true без повторной обработки.
      * 
      * @param outSum сумма платежа
      * @param invId идентификатор заказа
      * @param signature подпись от Робокассы
-     * @return true если подпись верна, false в противном случае
+     * @return Mono<Boolean> true если подпись верна и платеж обработан, false в противном случае
      */
-    public boolean verifyPayment(String outSum, String invId, String signature) {
+    public Mono<Boolean> verifyPayment(String outSum, String invId, String signature) {
         try {
             String checkString = String.format("%s:%s:%s", outSum, invId, password2);
             String calculatedSignature = md5(checkString);
@@ -171,54 +173,59 @@ public class RobokassaService {
             log.info("Проверка платежа для заказа {}: {}", invId, isValid ? "УСПЕШНО" : "НЕУДАЧНО");
 
             if (isValid) {
-                // Обновляем статус платежа в БД и начисляем поинты
-                // Ищем платеж по ID (invId = ID платежа)
+                // Проверяем статус платежа и обрабатываем
                 Long paymentId = Long.parseLong(invId);
-                paymentRepository.findById(paymentId)
+                
+                return paymentRepository.findById(paymentId)
                         .flatMap(payment -> {
+                            // Если платеж уже обработан, возвращаем true сразу
+                            if (payment.getStatus() == PaymentStatus.PAID) {
+                                log.info("Платеж {} уже успешно обработан. Возвращаем OK.", paymentId);
+                                return Mono.just(payment);
+                            }
+                            
+                            // Обрабатываем платеж
+                            log.info("Обработка платежа {} (текущий статус: {})", paymentId, payment.getStatus());
                             payment.setStatus(PaymentStatus.PAID);
                             payment.setPaidAt(LocalDateTime.now());
                             payment.setRobokassaResponse(String.format("OutSum=%s, InvId=%s, Signature=%s", outSum, invId, signature));
                             return paymentRepository.save(payment);
                         })
-                        .flatMap(payment -> {
-                            // Начисляем поинты пользователю
-                            if (payment.getCreditsAmount() != null && payment.getCreditsAmount() > 0) {
-                                return userPointsService.addPointsToUser(payment.getUserId(), payment.getCreditsAmount())
+                        .flatMap(p -> {
+                            if (p.getCreditsAmount() != null && p.getCreditsAmount() > 0) {
+                                return userPointsService.addPointsToUser(p.getUserId(), p.getCreditsAmount())
                                         .map(userPoints -> {
                                             log.info("Начислено {} поинтов пользователю {} (платеж {})", 
-                                                    payment.getCreditsAmount(), payment.getUserId(), payment.getId());
-                                            return payment;
+                                                    p.getCreditsAmount(), p.getUserId(), p.getId());
+                                            return p;
                                         });
                             } else {
-                                log.warn("Не удалось начислить поинты: creditsAmount = {} для платежа {}", 
-                                        payment.getCreditsAmount(), payment.getId());
-                                return Mono.just(payment);
+                                return Mono.just(p);
                             }
                         })
-                        .subscribe(
-                                updatedPayment -> log.info("Платеж обработан успешно: {}", updatedPayment.getId()),
-                                error -> log.error("Ошибка обработки платежа: {}", error.getMessage())
-                        );
+                        .map(p -> true)
+                        .doOnSuccess(v -> log.info("Платеж {} обработан успешно", paymentId))
+                        .doOnError(error -> log.error("Ошибка обработки платежа: {}", error.getMessage()))
+                        .onErrorReturn(false);
             }
 
-            return isValid;
+            return Mono.just(isValid);
 
         } catch (Exception e) {
             log.error("Ошибка проверки платежа: {}", e.getMessage());
-            return false;
+            return Mono.just(false);
         }
     }
 
     /**
-     * Создает подпись для запроса к Робокассе
-     * Согласно документации: MerchantLogin:OutSum:InvId:Receipt:Password#1
-     * где Receipt включается в подпись если присутствует
+     * Создает MD5 подпись для запроса к Робокассе.
+     * Формат: MerchantLogin:OutSum:InvId:Receipt:Password#1
      * 
      * @param amount сумма платежа
      * @param orderId идентификатор заказа
      * @param receipt данные чека для фискализации
-     * @return MD5 подпись
+     * @return MD5 подпись в шестнадцатеричном формате
+     * @throws RuntimeException если не удалось создать подпись
      */
     private String createSignature(Double amount, String orderId, Receipt receipt) {
         try {
@@ -235,14 +242,15 @@ public class RobokassaService {
     }
 
     /**
-     * Строит URL для оплаты в Робокассе с правильным URL кодированием
+     * Формирует URL для перенаправления на оплату в Робокассе.
+     * Использует двойное URL-кодирование для Receipt.
      * 
      * @param amount сумма платежа
      * @param orderId идентификатор заказа
      * @param description описание платежа
-     * @param signature подпись запроса
+     * @param signature MD5 подпись запроса
      * @param receipt данные чека для фискализации
-     * @return URL для перенаправления на оплату
+     * @return полный URL для оплаты
      */
     private String buildPaymentUrl(Double amount, String orderId, String description, String signature, Receipt receipt) {
         StringBuilder url = new StringBuilder();
@@ -279,10 +287,11 @@ public class RobokassaService {
     }
 
     /**
-     * Создает Receipt для фискализации с настройками по умолчанию
+     * Создает Receipt для фискализации с настройками по умолчанию.
+     * Настройки: УСН доходы, без НДС, 100% предоплата.
      * 
      * @param description описание услуги
-     * @param amount сумма платежа
+     * @param amount сумма платежа в рублях
      * @return Receipt с настройками по умолчанию
      */
     public Receipt createDefaultReceipt(String description, Double amount) {
@@ -302,10 +311,10 @@ public class RobokassaService {
     }
 
     /**
-     * Вычисляет MD5 хеш строки
+     * Вычисляет MD5 хеш строки в шестнадцатеричном формате.
      * 
-     * @param input входная строка
-     * @return MD5 хеш в шестнадцатеричном формате
+     * @param input входная строка для хеширования
+     * @return MD5 хеш в шестнадцатеричном формате (lowercase)
      * @throws RuntimeException если алгоритм MD5 недоступен
      */
     private String md5(String input) {
