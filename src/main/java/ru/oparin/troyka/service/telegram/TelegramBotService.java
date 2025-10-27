@@ -381,7 +381,7 @@ public class TelegramBotService {
 
     /**
      * Обработать обновление от Telegram.
-     *
+     *`
      * @param update объект обновления от Telegram
      * @return результат обработки
      */
