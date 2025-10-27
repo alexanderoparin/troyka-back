@@ -28,13 +28,18 @@ public class PricingService {
     }
 
     private PricingPlanResponse mapToResponse(PricingPlan entity) {
+        // Рассчитываем цену за поинт (цена в копейках / количество поинтов)
+        Integer unitPrice = entity.getCredits() != null && entity.getCredits() > 0 
+                ? entity.getPriceRub() / entity.getCredits() 
+                : null;
+        
         return PricingPlanResponse.builder()
                 .id(entity.getId())
                 .name(entity.getName())
                 .description(entity.getDescription())
                 .credits(entity.getCredits())
                 .priceRub(entity.getPriceRub())
-                .unitPriceRubComputed(entity.getUnitPriceRubComputed())
+                .unitPriceRubComputed(unitPrice)
                 .isActive(entity.getIsActive())
                 .isPopular(entity.getIsPopular())
                 .sortOrder(entity.getSortOrder())

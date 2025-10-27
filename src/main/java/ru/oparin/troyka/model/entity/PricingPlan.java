@@ -55,12 +55,6 @@ public class PricingPlan {
     private Integer priceRub;
 
     /**
-     * Цена за один поинт в копейках.
-     * Вычисляется как priceRub / credits для отображения стоимости поинта.
-     */
-    private Integer unitPriceRubComputed;
-
-    /**
      * Статус активности тарифного плана.
      * true - план доступен для покупки, false - скрыт от пользователей.
      * По умолчанию true.
