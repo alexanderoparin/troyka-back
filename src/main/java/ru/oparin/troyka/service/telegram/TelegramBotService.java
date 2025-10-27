@@ -386,8 +386,6 @@ public class TelegramBotService {
      * @return результат обработки
      */
     public Mono<Void> processUpdate(TelegramUpdate update) {
-        log.info("Обработка обновления от Telegram: {}", update);
-
         // Обработка callback query (нажатие на inline-кнопки)
         if (update.getCallbackQuery() != null) {
             return handleCallbackQuery(update.getCallbackQuery());
