@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.auth.AuthResponse;
 import ru.oparin.troyka.model.dto.auth.LoginRequest;
@@ -26,6 +27,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final UserPointsService userPointsService;
     private final EmailVerificationService emailVerificationService;
+    private final GenerationProperties generationProperties;
 
     @Value("${jwt.expiration}")
     private long expiration;
@@ -43,12 +45,12 @@ public class AuthService {
 
                     return userService.saveUser(user)
                             .flatMap(savedUser -> {
-                                // Добавляем 6 бесплатных поинтов пользователю (метод сам создаст запись если её нет)
-                                return userPointsService.addPointsToUser(savedUser.getId(), 6)
+                                // Добавляем бесплатные поинты пользователю при регистрации
+                                return userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
                                         .then(emailVerificationService.sendVerificationEmail(savedUser))
                                         .then(Mono.fromCallable(() -> {
                                             String token = jwtService.generateToken(savedUser);
-                                            log.info("Пользователь {} зарегистрирован с 6 бесплатными поинтами, письмо подтверждения отправлено", savedUser.getUsername());
+                                            log.info("Пользователь {} зарегистрирован с {} бесплатными поинтами, письмо подтверждения отправлено", savedUser.getUsername(), generationProperties.getPointsOnRegistration());
                                             return new AuthResponse(
                                                     token,
                                                     savedUser.getUsername(),

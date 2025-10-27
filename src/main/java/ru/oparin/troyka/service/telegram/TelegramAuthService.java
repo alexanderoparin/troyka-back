@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.mapper.TelegramMapper;
 import ru.oparin.troyka.model.dto.auth.AuthResponse;
@@ -42,6 +43,7 @@ public class TelegramAuthService {
     private final JwtService jwtService;
     private final UserPointsService userPointsService;
     private final TelegramMapper telegramMapper;
+    private final GenerationProperties generationProperties;
 
     @Value("${jwt.expiration}")
     private long expiration;
@@ -319,7 +321,7 @@ public class TelegramAuthService {
         log.info("Создание нового пользователя из Telegram, TelegramAuthRequest: {}", request);
         return createNewUserFromTelegram(request)
                 .flatMap(user -> userService.saveUser(user)
-                        .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
+                        .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
                                 .then(Mono.just(createAuthResponse(savedUser)))));
     }
 

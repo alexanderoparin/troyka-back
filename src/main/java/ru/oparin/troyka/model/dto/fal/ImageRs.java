@@ -17,4 +17,7 @@ public class ImageRs {
     
     @Schema(description = "URL сгенерированного изображения", example = "https://v3.fal.media/files/kangaroo/xMO087rdsATkwF1VR2bRV.jpeg")
     private List<String> imageUrls;
+    
+    @Schema(description = "Обновленный баланс поинтов пользователя после генерации")
+    private Integer balance;
 }

@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.FalAiProperties;
+import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIImageDTO;
 import ru.oparin.troyka.model.dto.fal.FalAIResponseDTO;
@@ -36,12 +37,14 @@ public class FalAIService {
 
     private final WebClient webClient;
     private final FalAiProperties prop;
+    private final GenerationProperties generationProperties;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final UserPointsService userPointsService;
     private final SessionService sessionService;
 
     public FalAIService(WebClient.Builder webClientBuilder,
                         FalAiProperties falAiProperties,
+                        GenerationProperties generationProperties,
                         ImageGenerationHistoryService imageGenerationHistoryService,
                         UserPointsService userPointsService,
                         SessionService sessionService) {
@@ -51,6 +54,7 @@ public class FalAIService {
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Key " + falAiProperties.getApi().getKey())
                 .build();
         this.prop = falAiProperties;
+        this.generationProperties = generationProperties;
         this.imageGenerationHistoryService = imageGenerationHistoryService;
         this.userPointsService = userPointsService;
         this.sessionService = sessionService;
@@ -65,9 +69,9 @@ public class FalAIService {
      * @return ответ с сгенерированными изображениями
      */
     public Mono<ImageRs> getImageResponse(ImageRq rq, Long userId) {
-        // Проверяем, достаточно ли поинтов у пользователя (3 поинта за изображение)
+        // Проверяем, достаточно ли поинтов у пользователя
         Integer numImages = rq.getNumImages() == null ? 1 : rq.getNumImages();
-        Integer pointsNeeded = numImages * 3;
+        Integer pointsNeeded = numImages * generationProperties.getPointsPerImage();
 
         return userPointsService.hasEnoughPoints(userId, pointsNeeded)
                 .flatMap(hasEnough -> {
@@ -78,9 +82,11 @@ public class FalAIService {
                     // Получаем или создаем сессию
                     return sessionService.getOrCreateSession(rq.getSessionId(), userId)
                             .flatMap(session -> {
-                                // Списываем поинты
+                                // Списываем поинты и получаем обновленный баланс
                                 return userPointsService.deductPointsFromUser(userId, pointsNeeded)
-                                        .then(Mono.defer(() -> {
+                                        .flatMap(userPoints -> Mono.defer(() -> {
+                                            // Получаем баланс из возвращенного userPoints
+                                            Integer balance = userPoints.getPoints();
                                             String prompt = rq.getPrompt();
                                             Map<String, Object> requestBody = createRqBody(rq, prompt, numImages);
 
@@ -109,7 +115,7 @@ public class FalAIService {
                                                     .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
                                                     })
                                                     .timeout(Duration.ofSeconds(30))
-                                                    .map(this::extractImageResponse)
+                                                    .map(response -> extractImageResponse(response, balance))
                                                     .flatMap(response -> {
                                                         // Сохраняем историю в сессии
                                                         return imageGenerationHistoryService.saveHistories(
@@ -155,7 +161,7 @@ public class FalAIService {
      * @param response ответ от FAL AI
      * @return структурированный ответ с изображениями
      */
-    private ImageRs extractImageResponse(FalAIResponseDTO response) {
+    private ImageRs extractImageResponse(FalAIResponseDTO response, Integer balance) {
         log.info("Получен ответ: {}", response);
         String description = response.getDescription();
 
@@ -163,6 +169,6 @@ public class FalAIService {
                 .map(FalAIImageDTO::getUrl)
                 .toList();
 
-        return new ImageRs(description, urls);
+        return new ImageRs(description, urls, balance);
     }
 }

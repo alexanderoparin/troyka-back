@@ -86,6 +86,9 @@ app:
   email:
     from: ${EMAIL_FROM:noreply@24reshai.ru}
     support: ${EMAIL_SUPPORT:support@24reshai.ru}
+  generation:
+    points-per-image: ${GENERATION_POINTS_PER_IMAGE:2} # Количество поинтов за одно изображение
+    points-on-registration: ${REGISTRATION_POINTS:4} # Количество поинтов при регистрации
 
 # Robokassa
 robokassa:

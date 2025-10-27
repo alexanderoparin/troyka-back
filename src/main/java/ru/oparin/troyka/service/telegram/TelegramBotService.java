@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.telegram.TelegramMessage;
 import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
@@ -33,6 +34,7 @@ public class TelegramBotService {
     private final TelegramMessageService telegramMessageService;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final TelegramFileService telegramFileService;
+    private final GenerationProperties generationProperties;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -64,16 +66,16 @@ public class TelegramBotService {
                                     • Отправьте текстовое описание
                                     • Приложите фото + описание
                                     
-                                    💰 *Стоимость:* 3 поинта за 1 изображение
+                                    💰 *Стоимость:* %s поинта за 1 изображение
                                     • Используйте /help для справки
-                                    """, user.getUsername()
+                                    """, user.getUsername(), generationProperties.getPointsPerImage()
                     ));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Новый пользователь - создаем аккаунт
                     return createUserFromTelegram(telegramId, username, firstName, lastName)
                             .flatMap(user -> userRepository.save(user)
-                                    .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), 6)
+                                    .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
                                             .then(telegramBotSessionService.getOrCreateTelegramBotSession(savedUser.getId(), chatId))
                                             .then(sendWelcomeMessage(chatId, savedUser.getUsername()))));
                 }))
@@ -89,7 +91,7 @@ public class TelegramBotService {
     public Mono<Void> handleHelpCommand(Long chatId) {
         log.info("Обработка команды /help для чата {}", chatId);
 
-        String helpMessage = """
+        String helpMessage = String.format("""
                 🤖 *Справка по боту 24reshai*
                 
                 📝 *Основные команды:*
@@ -100,7 +102,7 @@ public class TelegramBotService {
                 🎨 *Генерация изображений:*
                 • Отправьте текстовое описание
                 • Или приложите фото с подписью
-                • Каждая генерация стоит 3 поинта
+                • Каждая генерация стоит %s поинтов
                 • Результат готов за 5-10 секунд
                 
                 💡 *Советы:*
@@ -108,7 +110,7 @@ public class TelegramBotService {
                 • Используйте качественные референсы
                 
                 🌐 *Сайт:* https://24reshai.ru
-                """;
+                """, generationProperties.getPointsPerImage());
 
         return sendMessage(chatId, helpMessage)
                 .doOnSuccess(v -> log.info("Команда /help обработана для чата {}", chatId))
@@ -177,11 +179,12 @@ public class TelegramBotService {
                     // Проверяем баланс
                     return userPointsService.getUserPoints(user.getId())
                             .flatMap(points -> {
-                                if (points < 3) {
+                                int requiredPoints = generationProperties.getPointsPerImage();
+                                if (points < requiredPoints) {
                                     return sendMessage(chatId,
                                             "❌ *Недостаточно поинтов*\n\n" +
                                                     "💰 *Текущий баланс:* " + points + " поинтов\n" +
-                                                    "🎨 *Требуется:* 3 поинта для генерации\n\n" +
+                                                    "🎨 *Требуется:* " + requiredPoints + " поинтов для генерации\n\n" +
                                                     "💳 *Пополнить баланс:* https://24reshai.ru/pricing");
                                 }
 
@@ -223,16 +226,17 @@ public class TelegramBotService {
                     // Проверяем баланс
                     return userPointsService.getUserPoints(user.getId())
                             .flatMap(points -> {
-                                if (points < 3) {
+                                int requiredPoints = generationProperties.getPointsPerImage();
+                                if (points < requiredPoints) {
                                     return sendMessage(chatId, String.format(
                                             """
                                                     ❌ *Недостаточно поинтов*
                                                     
                                                     💰 *Текущий баланс:* %s поинтов
-                                                    🎨 *Требуется:* 3 поинта для генерации
+                                                    🎨 *Требуется:* %s поинтов для генерации
                                                     
                                                     💳 *Пополнить баланс:* https://24reshai.ru/pricing
-                                                    """, points));
+                                                    """, points, requiredPoints));
                                 }
 
                                 // Получаем специальную сессию
@@ -317,11 +321,11 @@ public class TelegramBotService {
                                                 🎨 *Изображение сгенерировано!*
                                                 
                                                 📝 *Промпт:* %s
-                                                💰 *Стоимость:* 3 поинта
+                                                💰 *Стоимость:* %s поинта
                                                 
                                                 🔄 *Хотите еще?* Просто отправьте новое описание!
                                                 """,
-                                        displayPrompt
+                                        displayPrompt, generationProperties.getPointsPerImage()
                                 );
 
                                 return telegramMessageService.sendPhotoWithMessageId(chatId, imageResponse.getImageUrls().get(0), caption)
@@ -356,17 +360,17 @@ public class TelegramBotService {
                 """
                         🎉 *Добро пожаловать в 24reshai, %s!*
                         
-                        🎨 Вы получили 6 поинтов при регистрации!
+                        🎨 Вы получили %s поинта при регистрации!
                         🚀 Теперь можете генерировать изображения прямо здесь!
                         
                         📝 *Как начать:*
                         • Отправьте описание изображения
                         • Или приложите фото + описание
                         
-                        💰 *Стоимость:* 3 поинта за 1 изображение
+                        💰 *Стоимость:* %s поинта за 1 изображение
                         💡 Используйте /help для справки
                         """,
-                username
+                username, generationProperties.getPointsOnRegistration(), generationProperties.getPointsPerImage()
         );
 
         return sendMessage(chatId, message);
