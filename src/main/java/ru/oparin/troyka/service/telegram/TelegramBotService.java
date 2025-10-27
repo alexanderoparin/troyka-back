@@ -60,9 +60,20 @@ public class TelegramBotService {
     public Mono<Void> handleStartCommand(Long chatId, Long telegramId, String username, String firstName, String lastName) {
         log.info("Обработка команды /start для чата {} и пользователя {}", chatId, telegramId);
 
-        return userRepository.findByTelegramId(telegramId)
+        Mono<User> userMono = userRepository.findByTelegramId(telegramId)
+                .switchIfEmpty(Mono.defer(() -> {
+                    // Новый пользователь - создаем аккаунт
+                    return createUserFromTelegram(telegramId, username, firstName, lastName)
+                            .flatMap(user -> userRepository.save(user)
+                                    .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
+                                            .then(telegramBotSessionService.getOrCreateTelegramBotSession(savedUser.getId(), chatId))
+                                            .thenReturn(savedUser))
+                            );
+                }));
+        
+        return userMono
                 .flatMap(user -> {
-                    // Пользователь уже зарегистрирован
+                    // Всегда отправляем приветственное сообщение для существующих пользователей
                     return sendMessage(chatId, String.format(
                             """
                                     👋 *Добро пожаловать обратно, %s!*
@@ -79,14 +90,7 @@ public class TelegramBotService {
                                     """, user.getUsername(), generationProperties.getPointsPerImage()
                     ));
                 })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // Новый пользователь - создаем аккаунт
-                    return createUserFromTelegram(telegramId, username, firstName, lastName)
-                            .flatMap(user -> userRepository.save(user)
-                                    .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
-                                            .then(telegramBotSessionService.getOrCreateTelegramBotSession(savedUser.getId(), chatId))
-                                            .then(sendWelcomeMessage(chatId, savedUser.getUsername()))));
-                }))
+                .then()
                 .doOnSuccess(v -> log.info("Команда /start обработана для чата {}", chatId))
                 .doOnError(error -> log.error("Ошибка обработки команды /start для чата {}", chatId, error));
     }
