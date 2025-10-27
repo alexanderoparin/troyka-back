@@ -140,7 +140,7 @@ public class TelegramBotService {
                                         🎨 *Доступно генераций:* %d
                                         
                                         💳 *Пополнить баланс:* https://24reshai.ru/pricing
-                                        """, points, points / 3
+                                        """, points, points / generationProperties.getPointsPerImage()
                         ))
                         .flatMap(message -> sendMessage(chatId, message)))
                 .doOnSuccess(v -> log.info("Команда /balance обработана для чата {}", chatId))
