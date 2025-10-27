@@ -22,4 +22,7 @@ public class TelegramUpdate {
     
     @JsonProperty("edited_channel_post")
     private TelegramMessage editedChannelPost;
+    
+    @JsonProperty("callback_query")
+    private TelegramCallbackQuery callbackQuery;
 }

@@ -10,13 +10,17 @@ import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.telegram.TelegramMessage;
 import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
 import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
+import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.User;
+import ru.oparin.troyka.repository.ArtStyleRepository;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.FalAIService;
 import ru.oparin.troyka.service.ImageGenerationHistoryService;
 import ru.oparin.troyka.service.UserPointsService;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Основной сервис для работы с Telegram ботом.
@@ -28,13 +32,17 @@ import java.util.List;
 public class TelegramBotService {
 
     private final UserRepository userRepository;
+    private final ArtStyleRepository artStyleRepository;
     private final TelegramBotSessionService telegramBotSessionService;
     private final UserPointsService userPointsService;
     private final FalAIService falAIService;
     private final TelegramMessageService telegramMessageService;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
-    private final TelegramFileService telegramFileService;
     private final GenerationProperties generationProperties;
+    
+    // Временное хранилище для промпта и URL фото по сессии
+    private final Map<Long, String> sessionPrompts = new HashMap<>();
+    private final Map<Long, List<String>> sessionInputUrls = new HashMap<>();
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -191,14 +199,8 @@ public class TelegramBotService {
                                 // Получаем специальную сессию
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
                                         .flatMap(session -> {
-                                            // Отправляем typing indicator и сообщение о начале генерации
-                                            String generationMessage = inputImageUrls.isEmpty()
-                                                    ? "🎨 *Генерация изображения...*\n\n📝 *Промпт:* " + prompt + "\n⏱️ *Ожидайте 5-10 секунд*"
-                                                    : "🎨 *Редактирование изображения...*\n\n📝 *Промпт:* " + prompt + "\n⏱️ *Ожидайте 5-10 секунд*";
-
-                                            return telegramMessageService.sendTypingAction(chatId)
-                                                    .then(sendMessage(chatId, generationMessage))
-                                                    .then(generateImage(user.getId(), session.getId(), prompt, inputImageUrls));
+                                            // Показываем выбор стиля
+                                            return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
                                         });
                             });
                 })
@@ -242,17 +244,8 @@ public class TelegramBotService {
                                 // Получаем специальную сессию
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
                                         .flatMap(session -> {
-                                            // Отправляем typing indicator и сообщение о начале генерации
-                                            return telegramMessageService.sendTypingAction(chatId)
-                                                    .then(sendMessage(chatId, String.format(
-                                                            """
-                                                                    🎨 *Генерация изображения с референсом...*
-                                                                    
-                                                                    📝 *Промпт:* %s
-                                                                    🖼️ *Референс:* загружен
-                                                                    ⏱️ *Ожидайте 5-10 секунд*
-                                                                    """, caption)))
-                                                    .then(generateImage(user.getId(), session.getId(), caption, List.of(photoUrl)));
+                                            // Показываем выбор стиля
+                                            return showStyleSelection(chatId, user.getId(), session.getId(), caption, List.of(photoUrl));
                                         });
                             });
                 })
@@ -283,21 +276,27 @@ public class TelegramBotService {
     }
 
     /**
-     * Генерировать изображение.
+     * Генерировать изображение с указанным стилем.
      */
-    private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
-        return generateImage(userId, sessionId, prompt, prompt, inputImageUrls);
-    }
+    private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, String displayPrompt, List<String> inputImageUrls, String styleName) {
+        log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {} и стилем: {}", 
+                userId, sessionId, prompt, styleName);
 
-    /**
-     * Генерировать изображение с отдельным промптом для отображения.
-     */
-    private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, String displayPrompt, List<String> inputImageUrls) {
-        log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {}", userId, sessionId, prompt);
+        // Применяем стиль к промпту
+        String finalPrompt = prompt;
+        if (!styleName.equals("none")) {
+            finalPrompt = artStyleRepository.findByName(styleName)
+                    .map(style -> {
+                        String stylePrompt = ", " + style.getPrompt();
+                        return prompt + stylePrompt;
+                    })
+                    .defaultIfEmpty(prompt)
+                    .block();
+        }
 
         // Создаем запрос для FAL AI
         ImageRq imageRq = ImageRq.builder()
-                .prompt(prompt)
+                .prompt(finalPrompt)
                 .sessionId(sessionId)
                 .numImages(1)
                 .inputImageUrls(inputImageUrls)
@@ -384,6 +383,11 @@ public class TelegramBotService {
      */
     public Mono<Void> processUpdate(TelegramUpdate update) {
         log.info("Обработка обновления от Telegram: {}", update);
+
+        // Обработка callback query (нажатие на inline-кнопки)
+        if (update.getCallbackQuery() != null) {
+            return handleCallbackQuery(update.getCallbackQuery());
+        }
 
         if (update.getMessage() == null) {
             log.debug("Обновление не содержит сообщения, пропускаем");
@@ -494,7 +498,7 @@ public class TelegramBotService {
 
                                             // Генерируем новое изображение с предыдущим как input
                                             return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
-                                                    .flatMap(session -> generateImage(user.getId(), session.getId(), newPrompt, displayPrompt, List.of(previousImageUrl)));
+                                                    .flatMap(session -> generateImage(user.getId(), session.getId(), newPrompt, displayPrompt, List.of(previousImageUrl), "none"));
                                         });
                             });
                 });
@@ -539,4 +543,85 @@ public class TelegramBotService {
     public Mono<Void> sendMessage(Long chatId, String message) {
         return telegramMessageService.sendMessage(chatId, message);
     }
+
+    /**
+     * Показать выбор стиля генерации с inline-кнопками.
+     */
+    private Mono<Void> showStyleSelection(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
+        // Сохраняем промпт и URL фото для последующего использования
+        sessionPrompts.put(sessionId, prompt);
+        sessionInputUrls.put(sessionId, inputImageUrls);
+        
+        return artStyleRepository.findAllByOrderByName()
+                .collectList()
+                .flatMap(styles -> {
+                    // Добавляем кнопку "Без стиля" и стили
+                    String message = "🎨 *Выберите стиль для генерации:*\n\n📝 *Промпт:* " + prompt;
+                    if (!inputImageUrls.isEmpty()) {
+                        message += "\n\n🖼️ *Референс:* загружен";
+                    }
+                    
+                    // Создаем inline-клавиатуру
+                    StringBuilder keyboardJson = new StringBuilder("{\"inline_keyboard\":[[");
+                    
+                    // Добавляем флаг наличия фото (0 или 1)
+                    String hasPhoto = inputImageUrls.isEmpty() ? "0" : "1";
+                    
+                    // Кнопка "Без стиля"
+                    keyboardJson.append("{\"text\":\"⚪ Без стиля\",\"callback_data\":\"style:none:").append(sessionId).append(":").append(userId).append(":").append(hasPhoto).append("\"}");
+                    
+                    // Кнопки для стилей (максимум 7 штук)
+                    int count = 0;
+                    for (ArtStyle style : styles) {
+                        if (count >= 7) break;
+                        keyboardJson.append(",{\"text\":\"🎨 ").append(style.getName()).append("\",\"callback_data\":\"style:").append(style.getName()).append(":").append(sessionId).append(":").append(userId).append(":").append(hasPhoto).append("\"}");
+                        count++;
+                    }
+                    
+                    keyboardJson.append("]]}");
+                    
+                    // Отправляем сообщение с inline-клавиатурой
+                    return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson.toString());
+                });
+    }
+
+    /**
+     * Обработать callback query от inline-кнопок.
+     */
+    private Mono<Void> handleCallbackQuery(ru.oparin.troyka.model.dto.telegram.TelegramCallbackQuery callbackQuery) {
+        log.info("Обработка callback query: {}", callbackQuery.getId());
+        
+        String data = callbackQuery.getData();
+        Long chatId = callbackQuery.getMessage().getChat().getId();
+        
+        // Парсим callback_data: style:styleName:sessionId:userId:hasPhoto
+        if (data != null && data.startsWith("style:")) {
+            String[] parts = data.split(":", 5);
+            if (parts.length >= 5) {
+                String styleName = parts[1];
+                Long sessionId = Long.parseLong(parts[2]);
+                Long userId = Long.parseLong(parts[3]);
+                
+                // Получаем промпт и URL фото из временного хранилища
+                String prompt = sessionPrompts.getOrDefault(sessionId, "");
+                List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                
+                // Очищаем временные данные после использования
+                sessionPrompts.remove(sessionId);
+                sessionInputUrls.remove(sessionId);
+                
+                // Получаем стиль для отображения
+                String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                
+                // Отправляем сообщение о начале генерации
+                return sendMessage(chatId, "🎨 *Генерация с стилем: " + styleDisplay + "*\n\n⏱️ *Ожидайте 5-10 секунд*")
+                        .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+            }
+        }
+        
+        // Отвечаем на callback
+        return telegramMessageService.answerCallbackQuery(callbackQuery.getId())
+                .then();
+    }
+
 }

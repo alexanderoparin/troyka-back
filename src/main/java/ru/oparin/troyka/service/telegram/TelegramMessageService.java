@@ -1,6 +1,5 @@
 package ru.oparin.troyka.service.telegram;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +23,6 @@ import java.time.Duration;
 public class TelegramMessageService {
 
     private final WebClient.Builder webClientBuilder;
-    private final ObjectMapper objectMapper;
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -116,34 +114,6 @@ public class TelegramMessageService {
     }
 
     /**
-     * Отправить сообщение "печатает..." (typing indicator).
-     *
-     * @param chatId ID чата
-     * @return результат отправки
-     */
-    public Mono<Void> sendTypingAction(Long chatId) {
-        log.debug("Отправка typing action в чат {}", chatId);
-
-        WebClient webClient = webClientBuilder
-                .baseUrl(TELEGRAM_API_URL + botToken)
-                .build();
-
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("chat_id", String.valueOf(chatId));
-        body.add("action", "typing");
-
-        return webClient.post()
-                .uri("/sendChatAction")
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(BodyInserters.fromFormData(body))
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(TIMEOUT)
-                .doOnError(error -> log.warn("Ошибка отправки typing action в чат {}: {}", chatId, error.getMessage()))
-                .then();
-    }
-
-    /**
      * Отправить сообщение об ошибке.
      *
      * @param chatId ID чата
@@ -156,14 +126,42 @@ public class TelegramMessageService {
     }
 
     /**
-     * Получить сообщение по ID.
+     * Ответить на callback query.
+     *
+     * @param callbackQueryId ID callback query
+     * @return результат отправки
+     */
+    public Mono<Void> answerCallbackQuery(String callbackQueryId) {
+        log.debug("Отправка ответа на callback query: {}", callbackQueryId);
+
+        WebClient webClient = webClientBuilder
+                .baseUrl(TELEGRAM_API_URL + botToken)
+                .build();
+
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("callback_query_id", callbackQueryId);
+
+        return webClient.post()
+                .uri("/answerCallbackQuery")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData(body))
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(TIMEOUT)
+                .doOnError(error -> log.warn("Ошибка ответа на callback query {}: {}", callbackQueryId, error.getMessage()))
+                .then();
+    }
+
+    /**
+     * Отправить сообщение с inline-клавиатурой.
      *
      * @param chatId ID чата
-     * @param messageId ID сообщения
-     * @return сообщение или пустой результат
+     * @param text текст сообщения
+     * @param replyMarkupJson JSON inline-клавиатура
+     * @return результат отправки
      */
-    public Mono<ru.oparin.troyka.model.dto.telegram.TelegramMessage> getMessageById(Long chatId, Long messageId) {
-        log.debug("Получение сообщения {} из чата {}", messageId, chatId);
+    public Mono<Void> sendMessageWithKeyboard(Long chatId, String text, String replyMarkupJson) {
+        log.info("Отправка сообщения с клавиатурой в чат {}: {}", chatId, text);
 
         WebClient webClient = webClientBuilder
                 .baseUrl(TELEGRAM_API_URL + botToken)
@@ -171,20 +169,18 @@ public class TelegramMessageService {
 
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         body.add("chat_id", String.valueOf(chatId));
-        body.add("message_id", String.valueOf(messageId));
+        body.add("text", text);
+        body.add("parse_mode", "Markdown");
+        body.add("reply_markup", replyMarkupJson);
 
         return webClient.post()
-                .uri("/getUpdates")
+                .uri("/sendMessage")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData(body))
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(TIMEOUT)
-                .map(response -> {
-                    // Парсим ответ и извлекаем сообщение
-                    // TODO: Реализовать парсинг JSON ответа
-                    return (ru.oparin.troyka.model.dto.telegram.TelegramMessage) null; // Временная заглушка
-                })
-                .doOnError(error -> log.error("Ошибка получения сообщения {} из чата {}: {}", messageId, chatId, error.getMessage()));
+                .doOnError(error -> log.warn("Ошибка отправки сообщения с клавиатурой в чат {}: {}", chatId, error.getMessage()))
+                .then();
     }
 }
