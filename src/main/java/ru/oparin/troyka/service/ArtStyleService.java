@@ -2,6 +2,10 @@ package ru.oparin.troyka.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.query.Query;
+import org.springframework.data.relational.core.query.Update;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -22,6 +26,7 @@ public class ArtStyleService {
 
     private final ArtStyleRepository artStyleRepository;
     private final UserStyleRepository userStyleRepository;
+    private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
     /**
      * Получить все стили, отсортированные по имени.
@@ -60,22 +65,31 @@ public class ArtStyleService {
      * @return Mono с сохраненным стилем
      */
     public Mono<UserStyle> saveOrUpdateUserStyle(Long userId, String styleName) {
+        log.debug("Сохраняем или обновляем стиль для userId={}, styleName={}", userId, styleName);
+        
+        // Пытаемся найти существующую запись
         return userStyleRepository.findByUserId(userId)
                 .flatMap(existing -> {
-                    // Обновляем существующий
-                    existing.setStyleName(styleName);
-                    existing.setUpdatedAt(LocalDateTime.now());
-                    return userStyleRepository.save(existing);
+                    // Обновляем существующий стиль через r2dbcEntityTemplate
+                    log.debug("Обновляем существующий стиль для userId={}", userId);
+                    return r2dbcEntityTemplate.update(UserStyle.class)
+                            .matching(Query.query(Criteria.where("userId").is(userId)))
+                            .apply(Update.update("styleName", styleName)
+                                    .set("updatedAt", LocalDateTime.now()))
+                            .then(userStyleRepository.findByUserId(userId));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // Создаем новый
+                    // Создаем новый стиль
+                    log.debug("Создаем новый стиль для userId={}", userId);
                     UserStyle userStyle = UserStyle.builder()
                             .userId(userId)
                             .styleName(styleName)
                             .createdAt(LocalDateTime.now())
                             .updatedAt(LocalDateTime.now())
                             .build();
-                    return userStyleRepository.save(userStyle);
+                    return r2dbcEntityTemplate.insert(UserStyle.class)
+                            .using(userStyle)
+                            .thenReturn(userStyle);
                 }));
     }
 }
