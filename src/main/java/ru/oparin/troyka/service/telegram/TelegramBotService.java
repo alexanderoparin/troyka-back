@@ -626,13 +626,13 @@ public class TelegramBotService {
             // Сохраняем стиль пользователя в БД
             return artStyleService.saveOrUpdateUserStyle(userId, styleName)
                     .flatMap(saved -> {
-                        // Очищаем состояние ожидания
-                        telegramBotSessionService.updateWaitingStyle(userId, 0).subscribe();
-                        sessionStyles.remove(sessionId);
-                        
                         // Получаем промпт и URL фото
                         String prompt = sessionPrompts.getOrDefault(sessionId, "");
                         List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                        
+                        // Очищаем состояние ожидания и временные данные
+                        telegramBotSessionService.updateWaitingStyle(userId, 0).subscribe();
+                        sessionStyles.remove(sessionId);
                         
                         // Запускаем генерацию
                         String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
