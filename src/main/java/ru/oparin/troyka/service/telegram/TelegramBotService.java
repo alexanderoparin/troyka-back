@@ -228,7 +228,7 @@ public class TelegramBotService {
                                                         
                                                         // Обычная обработка - показываем выбор стиля
                                                         log.debug("Переход в showStyleSelection");
-                                                        return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
+                                            return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
                                                     });
                                         });
                             });
@@ -326,14 +326,14 @@ public class TelegramBotService {
 
         // Создаем запрос для FAL AI
         return finalPromptMono.flatMap(finalPrompt -> {
-            ImageRq imageRq = ImageRq.builder()
-                    .prompt(finalPrompt)
-                    .sessionId(sessionId)
-                    .numImages(1)
-                    .inputImageUrls(inputImageUrls)
-                    .build();
+        ImageRq imageRq = ImageRq.builder()
+                .prompt(finalPrompt)
+                .sessionId(sessionId)
+                .numImages(1)
+                .inputImageUrls(inputImageUrls)
+                .build();
 
-            return falAIService.getImageResponse(imageRq, userId)
+        return falAIService.getImageResponse(imageRq, userId)
                 .flatMap(imageResponse -> {
                     // Получаем chatId из специальной сессии
                     return telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId)
@@ -378,8 +378,8 @@ public class TelegramBotService {
                                         Произошла ошибка при создании изображения. Попробуйте еще раз.""")
                                         .then();
                             });
+                            });
                 });
-        });
     }
 
 
@@ -591,10 +591,9 @@ public class TelegramBotService {
         Mono<UserStyle> userStyleMono = artStyleService.getUserStyle(userId);
         
         return telegramBotSessionService.updatePromptAndInputUrls(userId, prompt, inputImageUrls)
-                .then(Mono.defer(() -> userStyleMono))
-                .doOnNext(userStyle -> log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName()))
+                .then(userStyleMono)
                 .flatMap(userStyle -> {
-                    // У пользователя есть сохраненный стиль - показываем кнопки
+                    log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName());
                     String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
                     String message = String.format("""
                             🎨 *Выберите действие:*
@@ -617,7 +616,6 @@ public class TelegramBotService {
                     return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // У пользователя нет сохраненного стиля - показываем список стилей
                     log.debug("Сохраненный стиль не найден для userId={}, показываем список стилей", userId);
                     return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
                 }));
@@ -828,14 +826,14 @@ public class TelegramBotService {
                             
                             // Очищаем URLs после использования
                             telegramBotSessionService.clearInputUrls(userId).subscribe();
-                            
-                            // Получаем стиль для отображения
-                            String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
-                            
-                            // Отправляем сообщение о начале генерации
+                
+                // Получаем стиль для отображения
+                String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                
+                // Отправляем сообщение о начале генерации
                             String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);
                             return sendMessage(chatId, message)
-                                    .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+                        .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
                         });
             }
         }
