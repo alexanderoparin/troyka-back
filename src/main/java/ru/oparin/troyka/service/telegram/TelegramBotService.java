@@ -663,7 +663,16 @@ public class TelegramBotService {
                         
                         // Запускаем генерацию
                         String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
-                        return sendMessage(chatId, "🎨 *Генерация с стилем: " + styleDisplay + "*\n\n⏱️ *Ожидайте 5-10 секунд*")
+                        String message = String.format("""
+                                🎨 *Генерация изображения*
+                                
+                                📝 *Промпт:* %s
+                                
+                                🎨 *Стиль:* %s
+                                
+                                ⏱️ *Ожидайте 5-10 секунд*
+                                """, prompt, styleDisplay);
+                        return sendMessage(chatId, message)
                                 .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
                     });
         } catch (NumberFormatException e) {
@@ -700,7 +709,8 @@ public class TelegramBotService {
                 String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
                 
                 // Отправляем сообщение о начале генерации
-                return sendMessage(chatId, "🎨 *Генерация с стилем: " + styleDisplay + "*\n\n⏱️ *Ожидайте 5-10 секунд*")
+                String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);
+                return sendMessage(chatId, message)
                         .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
             }
         }
