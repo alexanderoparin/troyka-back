@@ -762,24 +762,26 @@ public class TelegramBotService {
                             ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
                             : List.of();
                     
-                    // Очищаем URLs после использования
-                    telegramBotSessionService.clearInputUrls(userId).subscribe();
-                    
-                    // Получаем стиль для отображения
-                    String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
-                            
-                            // Отправляем сообщение о начале генерации
-                            String message = String.format("""
-                                    🎨 *Генерация изображения*
-                                    
-                                    📝 *Промпт:* %s
-                                    
-                                    🎨 *Стиль:* %s
-                                    
-                                    ⏱️ *Ожидайте 5-10 секунд*
-                                    """, prompt, styleDisplay);
-                            return sendMessage(chatId, message)
-                                    .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, userStyle.getStyleName()));
+                    // Очищаем URLs и сбрасываем waitingStyle
+                    return telegramBotSessionService.clearInputUrls(userId)
+                            .then(telegramBotSessionService.updateWaitingStyle(userId, 0))
+                            .then(Mono.defer(() -> {
+                                // Получаем стиль для отображения
+                                String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
+                                
+                                // Отправляем сообщение о начале генерации
+                                String message = String.format("""
+                                        🎨 *Генерация изображения*
+                                        
+                                        📝 *Промпт:* %s
+                                        
+                                        🎨 *Стиль:* %s
+                                        
+                                        ⏱️ *Ожидайте 5-10 секунд*
+                                        """, prompt, styleDisplay);
+                                return sendMessage(chatId, message)
+                                        .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, userStyle.getStyleName()));
+                            }));
                         })
                         .switchIfEmpty(getPromptAndInputUrlsFromDB(userId)
                                 .flatMap(tgSession -> {
