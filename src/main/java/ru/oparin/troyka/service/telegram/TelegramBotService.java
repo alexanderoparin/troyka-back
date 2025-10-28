@@ -584,9 +584,12 @@ public class TelegramBotService {
      * Показать выбор стиля генерации с inline-кнопками.
      */
     private Mono<Void> showStyleSelection(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
+        log.debug("showStyleSelection вызван для userId={}, prompt={}", userId, prompt);
+        
         // Сохраняем промпт и URL фото в БД, затем проверяем стиль
         return telegramBotSessionService.updatePromptAndInputUrls(userId, prompt, inputImageUrls)
                 .then(artStyleService.getUserStyle(userId))
+                .doOnNext(userStyle -> log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName()))
                 .flatMap(userStyle -> {
                     // У пользователя есть сохраненный стиль - показываем кнопки
                     String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
@@ -612,6 +615,7 @@ public class TelegramBotService {
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // У пользователя нет сохраненного стиля - показываем список стилей
+                    log.debug("Сохраненный стиль не найден для userId={}, показываем список стилей", userId);
                     return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
                 }));
     }
