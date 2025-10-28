@@ -364,6 +364,7 @@ public class TelegramBotService {
                                             return telegramBotSessionService.updateLastGeneratedMessageId(userId, messageId)
                                                     .then(Mono.just(messageId));
                                         })
+                                        .then(Mono.fromRunnable(() -> log.info("Генерация завершена для пользователя {}", userId)))
                                         .then();
                             });
                 })
@@ -556,10 +557,11 @@ public class TelegramBotService {
                                                                                 }
                                                                                 """.formatted(session.getId(), user.getId(), session.getId(), user.getId());
                                                                         
-                                                                        return telegramMessageService.sendMessageWithKeyboard(chatId, newMessage, keyboardJson);
+                                                                        return telegramMessageService.sendMessageWithKeyboard(chatId, newMessage, keyboardJson)
+                                                                                .then();
                                                                     } else {
                                                                         // Нет сохраненного стиля - показываем список
-                                                                        log.debug("Сохраненный стиль не найден, показываем список стилей");
+                                                                        log.debug("В handleReplyMessage: сохраненный стиль не найден, показываем список стилей");
                                                                         return showStyleList(chatId, user.getId(), session.getId(), newPrompt, List.of(previousImageUrl));
                                                                     }
                                                                 });
@@ -745,7 +747,6 @@ public class TelegramBotService {
                                 : List.of();
                         
                         // Очищаем состояние ожидания и временные данные
-                        telegramBotSessionService.updateWaitingStyle(userId, 0).subscribe();
                         sessionStyles.remove(sessionId);
                         
                         // Запускаем генерацию
@@ -759,7 +760,8 @@ public class TelegramBotService {
                                 
                                 ⏱️ *Ожидайте 5-10 секунд*
                                 """, prompt, styleDisplay);
-                        return sendMessage(chatId, message)
+                        return telegramBotSessionService.updateWaitingStyle(userId, 0)
+                                .then(sendMessage(chatId, message))
                                 .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
                     });
         } catch (NumberFormatException e) {
