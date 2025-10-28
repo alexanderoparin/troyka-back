@@ -12,12 +12,16 @@ import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
 import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
 import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.User;
+import ru.oparin.troyka.model.entity.UserStyle;
 import ru.oparin.troyka.repository.ArtStyleRepository;
 import ru.oparin.troyka.repository.UserRepository;
+import ru.oparin.troyka.repository.UserStyleRepository;
 import ru.oparin.troyka.service.FalAIService;
 import ru.oparin.troyka.service.ImageGenerationHistoryService;
 import ru.oparin.troyka.service.UserPointsService;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +37,7 @@ public class TelegramBotService {
 
     private final UserRepository userRepository;
     private final ArtStyleRepository artStyleRepository;
+    private final UserStyleRepository userStyleRepository;
     private final TelegramBotSessionService telegramBotSessionService;
     private final UserPointsService userPointsService;
     private final FalAIService falAIService;
@@ -43,6 +48,7 @@ public class TelegramBotService {
     // Временное хранилище для промпта и URL фото по сессии
     private final Map<Long, String> sessionPrompts = new HashMap<>();
     private final Map<Long, List<String>> sessionInputUrls = new HashMap<>();
+    private final Map<Long, List<ArtStyle>> sessionStyles = new HashMap<>(); // список стилей для выбора
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -202,10 +208,17 @@ public class TelegramBotService {
 
                                 // Получаем специальную сессию
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
-                                        .flatMap(session -> {
-                                            // Показываем выбор стиля
-                                            return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
-                                        });
+                                        .flatMap(session -> telegramBotSessionService.getTelegramBotSessionEntityByUserId(user.getId())
+                                                .flatMap(tgSession -> {
+                                                    Integer waitingStyle = tgSession.getWaitingStyle();
+                                                    if (waitingStyle != null && waitingStyle > 0) {
+                                                        // Пользователь выбирает стиль - обрабатываем номер
+                                                        return handleStyleSelection(chatId, user.getId(), session.getId(), prompt);
+                                                    }
+                                                    
+                                                    // Обычная обработка - показываем выбор стиля
+                                                    return showStyleList(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
+                                                }));
                             });
                 })
                 .doOnSuccess(v -> log.info("Текстовое сообщение обработано для чата {}", chatId))
@@ -554,37 +567,92 @@ public class TelegramBotService {
         sessionPrompts.put(sessionId, prompt);
         sessionInputUrls.put(sessionId, inputImageUrls);
         
+        // Всегда показываем список стилей
+        return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
+    }
+
+    /**
+     * Показать пронумерованный список стилей для выбора.
+     */
+    private Mono<Void> showStyleList(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
         return artStyleRepository.findAllByOrderByName()
                 .collectList()
                 .flatMap(styles -> {
-                    // Добавляем кнопку "Без стиля" и стили
-                    String message = "🎨 *Выберите стиль для генерации:*\n\n📝 *Промпт:* " + prompt;
+                    // Добавляем "Без стиля" в начало
+                    List<ArtStyle> allStyles = new ArrayList<>();
+                    allStyles.add(ArtStyle.builder().name("none").prompt("").build());
+                    allStyles.addAll(styles);
+                    
+                    // Сохраняем список стилей в сессию
+                    sessionStyles.put(sessionId, allStyles);
+                    // Помечаем что сессия ожидает ввода номера
+                    telegramBotSessionService.updateWaitingStyle(userId, allStyles.size()).subscribe();
+                    
+                    // Формируем сообщение со списком стилей
+                    StringBuilder styleList = new StringBuilder();
+                    styleList.append("🎨 *Выберите стиль для генерации:*\n\n");
+                    styleList.append("📝 *Промпт:* ").append(prompt).append("\n\n");
                     if (!inputImageUrls.isEmpty()) {
-                        message += "\n\n🖼️ *Референс:* загружен";
+                        styleList.append("🖼️ *Референс:* загружен\n\n");
                     }
+                    styleList.append("💡 *Введите номер стиля:*\n\n");
                     
-                    // Создаем inline-клавиатуру
-                    StringBuilder keyboardJson = new StringBuilder("{\"inline_keyboard\":[[");
-                    
-                    // Добавляем флаг наличия фото (0 или 1)
-                    String hasPhoto = inputImageUrls.isEmpty() ? "0" : "1";
-                    
-                    // Кнопка "Без стиля"
-                    keyboardJson.append("{\"text\":\"⚪ Без стиля\",\"callback_data\":\"style:none:").append(sessionId).append(":").append(userId).append(":").append(hasPhoto).append("\"}");
-                    
-                    // Кнопки для стилей (максимум 7 штук)
-                    int count = 0;
-                    for (ArtStyle style : styles) {
-                        if (count >= 7) break;
-                        keyboardJson.append(",{\"text\":\"🎨 ").append(style.getName()).append("\",\"callback_data\":\"style:").append(style.getName()).append(":").append(sessionId).append(":").append(userId).append(":").append(hasPhoto).append("\"}");
-                        count++;
+                    int index = 1;
+                    for (ArtStyle style : allStyles) {
+                        String emoji = style.getName().equals("none") ? "⚪" : "🎨";
+                        styleList.append(index).append(". ").append(emoji).append(" ").append(style.getName()).append("\n");
+                        index++;
                     }
+                    styleList.append("\nПример: отправьте *1* для выбора без стиля");
                     
-                    keyboardJson.append("]]}");
-                    
-                    // Отправляем сообщение с inline-клавиатурой
-                    return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson.toString());
+                    return sendMessage(chatId, styleList.toString());
                 });
+    }
+
+    /**
+     * Обработать выбор стиля по номеру.
+     */
+    private Mono<Void> handleStyleSelection(Long chatId, Long userId, Long sessionId, String inputText) {
+        List<ArtStyle> styles = sessionStyles.get(sessionId);
+        if (styles == null || styles.isEmpty()) {
+            return sendMessage(chatId, "❌ Ошибка: список стилей не найден. Попробуйте снова.");
+        }
+        
+        try {
+            int styleIndex = Integer.parseInt(inputText.trim());
+            if (styleIndex < 1 || styleIndex > styles.size()) {
+                return sendMessage(chatId, "❌ Неверный номер стиля. Выберите от 1 до " + styles.size());
+            }
+            
+            ArtStyle selectedStyle = styles.get(styleIndex - 1);
+            String styleName = selectedStyle.getName();
+            
+            // Сохраняем стиль пользователя в БД
+            UserStyle userStyle = UserStyle.builder()
+                    .userId(userId)
+                    .styleName(styleName)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            
+            return userStyleRepository.save(userStyle)
+                    .flatMap(saved -> {
+                        // Очищаем состояние ожидания
+                        telegramBotSessionService.updateWaitingStyle(userId, 0).subscribe();
+                        sessionStyles.remove(sessionId);
+                        
+                        // Получаем промпт и URL фото
+                        String prompt = sessionPrompts.getOrDefault(sessionId, "");
+                        List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                        
+                        // Запускаем генерацию
+                        String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                        return sendMessage(chatId, "🎨 *Генерация с стилем: " + styleDisplay + "*\n\n⏱️ *Ожидайте 5-10 секунд*")
+                                .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+                    });
+        } catch (NumberFormatException e) {
+            return sendMessage(chatId, "❌ Введите номер стиля (цифру)!");
+        }
     }
 
     /**
