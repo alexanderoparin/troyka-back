@@ -665,7 +665,8 @@ public class TelegramBotService {
      * Показать пронумерованный список стилей для выбора.
      */
     private Mono<Void> showStyleList(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
-        log.debug("showStyleList: получение стилей для sessionId={}", sessionId);
+        log.debug("showStyleList вызван для sessionId={}, userId={}, prompt={}", sessionId, userId, prompt);
+        Thread.dumpStack();
         
         return artStyleService.getAllStyles()
                 .collectList()
