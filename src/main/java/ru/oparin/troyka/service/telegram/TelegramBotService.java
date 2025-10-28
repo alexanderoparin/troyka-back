@@ -529,43 +529,7 @@ public class TelegramBotService {
 
                                             // Получаем сохраненный стиль пользователя или показываем выбор
                                             return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
-                                                    .flatMap(session -> {
-                                                        // Сохраняем промпт и URL фото в БД
-                                                        return telegramBotSessionService.updatePromptAndInputUrls(user.getId(), newPrompt, List.of(previousImageUrl))
-                                                                .then(artStyleService.getUserStyle(user.getId()))
-                                                                .materialize()
-                                                                .flatMap(signal -> {
-                                                                    if (signal.hasValue()) {
-                                                                        UserStyle userStyle = signal.get();
-                                                                        log.debug("Найден сохраненный стиль для userId={}: {}", user.getId(), userStyle.getStyleName());
-                                                                        // Показываем выбор действий или генерируем сразу
-                                                                        String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
-                                                                        String newMessage = String.format("""
-                                                                                🎨 *Выберите действие:*
-                                                                                
-                                                                                📝 *Промпт:* %s
-                                                                                
-                                                                                💡 *Текущий стиль:* %s
-                                                                                """, newPrompt, styleDisplay);
-                                                                        
-                                                                        String keyboardJson = """
-                                                                                {
-                                                                                    "inline_keyboard": [
-                                                                                        [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
-                                                                                        [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
-                                                                                    ]
-                                                                                }
-                                                                                """.formatted(session.getId(), user.getId(), session.getId(), user.getId());
-                                                                        
-                                                                        return telegramMessageService.sendMessageWithKeyboard(chatId, newMessage, keyboardJson)
-                                                                                .then();
-                                                                    } else {
-                                                                        // Нет сохраненного стиля - показываем список
-                                                                        log.debug("В handleReplyMessage: сохраненный стиль не найден, показываем список стилей");
-                                                                        return showStyleList(chatId, user.getId(), session.getId(), newPrompt, List.of(previousImageUrl));
-                                                                    }
-                                                                });
-                                                    });
+                                                    .flatMap(session -> showStyleSelection(chatId, user.getId(), session.getId(), newPrompt, List.of(previousImageUrl)));
                                         });
                             });
                 });
@@ -666,7 +630,6 @@ public class TelegramBotService {
      */
     private Mono<Void> showStyleList(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
         log.debug("showStyleList вызван для sessionId={}, userId={}, prompt={}", sessionId, userId, prompt);
-        Thread.dumpStack();
         
         return artStyleService.getAllStyles()
                 .collectList()
@@ -821,14 +784,10 @@ public class TelegramBotService {
                                         .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, userStyle.getStyleName()));
                             }));
                         })
-                        .switchIfEmpty(getPromptAndInputUrlsFromDB(userId)
-                                .flatMap(tgSession -> {
-                                    String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
-                                    List<String> inputUrls = tgSession.getInputImageUrls() != null 
-                                            ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
-                                            : List.of();
-                                    return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
-                                }));
+                        .onErrorResume(error -> {
+                            log.error("Ошибка при обработке generate_current для userId={}", userId, error);
+                            return sendMessage(chatId, "❌ Произошла ошибка при генерации изображения");
+                        });
             }
         }
         
