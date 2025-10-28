@@ -204,17 +204,24 @@ public class TelegramBotService {
 
                                 // Получаем специальную сессию
                                 return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
-                                        .flatMap(session -> telegramBotSessionService.getTelegramBotSessionEntityByUserId(user.getId())
-                                                .flatMap(tgSession -> {
-                                                    Integer waitingStyle = tgSession.getWaitingStyle();
-                                                    if (waitingStyle != null && waitingStyle > 0) {
-                                                        // Пользователь выбирает стиль - обрабатываем номер
-                                                        return handleStyleSelection(chatId, user.getId(), session.getId(), prompt);
-                                                    }
-                                                    
-                                                    // Обычная обработка - показываем выбор стиля
-                                                    return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
-                                                }));
+                                        .flatMap(session -> {
+                                            log.debug("Session получена: sessionId={}", session.getId());
+                                            return telegramBotSessionService.getTelegramBotSessionEntityByUserId(user.getId())
+                                                    .flatMap(tgSession -> {
+                                                        Integer waitingStyle = tgSession.getWaitingStyle();
+                                                        log.debug("waitingStyle для userId={}: {}", user.getId(), waitingStyle);
+                                                        
+                                                        if (waitingStyle != null && waitingStyle > 0) {
+                                                            // Пользователь выбирает стиль - обрабатываем номер
+                                                            log.debug("Переход в handleStyleSelection");
+                                                            return handleStyleSelection(chatId, user.getId(), session.getId(), prompt);
+                                                        }
+                                                        
+                                                        // Обычная обработка - показываем выбор стиля
+                                                        log.debug("Переход в showStyleSelection");
+                                                        return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
+                                                    });
+                                        });
                             });
                 })
                 .doOnSuccess(v -> log.info("Текстовое сообщение обработано для чата {}", chatId))
@@ -571,6 +578,8 @@ public class TelegramBotService {
      * Показать пронумерованный список стилей для выбора.
      */
     private Mono<Void> showStyleList(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
+        log.debug("showStyleList: получение стилей для sessionId={}", sessionId);
+        
         return artStyleService.getAllStyles()
                 .collectList()
                 .flatMap(styles -> {
@@ -579,10 +588,13 @@ public class TelegramBotService {
                     allStyles.add(ArtStyle.builder().name("none").prompt("").build());
                     allStyles.addAll(styles);
                     
+                    log.debug("Получено стилей: {}, сохраняем в sessionId={}", allStyles.size(), sessionId);
+                    
                     // Сохраняем список стилей в сессию
                     sessionStyles.put(sessionId, allStyles);
                     // Помечаем что сессия ожидает ввода номера
                     telegramBotSessionService.updateWaitingStyle(userId, allStyles.size()).subscribe();
+                    log.debug("Установили waitingStyle={} для userId={}", allStyles.size(), userId);
                     
                     // Формируем сообщение со списком стилей
                     StringBuilder styleList = new StringBuilder();
@@ -609,9 +621,21 @@ public class TelegramBotService {
      * Обработать выбор стиля по номеру.
      */
     private Mono<Void> handleStyleSelection(Long chatId, Long userId, Long sessionId, String inputText) {
+        log.debug("handleStyleSelection: chatId={}, userId={}, sessionId={}, inputText={}", chatId, userId, sessionId, inputText);
+        
         List<ArtStyle> styles = sessionStyles.get(sessionId);
+        log.debug("sessionStyles contains: {}", sessionStyles.keySet());
+        
         if (styles == null || styles.isEmpty()) {
-            return sendMessage(chatId, "❌ Ошибка: список стилей не найден. Попробуйте снова.");
+            log.warn("Список стилей не найден для sessionId={}, сбрасываем waitingStyle", sessionId);
+            // Сбрасываем флаг ожидания и показываем выбор стиля заново
+            return telegramBotSessionService.updateWaitingStyle(userId, 0)
+                    .then(Mono.fromRunnable(() -> {
+                        String prompt = sessionPrompts.getOrDefault(sessionId, "");
+                        List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                        showStyleSelection(chatId, userId, sessionId, prompt, inputUrls).subscribe();
+                    }))
+                    .then();
         }
         
         try {
