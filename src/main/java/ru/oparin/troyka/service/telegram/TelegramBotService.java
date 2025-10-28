@@ -587,38 +587,41 @@ public class TelegramBotService {
     private Mono<Void> showStyleSelection(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
         log.debug("showStyleSelection вызван для userId={}, prompt={}", userId, prompt);
         
-        // Сохраняем промпт и URL фото в БД, затем проверяем стиль
-        Mono<UserStyle> userStyleMono = artStyleService.getUserStyle(userId);
-        
         return telegramBotSessionService.updatePromptAndInputUrls(userId, prompt, inputImageUrls)
-                .then(userStyleMono)
-                .flatMap(userStyle -> {
-                    log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName());
-                    String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
-                    String message = String.format("""
-                            🎨 *Выберите действие:*
-                            
-                            📝 *Промпт:* %s
-                            
-                            💡 *Текущий стиль:* %s
-                            """, prompt, styleDisplay);
-                    
-                    // Создаем JSON для inline клавиатуры
-                    String keyboardJson = """
-                            {
-                                "inline_keyboard": [
-                                    [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
-                                    [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
-                                ]
-                            }
-                            """.formatted(sessionId, userId, sessionId, userId);
-                    
-                    return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.debug("Сохраненный стиль не найден для userId={}, показываем список стилей", userId);
-                    return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
-                }));
+                .then(artStyleService.getUserStyle(userId))
+                .materialize()
+                .flatMap(signal -> {
+                    if (signal.hasValue()) {
+                        UserStyle userStyle = signal.get();
+                        log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName());
+                        String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
+                        String message = String.format("""
+                                🎨 *Выберите действие:*
+                                
+                                📝 *Промпт:* %s
+                                
+                                💡 *Текущий стиль:* %s
+                                """, prompt, styleDisplay);
+                        
+                        // Создаем JSON для inline клавиатуры
+                        String keyboardJson = """
+                                {
+                                    "inline_keyboard": [
+                                        [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
+                                        [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
+                                    ]
+                                }
+                                """.formatted(sessionId, userId, sessionId, userId);
+                        
+                        return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
+                    } else if (signal.isOnComplete()) {
+                        log.debug("Сохраненный стиль не найден для userId={}, показываем список стилей", userId);
+                        return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
+                    } else {
+                        log.warn("Ошибка при получении стиля для userId={}", userId);
+                        return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
+                    }
+                });
     }
 
     /**
