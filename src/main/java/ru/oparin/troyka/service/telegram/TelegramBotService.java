@@ -213,7 +213,7 @@ public class TelegramBotService {
                                                     }
                                                     
                                                     // Обычная обработка - показываем выбор стиля
-                                                    return showStyleList(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
+                                                    return showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls);
                                                 }));
                             });
                 })
