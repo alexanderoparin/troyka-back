@@ -1,5 +1,7 @@
 package ru.oparin.troyka.service.telegram;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
@@ -15,6 +17,8 @@ import ru.oparin.troyka.repository.TelegramBotSessionRepository;
 import ru.oparin.troyka.service.SessionService;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 
 /**
@@ -30,6 +34,7 @@ public class TelegramBotSessionService {
     private final SessionRepository sessionRepository;
     private final SessionService sessionService;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * Получить или создать специальную сессию для Telegram чата.
@@ -153,5 +158,46 @@ public class TelegramBotSessionService {
                 .apply(Update.update("waitingStyle", waitingStyle)
                         .set("updatedAt", LocalDateTime.now()))
                 .then();
+    }
+
+    /**
+     * Сохранить промпт и URLs входных изображений.
+     */
+    public Mono<Void> updatePromptAndInputUrls(Long userId, String prompt, List<String> inputUrls) {
+        String inputUrlsJson = inputUrls.isEmpty() ? null : "[" + String.join(",", 
+                inputUrls.stream().map(url -> "\"" + url + "\"").toList()) + "]";
+        
+        return r2dbcEntityTemplate.update(TelegramBotSession.class)
+                .matching(Query.query(Criteria.where("userId").is(userId)))
+                .apply(Update.update("currentPrompt", prompt)
+                        .set("inputImageUrls", inputUrlsJson)
+                        .set("updatedAt", LocalDateTime.now()))
+                .then();
+    }
+
+    /**
+     * Очистить URLs входных изображений.
+     */
+    public Mono<Void> clearInputUrls(Long userId) {
+        return r2dbcEntityTemplate.update(TelegramBotSession.class)
+                .matching(Query.query(Criteria.where("userId").is(userId)))
+                .apply(Update.update("inputImageUrls", (String) null)
+                        .set("updatedAt", LocalDateTime.now()))
+                .then();
+    }
+
+    /**
+     * Получить URLs входных изображений из JSON.
+     */
+    public List<String> parseInputUrls(String inputUrlsJson) {
+        if (inputUrlsJson == null || inputUrlsJson.isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            return objectMapper.readValue(inputUrlsJson, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Ошибка парсинга inputUrlsJson: {}", inputUrlsJson, e);
+            return new ArrayList<>();
+        }
     }
 }

@@ -53,6 +53,12 @@ public class TelegramBotSession {
     private String currentPrompt;
 
     /**
+     * JSON массив URLs входных изображений для генерации.
+     * Пример: ["https://example.com/image1.jpg"]
+     */
+    private String inputImageUrls;
+
+    /**
      * Флаг ожидания выбора стиля пользователем (0 или 1).
      * 0 - не ожидает, >0 - ожидает (хранится количество доступных стилей).
      */

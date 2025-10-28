@@ -11,6 +11,7 @@ import ru.oparin.troyka.model.dto.telegram.TelegramMessage;
 import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
 import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
 import ru.oparin.troyka.model.entity.ArtStyle;
+import ru.oparin.troyka.model.entity.TelegramBotSession;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.ArtStyleService;
@@ -41,10 +42,8 @@ public class TelegramBotService {
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final GenerationProperties generationProperties;
     
-    // Временное хранилище для промпта и URL фото по сессии
-    private final Map<Long, String> sessionPrompts = new HashMap<>();
-    private final Map<Long, List<String>> sessionInputUrls = new HashMap<>();
-    private final Map<Long, List<ArtStyle>> sessionStyles = new HashMap<>(); // список стилей для выбора
+    // Временное хранилище для списка стилей во время выбора
+    private final Map<Long, List<ArtStyle>> sessionStyles = new HashMap<>();
 
     @Value("${telegram.bot.token}")
     private String botToken;
@@ -566,12 +565,18 @@ public class TelegramBotService {
     }
 
     /**
+     * Получить промпт и URLs из БД.
+     */
+    private Mono<TelegramBotSession> getPromptAndInputUrlsFromDB(Long userId) {
+        return telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId);
+    }
+
+    /**
      * Показать выбор стиля генерации с inline-кнопками.
      */
     private Mono<Void> showStyleSelection(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
-        // Сохраняем промпт и URL фото для последующего использования
-        sessionPrompts.put(sessionId, prompt);
-        sessionInputUrls.put(sessionId, inputImageUrls);
+        // Сохраняем промпт и URL фото в БД
+        telegramBotSessionService.updatePromptAndInputUrls(userId, prompt, inputImageUrls).subscribe();
         
         // Проверяем, есть ли у пользователя сохраненный стиль
         return artStyleService.getUserStyle(userId)
@@ -661,12 +666,14 @@ public class TelegramBotService {
             log.warn("Список стилей не найден для sessionId={}, сбрасываем waitingStyle", sessionId);
             // Сбрасываем флаг ожидания и показываем выбор стиля заново
             return telegramBotSessionService.updateWaitingStyle(userId, 0)
-                    .then(Mono.fromRunnable(() -> {
-                        String prompt = sessionPrompts.getOrDefault(sessionId, "");
-                        List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
-                        showStyleSelection(chatId, userId, sessionId, prompt, inputUrls).subscribe();
-                    }))
-                    .then();
+                    .then(telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId))
+                    .flatMap(tgSession -> {
+                        String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                        List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                                ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                                : List.of();
+                        return showStyleSelection(chatId, userId, sessionId, prompt, inputUrls);
+                    });
         }
         
         try {
@@ -680,10 +687,13 @@ public class TelegramBotService {
             
             // Сохраняем стиль пользователя в БД
             return artStyleService.saveOrUpdateUserStyle(userId, styleName)
-                    .flatMap(saved -> {
-                        // Получаем промпт и URL фото
-                        String prompt = sessionPrompts.getOrDefault(sessionId, "");
-                        List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                    .flatMap(saved -> getPromptAndInputUrlsFromDB(userId))
+                    .flatMap(tgSession -> {
+                        // Получаем промпт и URL фото из БД
+                        String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                        List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                                ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                                : List.of();
                         
                         // Очищаем состояние ожидания и временные данные
                         telegramBotSessionService.updateWaitingStyle(userId, 0).subscribe();
@@ -724,19 +734,25 @@ public class TelegramBotService {
                 Long sessionId = Long.parseLong(parts[1]);
                 Long userId = Long.parseLong(parts[2]);
                 
-                // Получаем сохраненный стиль пользователя
-                return artStyleService.getUserStyle(userId)
-                        .flatMap(userStyle -> {
-                            // Получаем промпт и URL фото из временного хранилища
-                            String prompt = sessionPrompts.getOrDefault(sessionId, "");
-                            List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
-                            
-                            // Очищаем временные данные после использования
-                            sessionPrompts.remove(sessionId);
-                            sessionInputUrls.remove(sessionId);
-                            
-                            // Получаем стиль для отображения
-                            String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
+                // Получаем данные из БД
+                return Mono.zip(
+                    artStyleService.getUserStyle(userId),
+                    getPromptAndInputUrlsFromDB(userId)
+                ).flatMap(tuple -> {
+                    var userStyle = tuple.getT1();
+                    var tgSession = tuple.getT2();
+                    
+                    // Получаем промпт и URL фото из БД
+                    String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                    List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                            ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                            : List.of();
+                    
+                    // Очищаем URLs после использования
+                    telegramBotSessionService.clearInputUrls(userId).subscribe();
+                    
+                    // Получаем стиль для отображения
+                    String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
                             
                             // Отправляем сообщение о начале генерации
                             String message = String.format("""
@@ -751,12 +767,14 @@ public class TelegramBotService {
                             return sendMessage(chatId, message)
                                     .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, userStyle.getStyleName()));
                         })
-                        .switchIfEmpty(Mono.defer(() -> {
-                            // Если стиль не найден, показываем список стилей
-                            String prompt = sessionPrompts.getOrDefault(sessionId, "");
-                            List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
-                            return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
-                        }));
+                        .switchIfEmpty(getPromptAndInputUrlsFromDB(userId)
+                                .flatMap(tgSession -> {
+                                    String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                                    List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                                            ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                                            : List.of();
+                                    return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
+                                }));
             }
         }
         
@@ -767,12 +785,15 @@ public class TelegramBotService {
                 Long sessionId = Long.parseLong(parts[1]);
                 Long userId = Long.parseLong(parts[2]);
                 
-                // Получаем промпт и URL фото из временного хранилища
-                String prompt = sessionPrompts.getOrDefault(sessionId, "");
-                List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
-                
-                // Показываем список стилей для выбора
-                return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
+                // Получаем промпт и URL фото из БД
+                return getPromptAndInputUrlsFromDB(userId)
+                        .flatMap(tgSession -> {
+                            String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                            List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                                    ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                                    : List.of();
+                            return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
+                        });
             }
         }
         
@@ -784,21 +805,25 @@ public class TelegramBotService {
                 Long sessionId = Long.parseLong(parts[2]);
                 Long userId = Long.parseLong(parts[3]);
                 
-                // Получаем промпт и URL фото из временного хранилища
-                String prompt = sessionPrompts.getOrDefault(sessionId, "");
-                List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
-                
-                // Очищаем временные данные после использования
-                sessionPrompts.remove(sessionId);
-                sessionInputUrls.remove(sessionId);
-                
-                // Получаем стиль для отображения
-                String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
-                
-                // Отправляем сообщение о начале генерации
-                String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);
-                return sendMessage(chatId, message)
-                        .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+                // Получаем промпт и URL фото из БД
+                return getPromptAndInputUrlsFromDB(userId)
+                        .flatMap(tgSession -> {
+                            String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                            List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                                    ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                                    : List.of();
+                            
+                            // Очищаем URLs после использования
+                            telegramBotSessionService.clearInputUrls(userId).subscribe();
+                            
+                            // Получаем стиль для отображения
+                            String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                            
+                            // Отправляем сообщение о начале генерации
+                            String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);
+                            return sendMessage(chatId, message)
+                                    .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+                        });
             }
         }
         
