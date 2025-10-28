@@ -322,21 +322,30 @@ public class TelegramAuthService {
         return createNewUserFromTelegram(request)
                 .flatMap(user -> userService.saveUser(user)
                         .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
-                                .then(Mono.just(createAuthResponse(savedUser)))));
+                                .then(Mono.just(createAuthResponse(savedUser, true)))));
     }
 
     /**
      * Создание ответа аутентификации.
      */
     private AuthResponse createAuthResponse(User user) {
+        return createAuthResponse(user, false);
+    }
+
+    /**
+     * Создание ответа аутентификации с флагом нового пользователя.
+     */
+    private AuthResponse createAuthResponse(User user, boolean isNewUser) {
         String token = jwtService.generateToken(user);
-        return new AuthResponse(
+        AuthResponse response = new AuthResponse(
                 token,
                 user.getUsername(),
                 user.getEmail(),
                 user.getRole().name(),
-                LocalDateTime.now().plusSeconds(expiration / 1000)
+                LocalDateTime.now().plusSeconds(expiration / 1000),
+                isNewUser
         );
+        return response;
     }
 
     /**

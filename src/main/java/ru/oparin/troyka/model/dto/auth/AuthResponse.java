@@ -26,4 +26,7 @@ public class AuthResponse {
 
     @Schema(description = "Время истечения действия токена", example = "2024-01-01T12:00:00")
     private LocalDateTime expiresAt;
+
+    @Schema(description = "Флаг, указывающий является ли пользователь новым (только для Telegram)", example = "true")
+    private Boolean isNewUser;
 }

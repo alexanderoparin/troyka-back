@@ -56,7 +56,8 @@ public class AuthService {
                                                     savedUser.getUsername(),
                                                     savedUser.getEmail(),
                                                     savedUser.getRole().name(),
-                                                    LocalDateTime.now().plusSeconds(expiration / 1000)
+                                                    LocalDateTime.now().plusSeconds(expiration / 1000),
+                                                    true
                                             );
                                         }));
                             });
@@ -79,7 +80,8 @@ public class AuthService {
                             user.getUsername(),
                             user.getEmail(),
                             user.getRole().name(),
-                            LocalDateTime.now().plusSeconds(expiration / 1000)
+                            LocalDateTime.now().plusSeconds(expiration / 1000),
+                            false
                     ));
                 });
     }
