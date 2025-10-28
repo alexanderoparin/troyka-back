@@ -13,6 +13,7 @@ import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
 import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.TelegramBotSession;
 import ru.oparin.troyka.model.entity.User;
+import ru.oparin.troyka.model.entity.UserStyle;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.ArtStyleService;
 import ru.oparin.troyka.service.FalAIService;
@@ -587,8 +588,10 @@ public class TelegramBotService {
         log.debug("showStyleSelection вызван для userId={}, prompt={}", userId, prompt);
         
         // Сохраняем промпт и URL фото в БД, затем проверяем стиль
+        Mono<UserStyle> userStyleMono = artStyleService.getUserStyle(userId);
+        
         return telegramBotSessionService.updatePromptAndInputUrls(userId, prompt, inputImageUrls)
-                .then(artStyleService.getUserStyle(userId))
+                .then(Mono.defer(() -> userStyleMono))
                 .doOnNext(userStyle -> log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName()))
                 .flatMap(userStyle -> {
                     // У пользователя есть сохраненный стиль - показываем кнопки
