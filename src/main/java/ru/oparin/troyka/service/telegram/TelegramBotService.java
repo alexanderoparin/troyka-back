@@ -12,15 +12,12 @@ import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
 import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
 import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.User;
-import ru.oparin.troyka.model.entity.UserStyle;
-import ru.oparin.troyka.repository.ArtStyleRepository;
 import ru.oparin.troyka.repository.UserRepository;
-import ru.oparin.troyka.repository.UserStyleRepository;
+import ru.oparin.troyka.service.ArtStyleService;
 import ru.oparin.troyka.service.FalAIService;
 import ru.oparin.troyka.service.ImageGenerationHistoryService;
 import ru.oparin.troyka.service.UserPointsService;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,8 +33,7 @@ import java.util.Map;
 public class TelegramBotService {
 
     private final UserRepository userRepository;
-    private final ArtStyleRepository artStyleRepository;
-    private final UserStyleRepository userStyleRepository;
+    private final ArtStyleService artStyleService;
     private final TelegramBotSessionService telegramBotSessionService;
     private final UserPointsService userPointsService;
     private final FalAIService falAIService;
@@ -302,7 +298,7 @@ public class TelegramBotService {
         // Применяем стиль к промпту
         String finalPrompt = prompt;
         if (!styleName.equals("none")) {
-            finalPrompt = artStyleRepository.findByName(styleName)
+            finalPrompt = artStyleService.getStyleByName(styleName)
                     .map(style -> {
                         String stylePrompt = ", " + style.getPrompt();
                         return prompt + stylePrompt;
@@ -575,7 +571,7 @@ public class TelegramBotService {
      * Показать пронумерованный список стилей для выбора.
      */
     private Mono<Void> showStyleList(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
-        return artStyleRepository.findAllByOrderByName()
+        return artStyleService.getAllStyles()
                 .collectList()
                 .flatMap(styles -> {
                     // Добавляем "Без стиля" в начало
@@ -628,14 +624,7 @@ public class TelegramBotService {
             String styleName = selectedStyle.getName();
             
             // Сохраняем стиль пользователя в БД
-            UserStyle userStyle = UserStyle.builder()
-                    .userId(userId)
-                    .styleName(styleName)
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-            
-            return userStyleRepository.save(userStyle)
+            return artStyleService.saveOrUpdateUserStyle(userId, styleName)
                     .flatMap(saved -> {
                         // Очищаем состояние ожидания
                         telegramBotSessionService.updateWaitingStyle(userId, 0).subscribe();
