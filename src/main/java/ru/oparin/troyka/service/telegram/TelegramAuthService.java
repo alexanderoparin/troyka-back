@@ -16,6 +16,7 @@ import ru.oparin.troyka.model.dto.auth.TelegramAuthRequest;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.enums.Role;
 import ru.oparin.troyka.service.JwtService;
+import ru.oparin.troyka.service.SessionService;
 import ru.oparin.troyka.service.UserPointsService;
 import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.util.SecurityUtil;
@@ -42,6 +43,7 @@ public class TelegramAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserPointsService userPointsService;
+    private final SessionService sessionService;
     private final TelegramMapper telegramMapper;
     private final GenerationProperties generationProperties;
 
@@ -321,8 +323,12 @@ public class TelegramAuthService {
         log.info("Создание нового пользователя из Telegram, TelegramAuthRequest: {}", request);
         return createNewUserFromTelegram(request)
                 .flatMap(user -> userService.saveUser(user)
-                        .flatMap(savedUser -> userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
-                                .then(Mono.just(createAuthResponse(savedUser, true)))));
+                        .flatMap(savedUser -> {
+                            // Начисляем поинты за регистрацию и создаем дефолтную сессию
+                            return userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
+                                    .then(sessionService.createSession(savedUser.getId(), "Моя студия"))
+                                    .then(Mono.defer(() -> Mono.just(createAuthResponse(savedUser, true))));
+                        }));
     }
 
     /**
