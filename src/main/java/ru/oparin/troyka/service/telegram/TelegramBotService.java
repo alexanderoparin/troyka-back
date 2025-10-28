@@ -573,8 +573,36 @@ public class TelegramBotService {
         sessionPrompts.put(sessionId, prompt);
         sessionInputUrls.put(sessionId, inputImageUrls);
         
-        // Всегда показываем список стилей
-        return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
+        // Проверяем, есть ли у пользователя сохраненный стиль
+        return artStyleService.getUserStyle(userId)
+                .flatMap(userStyle -> {
+                    // У пользователя есть сохраненный стиль - показываем кнопки
+                    String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
+                    String message = String.format("""
+                            🎨 *Выберите действие:*
+                            
+                            📝 *Промпт:* %s
+                            
+                            💡 *Текущий стиль:* %s
+                            """, prompt, styleDisplay);
+                    
+                    // Создаем JSON для inline клавиатуры
+                    String keyboardJson = """
+                            {
+                                "inline_keyboard": [
+                                    [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
+                                    [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
+                                ]
+                            }
+                            """.formatted(sessionId, userId, sessionId, userId);
+                    
+                    return sendMessage(chatId, message)
+                            .then(telegramMessageService.sendMessageWithKeyboard(chatId, "Выберите действие:", keyboardJson));
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    // У пользователя нет сохраненного стиля - показываем список стилей
+                    return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
+                }));
     }
 
     /**
@@ -688,6 +716,65 @@ public class TelegramBotService {
         
         String data = callbackQuery.getData();
         Long chatId = callbackQuery.getMessage().getChat().getId();
+        
+        // Парсим callback_data: generate_current:sessionId:userId:hasPhoto
+        if (data != null && data.startsWith("generate_current:")) {
+            String[] parts = data.split(":", 4);
+            if (parts.length >= 4) {
+                Long sessionId = Long.parseLong(parts[1]);
+                Long userId = Long.parseLong(parts[2]);
+                
+                // Получаем сохраненный стиль пользователя
+                return artStyleService.getUserStyle(userId)
+                        .flatMap(userStyle -> {
+                            // Получаем промпт и URL фото из временного хранилища
+                            String prompt = sessionPrompts.getOrDefault(sessionId, "");
+                            List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                            
+                            // Очищаем временные данные после использования
+                            sessionPrompts.remove(sessionId);
+                            sessionInputUrls.remove(sessionId);
+                            
+                            // Получаем стиль для отображения
+                            String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
+                            
+                            // Отправляем сообщение о начале генерации
+                            String message = String.format("""
+                                    🎨 *Генерация изображения*
+                                    
+                                    📝 *Промпт:* %s
+                                    
+                                    🎨 *Стиль:* %s
+                                    
+                                    ⏱️ *Ожидайте 5-10 секунд*
+                                    """, prompt, styleDisplay);
+                            return sendMessage(chatId, message)
+                                    .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, userStyle.getStyleName()));
+                        })
+                        .switchIfEmpty(Mono.defer(() -> {
+                            // Если стиль не найден, показываем список стилей
+                            String prompt = sessionPrompts.getOrDefault(sessionId, "");
+                            List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                            return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
+                        }));
+            }
+        }
+        
+        // Парсим callback_data: change_style:sessionId:userId:hasPhoto
+        if (data != null && data.startsWith("change_style:")) {
+            String[] parts = data.split(":", 4);
+            if (parts.length >= 4) {
+                Long sessionId = Long.parseLong(parts[1]);
+                Long userId = Long.parseLong(parts[2]);
+                
+                // Получаем промпт и URL фото из временного хранилища
+                String prompt = sessionPrompts.getOrDefault(sessionId, "");
+                List<String> inputUrls = sessionInputUrls.getOrDefault(sessionId, List.of());
+                
+                // Показываем список стилей для выбора
+                return showStyleList(chatId, userId, sessionId, prompt, inputUrls);
+            }
+        }
         
         // Парсим callback_data: style:styleName:sessionId:userId:hasPhoto
         if (data != null && data.startsWith("style:")) {
