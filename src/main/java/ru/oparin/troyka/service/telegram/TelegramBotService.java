@@ -211,9 +211,18 @@ public class TelegramBotService {
                                                         log.debug("waitingStyle для userId={}: {}", user.getId(), waitingStyle);
                                                         
                                                         if (waitingStyle != null && waitingStyle > 0) {
-                                                            // Пользователь выбирает стиль - обрабатываем номер
-                                                            log.debug("Переход в handleStyleSelection");
-                                                            return handleStyleSelection(chatId, user.getId(), session.getId(), prompt);
+                                                            // Проверяем, является ли ввод цифрой (выбор стиля)
+                                                            try {
+                                                                Integer.parseInt(prompt.trim());
+                                                                // Это цифра - выбор стиля
+                                                                log.debug("Переход в handleStyleSelection");
+                                                                return handleStyleSelection(chatId, user.getId(), session.getId(), prompt);
+                                                            } catch (NumberFormatException e) {
+                                                                // Не цифра - новый промпт, сбрасываем waitingStyle
+                                                                log.debug("Ввод не является цифрой, сбрасываем waitingStyle и показываем выбор стиля");
+                                                                return telegramBotSessionService.updateWaitingStyle(user.getId(), 0)
+                                                                        .then(showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls));
+                                                            }
                                                         }
                                                         
                                                         // Обычная обработка - показываем выбор стиля
