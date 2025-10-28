@@ -303,26 +303,28 @@ public class TelegramBotService {
                 userId, sessionId, prompt, styleName);
 
         // Применяем стиль к промпту
-        String finalPrompt = prompt;
+        Mono<String> finalPromptMono;
         if (!styleName.equals("none")) {
-            finalPrompt = artStyleService.getStyleByName(styleName)
+            finalPromptMono = artStyleService.getStyleByName(styleName)
                     .map(style -> {
                         String stylePrompt = ", " + style.getPrompt();
                         return prompt + stylePrompt;
                     })
-                    .defaultIfEmpty(prompt)
-                    .block();
+                    .defaultIfEmpty(prompt);
+        } else {
+            finalPromptMono = Mono.just(prompt);
         }
 
         // Создаем запрос для FAL AI
-        ImageRq imageRq = ImageRq.builder()
-                .prompt(finalPrompt)
-                .sessionId(sessionId)
-                .numImages(1)
-                .inputImageUrls(inputImageUrls)
-                .build();
+        return finalPromptMono.flatMap(finalPrompt -> {
+            ImageRq imageRq = ImageRq.builder()
+                    .prompt(finalPrompt)
+                    .sessionId(sessionId)
+                    .numImages(1)
+                    .inputImageUrls(inputImageUrls)
+                    .build();
 
-        return falAIService.getImageResponse(imageRq, userId)
+            return falAIService.getImageResponse(imageRq, userId)
                 .flatMap(imageResponse -> {
                     // Получаем chatId из специальной сессии
                     return telegramBotSessionService.getTelegramBotSessionEntityByUserId(userId)
@@ -368,6 +370,7 @@ public class TelegramBotService {
                                         .then();
                             });
                 });
+        });
     }
 
 
