@@ -624,7 +624,7 @@ public class TelegramBotService {
         log.debug("handleStyleSelection: chatId={}, userId={}, sessionId={}, inputText={}", chatId, userId, sessionId, inputText);
         
         List<ArtStyle> styles = sessionStyles.get(sessionId);
-        log.debug("sessionStyles contains: {}", sessionStyles.keySet());
+        log.debug("sessionStyles содержит ключи: {}", sessionStyles.keySet());
         
         if (styles == null || styles.isEmpty()) {
             log.warn("Список стилей не найден для sessionId={}, сбрасываем waitingStyle", sessionId);
