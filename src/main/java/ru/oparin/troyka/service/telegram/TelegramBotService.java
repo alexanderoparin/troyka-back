@@ -610,8 +610,7 @@ public class TelegramBotService {
                             }
                             """.formatted(sessionId, userId, sessionId, userId);
                     
-                    return sendMessage(chatId, message)
-                            .then(telegramMessageService.sendMessageWithKeyboard(chatId, "Выберите действие:", keyboardJson));
+                    return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // У пользователя нет сохраненного стиля - показываем список стилей
