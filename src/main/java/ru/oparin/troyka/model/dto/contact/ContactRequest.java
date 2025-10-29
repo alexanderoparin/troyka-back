@@ -26,9 +26,6 @@ public class ContactRequest {
     @Schema(description = "Email отправителя", example = "ivan@example.com")
     private String email;
 
-    @Schema(description = "Телефон", example = "+7 (999) 123-45-67")
-    private String phone;
-
     @NotBlank(message = "Тема обязательна")
     @Size(min = 5, max = 200, message = "Тема должна содержать от 5 до 200 символов")
     @Schema(description = "Тема сообщения", example = "Вопрос по тарифам")

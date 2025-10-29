@@ -102,7 +102,6 @@ public class ContactService {
                 LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")),
                 request.getName(),
                 request.getEmail(),
-                request.getPhone() != null ? "Телефон: " + request.getPhone() : "Телефон не указан",
                 request.getSubject(),
                 request.getMessage(),
                 request.getEmail()
