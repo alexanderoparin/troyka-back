@@ -50,7 +50,6 @@ public class PaymentController {
                     "Проверяет подпись и обновляет статус платежа в системе. " +
                     "Возвращает ответ в формате OK[номер счета] согласно документации Робокассы.")
     @GetMapping("/result")
-    @PostMapping("/result")
     public Mono<ResponseEntity<String>> handleResult(
             @RequestParam Map<String, String> allParams) {
         
