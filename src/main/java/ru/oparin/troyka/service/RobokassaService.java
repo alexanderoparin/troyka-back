@@ -178,34 +178,33 @@ public class RobokassaService {
                 
                 return paymentRepository.findById(paymentId)
                         .flatMap(payment -> {
-                            // Если платеж уже обработан, возвращаем true сразу
                             if (payment.getStatus() == PaymentStatus.PAID) {
-                                log.info("Платеж {} уже успешно обработан. Возвращаем OK.", paymentId);
-                                return Mono.just(payment);
+                                log.info("Платеж {} уже успешно обработан (статус PAID). Возвращаем OK без повторной обработки.", paymentId);
+                                return Mono.just(true);
                             }
                             
-                            // Обрабатываем платеж
+                            // Обрабатываем новый платеж
                             log.info("Обработка платежа {} (текущий статус: {})", paymentId, payment.getStatus());
                             payment.setStatus(PaymentStatus.PAID);
                             payment.setPaidAt(LocalDateTime.now());
                             payment.setRobokassaResponse(String.format("OutSum=%s, InvId=%s, Signature=%s", outSum, invId, signature));
-                            return paymentRepository.save(payment);
+                            
+                            return paymentRepository.save(payment)
+                                    .flatMap(savedPayment -> {
+                                        // Начисляем поинты, если они есть
+                                        if (savedPayment.getCreditsAmount() != null && savedPayment.getCreditsAmount() > 0) {
+                                            return userPointsService.addPointsToUser(savedPayment.getUserId(), savedPayment.getCreditsAmount())
+                                                    .map(userPoints -> {
+                                                        log.info("Начислено {} поинтов пользователю {} (платеж {})", 
+                                                                savedPayment.getCreditsAmount(), savedPayment.getUserId(), savedPayment.getId());
+                                                        return true;
+                                                    });
+                                        }
+                                        return Mono.just(true);
+                                    });
                         })
-                        .flatMap(p -> {
-                            if (p.getCreditsAmount() != null && p.getCreditsAmount() > 0) {
-                                return userPointsService.addPointsToUser(p.getUserId(), p.getCreditsAmount())
-                                        .map(userPoints -> {
-                                            log.info("Начислено {} поинтов пользователю {} (платеж {})", 
-                                                    p.getCreditsAmount(), p.getUserId(), p.getId());
-                                            return p;
-                                        });
-                            } else {
-                                return Mono.just(p);
-                            }
-                        })
-                        .map(p -> true)
                         .doOnSuccess(v -> log.info("Платеж {} обработан успешно", paymentId))
-                        .doOnError(error -> log.error("Ошибка обработки платежа: {}", error.getMessage()))
+                        .doOnError(error -> log.error("Ошибка обработки платежа для заказа {}: {}", invId, error.getMessage()))
                         .onErrorReturn(false);
             }
 

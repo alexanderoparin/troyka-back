@@ -47,8 +47,10 @@ public class PaymentController {
 
     @Operation(summary = "Обработать результат платежа",
             description = "Callback эндпоинт для получения результата платежа от Робокассы. " +
-                    "Проверяет подпись и обновляет статус платежа в системе.")
+                    "Проверяет подпись и обновляет статус платежа в системе. " +
+                    "Возвращает ответ в формате OK[номер счета] согласно документации Робокассы.")
     @GetMapping("/result")
+    @PostMapping("/result")
     public Mono<ResponseEntity<String>> handleResult(
             @RequestParam Map<String, String> allParams) {
         
@@ -58,18 +60,27 @@ public class PaymentController {
         String invId = allParams.get("InvId");
         String signature = allParams.get("SignatureValue");
 
+        // Проверяем наличие обязательных параметров
+        if (outSum == null || invId == null || signature == null) {
+            log.warn("Отсутствуют обязательные параметры в запросе от Робокассы");
+            return Mono.just(ResponseEntity.ok("ERROR"));
+        }
+
         return robokassaService.verifyPayment(outSum, invId, signature)
                 .map(isValid -> {
                     if (isValid) {
-                        log.info("Платеж успешно проверен для заказа: {}", invId);
-                        return ResponseEntity.ok("OK");
+                        // Согласно документации Робокассы: https://docs.robokassa.ru/pay-interface/#notification
+                        // Обработчик должен вернуть ответ в формате "OK[номер счета]"
+                        String response = "OK" + invId;
+                        log.info("Платеж успешно проверен для заказа: {}. Возвращаем ответ: {}", invId, response);
+                        return ResponseEntity.ok(response);
                     } else {
                         log.warn("Проверка платежа не удалась для заказа: {}", invId);
                         return ResponseEntity.ok("FAIL");
                     }
                 })
                 .onErrorResume(e -> {
-                    log.error("Ошибка обработки результата платежа: {}", e.getMessage());
+                    log.error("Ошибка обработки результата платежа для заказа {}: {}", invId, e.getMessage(), e);
                     return Mono.just(ResponseEntity.ok("ERROR"));
                 });
     }
