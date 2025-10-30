@@ -132,28 +132,28 @@ public class FalAIService {
                                                                 .then(Mono.just(response));
                                                     })
                                                     .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}", session.getId(), response))
-                                                    .onErrorResume(WebClientRequestException.class, e -> {
-                                                        // Возвращаем поинты при сетевой ошибке
-                                                        return userPointsService.addPointsToUser(userId, pointsNeeded)
-                                                                .then(Mono.error(new FalAIException(
-                                                                        "Не удалось подключиться к сервису fal.ai. Проверьте подключение к интернету и доступность сервиса.",
-                                                                        HttpStatus.SERVICE_UNAVAILABLE, e)));
-                                                    })
-                                                    .onErrorResume(WebClientResponseException.class, e -> {
-                                                        String responseBody = e.getResponseBodyAsString();
-                                                        String message = "Сервис fal.ai вернул ошибку. Статус: " + e.getStatusCode()
-                                                                + ", причина: " + e.getStatusText()
-                                                                + ", тело ответа: " + responseBody;
-                                                        // Возвращаем поинты при HTTP-ошибке от FAL
-                                                        return userPointsService.addPointsToUser(userId, pointsNeeded)
-                                                                .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
-                                                    })
-                                                    .onErrorResume(Exception.class, e -> {
-                                                        // Любая другая ошибка — возвращаем поинты
-                                                        return userPointsService.addPointsToUser(userId, pointsNeeded)
-                                                                .then(Mono.error(new FalAIException(
-                                                                        "Произошла ошибка при работе с сервисом fal.ai: " + e.getMessage(),
-                                                                        HttpStatus.INTERNAL_SERVER_ERROR, e)));
+                                                    .onErrorResume(e -> {
+                                                        if (e instanceof FalAIException) {
+                                                            // Уже наш кастомный эксепшн — возврат поинтов уже был
+                                                            return Mono.error(e);
+                                                        } else if (e instanceof WebClientRequestException) {
+                                                            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                                                                    .then(Mono.error(new FalAIException(
+                                                                            "Не удалось подключиться к сервису генерации. Проверьте интернет или попробуйте позже.",
+                                                                            HttpStatus.SERVICE_UNAVAILABLE, e)));
+                                                        } else if (e instanceof WebClientResponseException webE) {
+                                                            String responseBody = webE.getResponseBodyAsString();
+                                                            String message = "Сервис генерации вернул ошибку. Статус: " + webE.getStatusCode()
+                                                                    + ", причина: " + webE.getStatusText()
+                                                                    + ", тело ответа: " + responseBody;
+                                                            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                                                                    .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
+                                                        } else {
+                                                            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                                                                    .then(Mono.error(new FalAIException(
+                                                                            "Произошла ошибка при работе с сервисом генерации: " + e.getMessage(),
+                                                                            HttpStatus.INTERNAL_SERVER_ERROR, e)));
+                                                        }
                                                     });
                                         }));
                             });
