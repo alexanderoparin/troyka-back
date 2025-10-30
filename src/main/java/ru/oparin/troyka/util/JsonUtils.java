@@ -122,41 +122,11 @@ public class JsonUtils {
     }
 
     /**
-     * Проверить, является ли строка валидным JSON массивом.
-     *
-     * @param json строка для проверки
-     * @return true если строка является валидным JSON массивом
+     * Убираем blob из URL'ов.
      */
-    public static boolean isValidJsonArray(String json) {
-        if (json == null || json.trim().isEmpty()) {
-            return false;
-        }
-        
-        String trimmed = json.trim();
-        return trimmed.startsWith("[") && trimmed.endsWith("]");
-    }
-
-    /**
-     * Безопасно получить размер JSON массива без полного парсинга.
-     *
-     * @param json JSON строка
-     * @return количество элементов в массиве или 0 если некорректный JSON
-     */
-    public static int getJsonArraySize(String json) {
-        if (!isValidJsonArray(json)) {
-            return 0;
-        }
-        
-        try {
-            String content = json.trim().substring(1, json.length() - 1).trim();
-            if (content.isEmpty()) {
-                return 0;
-            }
-            
-            // Подсчитываем элементы по запятым (упрощенный подход)
-            return content.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)").length;
-        } catch (Exception e) {
-            return 0;
-        }
+    public static List<String> removingBlob(List<String> inputImageUrls) {
+        return inputImageUrls.stream()
+                .map(url -> url.startsWith("blob:") ? url.substring(5) : url)
+                .toList();
     }
 }

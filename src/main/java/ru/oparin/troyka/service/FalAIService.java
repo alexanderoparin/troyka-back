@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 import static ru.oparin.troyka.model.dto.fal.OutputFormatEnum.JPEG;
+import static ru.oparin.troyka.util.JsonUtils.removingBlob;
 
 /**
  * Сервис для работы с FAL AI API.
@@ -64,7 +65,7 @@ public class FalAIService {
      * Получить ответ с изображениями от FAL AI с поддержкой сессий.
      * Автоматически создает или получает дефолтную сессию, если sessionId не указан.
      *
-     * @param rq запрос на генерацию изображения
+     * @param rq     запрос на генерацию изображения
      * @param userId идентификатор пользователя
      * @return ответ с сгенерированными изображениями
      */
@@ -76,7 +77,8 @@ public class FalAIService {
         return userPointsService.hasEnoughPoints(userId, pointsNeeded)
                 .flatMap(hasEnough -> {
                     if (!hasEnough) {
-                        return Mono.error(new FalAIException("Недостаточно поинтов для генерации изображений. Требуется: " + pointsNeeded, HttpStatus.PAYMENT_REQUIRED));
+                        return Mono.error(new FalAIException(
+                                "Недостаточно поинтов для генерации изображений. Требуется: " + pointsNeeded, HttpStatus.PAYMENT_REQUIRED));
                     }
 
                     // Получаем или создаем сессию
@@ -85,21 +87,15 @@ public class FalAIService {
                                 // Списываем поинты и получаем обновленный баланс
                                 return userPointsService.deductPointsFromUser(userId, pointsNeeded)
                                         .flatMap(userPoints -> Mono.defer(() -> {
-                                            // Получаем баланс из возвращенного userPoints
                                             Integer balance = userPoints.getPoints();
                                             String prompt = rq.getPrompt();
                                             Map<String, Object> requestBody = createRqBody(rq, prompt, numImages);
 
                                             List<String> inputImageUrls = rq.getInputImageUrls();
                                             boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
-                                            
-                                            // Убираем "blob:" из URL'ов - FAL AI не понимает blob URL'ы
+
                                             if (!isNewImage) {
-                                                List<String> processedUrls = inputImageUrls.stream()
-                                                        .map(url -> url.startsWith("blob:") ? url.substring(5) : url)
-                                                        .toList();
-                                                
-                                                requestBody.put("image_urls", processedUrls);
+                                                requestBody.put("image_urls", removingBlob(inputImageUrls));
                                             }
 
                                             String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
@@ -119,11 +115,8 @@ public class FalAIService {
                                                     .flatMap(response -> {
                                                         // Сохраняем историю в сессии
                                                         return imageGenerationHistoryService.saveHistories(
-                                                                userId,
-                                                                response.getImageUrls(), 
-                                                                prompt, 
-                                                                session.getId(), 
-                                                                inputImageUrls)
+                                                                        userId, response.getImageUrls(), prompt,
+                                                                        session.getId(), inputImageUrls)
                                                                 .then(Mono.just(response));
                                                     })
                                                     .flatMap(response -> {
@@ -132,34 +125,15 @@ public class FalAIService {
                                                                 .then(Mono.just(response));
                                                     })
                                                     .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}", session.getId(), response))
-                                                    .onErrorResume(e -> {
-                                                        if (e instanceof FalAIException) {
-                                                            // Уже наш кастомный эксепшн — возврат поинтов уже был
-                                                            return Mono.error(e);
-                                                        } else if (e instanceof WebClientRequestException) {
-                                                            return userPointsService.addPointsToUser(userId, pointsNeeded)
-                                                                    .then(Mono.error(new FalAIException(
-                                                                            "Не удалось подключиться к сервису генерации. Проверьте интернет или попробуйте позже.",
-                                                                            HttpStatus.SERVICE_UNAVAILABLE, e)));
-                                                        } else if (e instanceof WebClientResponseException webE) {
-                                                            String responseBody = webE.getResponseBodyAsString();
-                                                            String message = "Сервис генерации вернул ошибку. Статус: " + webE.getStatusCode()
-                                                                    + ", причина: " + webE.getStatusText()
-                                                                    + ", тело ответа: " + responseBody;
-                                                            return userPointsService.addPointsToUser(userId, pointsNeeded)
-                                                                    .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
-                                                        } else {
-                                                            return userPointsService.addPointsToUser(userId, pointsNeeded)
-                                                                    .then(Mono.error(new FalAIException(
-                                                                            "Произошла ошибка при работе с сервисом генерации: " + e.getMessage(),
-                                                                            HttpStatus.INTERNAL_SERVER_ERROR, e)));
-                                                        }
-                                                    });
+                                                    .onErrorResume(e -> exceptionHandling(userId, e, pointsNeeded));
                                         }));
                             });
                 });
     }
 
+    /**
+     * Тело сообщения, которое будет отправлено в fal.ai
+     */
     private Map<String, Object> createRqBody(ImageRq rq, String prompt, Integer numImages) {
         String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
         return new HashMap<>(Map.of(
@@ -167,6 +141,31 @@ public class FalAIService {
                 "num_images", numImages,
                 "output_format", outputFormat
         ));
+    }
+
+    /**
+     * Обработка исключений
+     */
+    private Mono<ImageRs> exceptionHandling(Long userId, Throwable e, Integer pointsNeeded) {
+        if (e instanceof FalAIException) {
+            // Уже наш кастомный эксепшн — возврат поинтов уже был
+            return Mono.error(e);
+        } else if (e instanceof WebClientRequestException) {
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(
+                            "Не удалось подключиться к сервису генерации. Проверьте интернет или попробуйте позже.",
+                            HttpStatus.SERVICE_UNAVAILABLE)));
+        } else if (e instanceof WebClientResponseException webE) {
+            String responseBody = webE.getResponseBodyAsString();
+            String message = "Сервис генерации вернул ошибку. Статус: " + webE.getStatusCode()
+                    + ", причина: " + webE.getStatusText()
+                    + ", тело ответа: " + responseBody;
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
+        } else return userPointsService.addPointsToUser(userId, pointsNeeded)
+                .then(Mono.error(new FalAIException(
+                        "Произошла ошибка при работе с сервисом генерации: " + e.getMessage(),
+                        HttpStatus.INTERNAL_SERVER_ERROR)));
     }
 
     /**

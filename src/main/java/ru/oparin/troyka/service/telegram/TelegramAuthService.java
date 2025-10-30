@@ -56,8 +56,6 @@ public class TelegramAuthService {
     /**
      * Вход через Telegram Login Widget.
      * Создает нового пользователя или находит существующего по telegram_id.
-     * Если есть email - предлагает привязку к существующему аккаунту.
-     * БЕЗОПАСНО: Не привязывает автоматически по username для предотвращения атак.
      *
      * @param request данные от Telegram Login Widget
      * @return JWT токен и информация о пользователе
@@ -343,7 +341,7 @@ public class TelegramAuthService {
      */
     private AuthResponse createAuthResponse(User user, boolean isNewUser) {
         String token = jwtService.generateToken(user);
-        AuthResponse response = new AuthResponse(
+        return new AuthResponse(
                 token,
                 user.getUsername(),
                 user.getEmail(),
@@ -351,7 +349,6 @@ public class TelegramAuthService {
                 LocalDateTime.now().plusSeconds(expiration / 1000),
                 isNewUser
         );
-        return response;
     }
 
     /**
