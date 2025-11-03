@@ -58,6 +58,7 @@ logging:
       max-history: 30
   level:
     ru.oparin.troyka: ${log_level:info}
+    reactor.netty.http.server: ERROR  # Скрываем WARN о некорректных HTTP-запросах от ботов/сканеров
 
 jwt:
   secret: ${JWT_SECRET}
