@@ -158,13 +158,13 @@ public class FileService {
                     return userAvatarService.getUserAvatarByUserId(user.getId())
                             .map(UserAvatar::getAvatarUrl)
                             .defaultIfEmpty("")
-                            .flatMap(oldAvatarUrl -> 
-                                saveAvatarAndGetUrl(filePart, user.getUsername())
-                                    .flatMap(newFileUrl -> 
-                                        userAvatarService.saveUserAvatar(user.getId(), newFileUrl)
-                                            .then(deleteOldAvatarFile(oldAvatarUrl))
-                                            .then(Mono.just(newFileUrl))
-                                    )
+                            .flatMap(oldAvatarUrl ->
+                                    saveAvatarAndGetUrl(filePart, user.getUsername())
+                                            .flatMap(newFileUrl ->
+                                                    userAvatarService.saveUserAvatar(user.getId(), newFileUrl)
+                                                            .then(deleteOldAvatarFile(oldAvatarUrl))
+                                                            .then(Mono.just(newFileUrl))
+                                            )
                             );
                 });
     }
@@ -180,30 +180,30 @@ public class FileService {
         if (avatarUrl == null || avatarUrl.isEmpty()) {
             return Mono.empty();
         }
-        
+
         return Mono.fromCallable(() -> {
             try {
                 // Извлекаем имя файла из URL
                 // URL формат: https://24reshai.ru/files/avatar/filename.jpg
                 String filename = avatarUrl.substring(avatarUrl.lastIndexOf("/") + 1);
-                
+
                 // Проверяем, что файл находится в папке avatar для безопасности
                 Path avatarDir = Paths.get(uploadDir).resolve("avatar");
                 Path filePath = avatarDir.resolve(filename);
-                
+
                 // Дополнительная проверка безопасности - файл должен быть внутри avatar директории
                 if (!filePath.normalize().startsWith(avatarDir.normalize())) {
                     log.warn("Попытка удалить файл вне директории аватаров: {}", filePath);
                     return null;
                 }
-                
+
                 if (Files.exists(filePath)) {
                     Files.delete(filePath);
                     log.info("Старый аватар удален: {}", filePath);
                 } else {
                     log.info("Старый аватар не найден для удаления: {}", filePath);
                 }
-                
+
                 return null;
             } catch (Exception e) {
                 log.error("Ошибка при удалении старого аватара: {}", avatarUrl, e);
@@ -216,20 +216,20 @@ public class FileService {
     public Mono<Void> deleteCurrentUserAvatar() {
         return userService.getCurrentUser()
                 .flatMap(userInfoDTO -> userService.findByUsernameOrThrow(userInfoDTO.getUsername()))
-                .flatMap(user -> 
-                    // Сначала получаем URL аватара
-                    userAvatarService.getUserAvatarByUserId(user.getId())
-                            .map(UserAvatar::getAvatarUrl)
-                            .cast(String.class)
-                            .defaultIfEmpty("")
-                            .flatMap(avatarUrl -> 
-                                // Удаляем физический файл
-                                deleteOldAvatarFile(avatarUrl)
-                                    .then(
-                                        // Затем удаляем запись из БД
-                                        userAvatarService.deleteUserAvatarByUserId(user.getId())
-                                    )
-                            )
+                .flatMap(user ->
+                        // Сначала получаем URL аватара
+                        userAvatarService.getUserAvatarByUserId(user.getId())
+                                .map(UserAvatar::getAvatarUrl)
+                                .cast(String.class)
+                                .defaultIfEmpty("")
+                                .flatMap(avatarUrl ->
+                                        // Удаляем физический файл
+                                        deleteOldAvatarFile(avatarUrl)
+                                                .then(
+                                                        // Затем удаляем запись из БД
+                                                        userAvatarService.deleteUserAvatarByUserId(user.getId())
+                                                )
+                                )
                 );
     }
 
@@ -274,42 +274,17 @@ public class FileService {
     public Mono<ResponseEntity<Resource>> getExampleFile(String filename) {
         return Mono.fromCallable(() -> {
             try {
-                log.info("Запрос файла примера генерации с главной страницы: {}", filename);
-                
                 // Создаем путь к файлу в папке examples
                 String normalizedUploadDir = uploadDir.replace("\\", "/");
                 if (!normalizedUploadDir.endsWith("/")) {
                     normalizedUploadDir += "/";
                 }
-                
+
                 Path file = Paths.get(normalizedUploadDir, "examples", filename);
                 Resource resource = new UrlResource(file.toUri());
 
                 if (resource.exists() && resource.isReadable()) {
-                    String contentType;
-                    try {
-                        contentType = Files.probeContentType(file);
-                        if (contentType == null) {
-                            // Определяем тип по расширению файла
-                            String fileExtension = filename.toLowerCase();
-                            if (fileExtension.endsWith(".jpg") || fileExtension.endsWith(".jpeg")) {
-                                contentType = "image/jpeg";
-                            } else if (fileExtension.endsWith(".png")) {
-                                contentType = "image/png";
-                            } else if (fileExtension.endsWith(".gif")) {
-                                contentType = "image/gif";
-                            } else if (fileExtension.endsWith(".webp")) {
-                                contentType = "image/webp";
-                            } else {
-                                contentType = "application/octet-stream";
-                            }
-                        }
-                    } catch (IOException e) {
-                        log.warn("Не удалось определить тип контента для файла: {}", filename);
-                        contentType = "image/jpeg"; // По умолчанию для изображений
-                    }
-
-                    log.info("Файл примера {} найден, тип контента: {}", filename, contentType);
+                    String contentType = getContentType(filename, file);
                     return ResponseEntity.ok()
                             .contentType(MediaType.parseMediaType(contentType))
                             .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000") // Кешируем на год
@@ -323,5 +298,31 @@ public class FileService {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
             }
         });
+    }
+
+    private String getContentType(String filename, Path file) {
+        String contentType;
+        try {
+            contentType = Files.probeContentType(file);
+            if (contentType == null) {
+                // Определяем тип по расширению файла
+                String fileExtension = filename.toLowerCase();
+                if (fileExtension.endsWith(".jpg") || fileExtension.endsWith(".jpeg")) {
+                    contentType = "image/jpeg";
+                } else if (fileExtension.endsWith(".png")) {
+                    contentType = "image/png";
+                } else if (fileExtension.endsWith(".gif")) {
+                    contentType = "image/gif";
+                } else if (fileExtension.endsWith(".webp")) {
+                    contentType = "image/webp";
+                } else {
+                    contentType = "application/octet-stream";
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Не удалось определить тип контента для файла: {}", filename);
+            contentType = "image/jpeg"; // По умолчанию для изображений
+        }
+        return contentType;
     }
 }
