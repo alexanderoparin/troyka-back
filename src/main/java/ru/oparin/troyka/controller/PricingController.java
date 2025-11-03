@@ -27,21 +27,8 @@ public class PricingController {
             description = "Возвращает список активных тарифных планов, отсортированных по порядку")
     @GetMapping("/plans")
     public Mono<ResponseEntity<List<PricingPlanResponse>>> getActivePricingPlans() {
-        log.info("Получен запрос на получение активных тарифных планов");
         return pricingService.getActivePricingPlans()
                 .collectList()
-                .map(ResponseEntity::ok)
-                .doOnSuccess(plans -> log.info("Возвращено {} активных тарифных планов", plans.getBody().size()));
-    }
-
-    @Operation(summary = "Получить все тарифные планы",
-            description = "Возвращает список всех тарифных планов (включая неактивные)")
-    @GetMapping("/plans/all")
-    public Mono<ResponseEntity<List<PricingPlanResponse>>> getAllPricingPlans() {
-        log.info("Получен запрос на получение всех тарифных планов");
-        return pricingService.getAllPricingPlans()
-                .collectList()
-                .map(ResponseEntity::ok)
-                .doOnSuccess(plans -> log.info("Возвращено {} тарифных планов", plans.getBody().size()));
+                .map(ResponseEntity::ok);
     }
 }

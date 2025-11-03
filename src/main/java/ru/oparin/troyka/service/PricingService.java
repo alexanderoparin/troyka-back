@@ -30,22 +30,7 @@ public class PricingService {
      */
     public Flux<PricingPlanResponse> getActivePricingPlans() {
         return pricingPlanRepository.findByIsActiveTrueOrderBySortOrderAsc()
-                .map(this::mapToResponse)
-                .doOnNext(plan -> log.debug("Получен тарифный план: {} ({} поинтов за {} руб., цена за генерацию: {} руб.)",
-                        plan.getName(), plan.getCredits(), plan.getPriceRub() / 100.0, plan.getUnitPriceRubComputed() != null ? plan.getUnitPriceRubComputed() / 100.0 : "не рассчитано"));
-    }
-
-    /**
-     * Получает список всех тарифных планов (включая неактивные).
-     * Планы возвращаются отсортированными по полю sortOrder в порядке возрастания.
-     *
-     * @return Flux со всеми тарифными планами
-     */
-    public Flux<PricingPlanResponse> getAllPricingPlans() {
-        return pricingPlanRepository.findAllByOrderBySortOrderAsc()
-                .map(this::mapToResponse)
-                .doOnNext(plan -> log.debug("Получен тарифный план: {} ({} поинтов за {} руб., цена за генерацию: {} руб.)",
-                        plan.getName(), plan.getCredits(), plan.getPriceRub() / 100.0, plan.getUnitPriceRubComputed() != null ? plan.getUnitPriceRubComputed() / 100.0 : "не рассчитано"));
+                .map(this::mapToResponse);
     }
 
     /**

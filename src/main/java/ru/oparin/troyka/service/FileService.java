@@ -242,7 +242,7 @@ public class FileService {
                     normalizedUploadDir += "/";
                 }
 
-                log.info("Запрос файла: {}", filename);
+                log.debug("Запрос файла: {}", filename);
                 Path file = Paths.get(normalizedUploadDir).resolve(filename);
                 Resource resource = new UrlResource(file.toUri());
 
@@ -255,7 +255,6 @@ public class FileService {
                         contentType = "application/octet-stream";
                     }
 
-                    log.info("Файл {} найден, тип контента: {}", filename, contentType);
                     return ResponseEntity.ok()
                             .contentType(MediaType.parseMediaType(contentType))
                             .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
@@ -265,7 +264,7 @@ public class FileService {
                     return ResponseEntity.notFound().build();
                 }
             } catch (Exception e) {
-                log.error("Ошибка при попытке получить файл: " + filename, e);
+                log.error("Ошибка при попытке получить файл: {}", filename, e);
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
             }
         });

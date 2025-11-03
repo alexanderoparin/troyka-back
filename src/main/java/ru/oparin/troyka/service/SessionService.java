@@ -102,8 +102,6 @@ public class SessionService {
      * @return детальная информация о сессии
      */
     public Mono<SessionDetailDTO> getSessionDetail(Long sessionId, Long userId, int page, int size) {
-        log.info("Получение деталей сессии {} для пользователя {}", sessionId, userId);
-
         return sessionRepository.findByIdAndUserId(sessionId, userId)
                 .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
                 .flatMap(session ->
@@ -115,7 +113,6 @@ public class SessionService {
 
                                     return sessionMapper.toSessionDetailDTO(session, histories, totalCount, hasMore);
                                 }))
-                .doOnSuccess(result -> log.info("Получены детали сессии с id={} с {} сообщениями", sessionId, result.getTotalMessages()))
                 .doOnError(error -> log.error("Ошибка при получении деталей сессии с id={} для пользователя с id={}", sessionId, userId, error));
     }
 
@@ -181,8 +178,6 @@ public class SessionService {
      * @return дефолтная сессия в виде DTO
      */
     public Mono<SessionDTO> getOrCreateDefaultSession(Long userId) {
-        log.info("Получение или создание дефолтной сессии для пользователя {}", userId);
-
         return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId)
                 .collectList()
                 .flatMap(sessions -> {
@@ -192,7 +187,6 @@ public class SessionService {
                                 .map(sessionMapper::createResponseToSessionDTO);
                     } else {
                         Session defaultSession = sessions.get(0); // Самая новая сессия
-                        log.info("Найдена дефолтная сессия {} для пользователя {}", defaultSession.getId(), userId);
                         return Mono.just(sessionMapper.toSessionDTO(defaultSession));
                     }
                 })
