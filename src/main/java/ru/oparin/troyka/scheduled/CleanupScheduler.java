@@ -29,35 +29,33 @@ public class CleanupScheduler {
     @Scheduled(cron = "0 0 2 * * ?")
     public void cleanupExpiredTokens() {
         log.info("Очистка протухших токенов...");
-        
+
         try {
             LocalDateTime now = LocalDateTime.now();
-            
+
             // Очистка протухших токенов подтверждения email
-            Long emailTokensDeleted = emailVerificationTokenRepository.deleteByExpiresAtBefore(now)
-                    .block();
-            
+            Long emailTokensDeleted = emailVerificationTokenRepository.deleteByExpiresAtBefore(now).block();
+
             // Очистка протухших токенов сброса пароля
-            Long passwordTokensDeleted = passwordResetTokenRepository.deleteByExpiresAtBefore(now)
-                    .block();
-            
-            log.info("Очистка токенов завершена. Удалено: {} токенов подтверждения email, {} токенов сброса пароля", 
+            Long passwordTokensDeleted = passwordResetTokenRepository.deleteByExpiresAtBefore(now).block();
+
+            log.info("Очистка токенов завершена. Удалено: {} токенов подтверждения email, {} токенов сброса пароля",
                     emailTokensDeleted, passwordTokensDeleted);
-                    
+
         } catch (Exception e) {
             log.error("Ошибка при очистке токенов", e);
         }
     }
 
     /**
-     * Отмена просроченных платежей каждый час
+     * Отмена просроченных платежей каждый день в 01:00
      */
-    @Scheduled(fixedRate = 3600000) // каждый час
+    @Scheduled(cron = "0 0 1 * * ?")
     public void cancelExpiredPayments() {
         log.debug("Поиск просроченных платежей по расписанию");
         try {
             LocalDateTime expiredTime = LocalDateTime.now().minusHours(24);
-            
+
             paymentRepository.findByStatusAndCreatedAtBefore(PaymentStatus.CREATED, expiredTime)
                     .flatMap(payment -> {
                         payment.setStatus(PaymentStatus.CANCELLED);
@@ -66,7 +64,7 @@ public class CleanupScheduler {
                     .doOnNext(payment -> log.info("Отменен просроченный платеж: {}", payment.getId()))
                     .doOnError(error -> log.error("Ошибка при отмене просроченных платежей: {}", error.getMessage()))
                     .subscribe();
-                    
+
         } catch (Exception e) {
             log.error("Ошибка при проверке просроченных платежей", e);
         }
