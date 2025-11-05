@@ -76,6 +76,12 @@ public class ImageGenerationHistory {
     private String inputImageUrlsJson;  // Храним как String для R2DBC
 
     /**
+     * Описание изображения, сгенерированное ИИ (если предоставлено FalAI).
+     * Может содержать дополнительную информацию о сгенерированном изображении.
+     */
+    private String description;
+
+    /**
      * Получить список URL сгенерированных изображений из JSON.
      * Вспомогательный метод для работы с JSONB полем.
      */

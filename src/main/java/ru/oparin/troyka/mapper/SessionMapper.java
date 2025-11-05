@@ -101,6 +101,7 @@ public class SessionMapper {
                 .createdAt(history.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant())
                 .imageCount(imageUrls.size())
                 .outputFormat("JPEG") // TODO: Получить из истории или добавить поле
+                .description(history.getDescription())
                 .build();
     }
 

@@ -113,10 +113,10 @@ public class FalAIService {
                                                     .timeout(Duration.ofSeconds(30))
                                                     .map(response -> extractImageResponse(response, balance))
                                                     .flatMap(response -> {
-                                                        // Сохраняем историю в сессии
+                                                        // Сохраняем историю в сессии с description
                                                         return imageGenerationHistoryService.saveHistories(
                                                                         userId, response.getImageUrls(), prompt,
-                                                                        session.getId(), inputImageUrls)
+                                                                        session.getId(), inputImageUrls, response.getDescription())
                                                                 .then(Mono.just(response));
                                                     })
                                                     .flatMap(response -> {

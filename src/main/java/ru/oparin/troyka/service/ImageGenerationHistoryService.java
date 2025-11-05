@@ -33,9 +33,10 @@ public class ImageGenerationHistoryService {
      * @param prompt промпт пользователя
      * @param sessionId идентификатор сессии
      * @param inputImageUrls список URL входных изображений (для отображения в истории)
+     * @param description описание изображения от ИИ (может быть null)
      * @return сохраненные записи истории
      */
-    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls) {
+    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls, String description) {
         log.info("Сохранение истории генерации для пользователя {} в сессии {}, промпт: {}, используемые в запросе изображения {}", userId, sessionId, prompt, inputImageUrls);
         
         // Преобразуем списки в JSON строки
@@ -46,6 +47,9 @@ public class ImageGenerationHistoryService {
         
         log.info("Сгенерированные изображения: {}", imageUrlsJson);
         log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
+        if (description != null && !description.trim().isEmpty()) {
+            log.info("Описание от ИИ: {}", description);
+        }
         
         // Создаем ОДНУ запись истории для всех сгенерированных изображений
         return imageGenerationHistoryRepository.saveWithJsonb(
@@ -54,7 +58,8 @@ public class ImageGenerationHistoryService {
                 prompt,
                 LocalDateTime.now(),
                 sessionId,
-                inputImageUrlsJson
+                inputImageUrlsJson,
+                description
         )
         .doOnNext(history -> 
                 log.info("Запись истории сохранена: ID={}, пользователь={}, сессия={}, изображений={}", 
