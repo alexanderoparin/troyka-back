@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.SessionNotFoundException;
 import ru.oparin.troyka.mapper.SessionMapper;
 import ru.oparin.troyka.model.dto.*;
 import ru.oparin.troyka.model.entity.Session;
@@ -102,8 +103,7 @@ public class SessionService {
      * @return детальная информация о сессии
      */
     public Mono<SessionDetailDTO> getSessionDetail(Long sessionId, Long userId, int page, int size) {
-        return sessionRepository.findByIdAndUserId(sessionId, userId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
+        return getSessionMonoOrThrow(sessionId, userId)
                 .flatMap(session ->
                         imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
                                 .collectList()
@@ -113,7 +113,7 @@ public class SessionService {
 
                                     return sessionMapper.toSessionDetailDTO(session, histories, totalCount, hasMore);
                                 }))
-                .doOnError(error -> log.error("Ошибка при получении деталей сессии с id={} для пользователя с id={}", sessionId, userId, error));
+                .doOnError(error -> log.error("Ошибка при получении деталей сессии с id={} для пользователя с id={}", sessionId, userId));
     }
 
     /**
@@ -127,8 +127,7 @@ public class SessionService {
     public Mono<RenameSessionResponseDTO> renameSession(Long sessionId, Long userId, String newName) {
         log.info("Переименование сессии '{}' в '{}' для пользователя с id={}", sessionId, newName, userId);
 
-        return sessionRepository.findByIdAndUserId(sessionId, userId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
+        return getSessionMonoOrThrow(sessionId, userId)
                 .flatMap(session -> {
                     session.setName(newName);
                     session.setUpdatedAt(Instant.now());
@@ -137,7 +136,7 @@ public class SessionService {
                 })
                 .map(sessionMapper::toRenameSessionResponseDTO)
                 .doOnSuccess(sessionDTO -> log.info("Сессия {} успешно переименована в '{}'", sessionId, newName))
-                .doOnError(error -> log.error("Ошибка при переименовании сессии {} для пользователя {}", sessionId, userId, error));
+                .doOnError(error -> log.error("Ошибка при переименовании сессии {} для пользователя {}", sessionId, userId));
     }
 
     /**
@@ -150,8 +149,7 @@ public class SessionService {
     public Mono<DeleteSessionResponseDTO> deleteSession(Long sessionId, Long userId) {
         log.info("Удаление сессии {} для пользователя {}", sessionId, userId);
 
-        return sessionRepository.findByIdAndUserId(sessionId, userId)
-                .switchIfEmpty(Mono.error(new RuntimeException("Сессия не найдена или не принадлежит пользователю")))
+        return getSessionMonoOrThrow(sessionId, userId)
                 .flatMap(session -> {
                     // Получаем количество записей истории для удаления
                     return imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
@@ -167,7 +165,15 @@ public class SessionService {
                                         });
                             });
                 })
-                .doOnError(error -> log.error("Ошибка при удалении сессии {} для пользователя {}", sessionId, userId, error));
+                .doOnError(error -> log.error("Ошибка при удалении сессии {} для пользователя {}", sessionId, userId));
+    }
+
+    /**
+     * Получаем сессию или выбрасываем исключение
+     */
+    private Mono<Session> getSessionMonoOrThrow(Long sessionId, Long userId) {
+        return sessionRepository.findByIdAndUserId(sessionId, userId)
+                .switchIfEmpty(Mono.error(new SessionNotFoundException("Сессия не найдена или не принадлежит пользователю")));
     }
 
     /**
@@ -206,7 +212,7 @@ public class SessionService {
         if (sessionId != null) {
             log.info("Получение сессии {} для пользователя {}", sessionId, userId);
             return sessionRepository.findByIdAndUserId(sessionId, userId)
-                    .switchIfEmpty(Mono.error(new RuntimeException("Сессия " + sessionId + " не найдена или не принадлежит пользователю " + userId)));
+                    .switchIfEmpty(Mono.error(new SessionNotFoundException("Сессия " + sessionId + " не найдена или не принадлежит пользователю " + userId)));
         } else {
             return getOrCreateDefaultSession(userId)
                     .map(sessionMapper::toSessionEntity);
