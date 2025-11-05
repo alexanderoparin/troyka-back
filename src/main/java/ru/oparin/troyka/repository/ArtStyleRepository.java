@@ -14,6 +14,12 @@ public interface ArtStyleRepository extends ReactiveCrudRepository<ArtStyle, Lon
     Flux<ArtStyle> findAllByOrderByName();
 
     /**
+     * Находит все стили, отсортированные по идентификатору.
+     * @return Flux стилей
+     */
+    Flux<ArtStyle> findAllByOrderById();
+
+    /**
      * Находит стиль по имени.
      * @param name название стиля
      * @return Mono стиля

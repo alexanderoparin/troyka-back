@@ -24,11 +24,11 @@ public class ArtStyleController {
     private final ArtStyleRepository artStyleRepository;
 
     @Operation(summary = "Получить все стили изображений",
-            description = "Возвращает список всех доступных стилей для генерации изображений, отсортированных по имени")
+            description = "Возвращает список всех доступных стилей для генерации изображений, отсортированных по идентификатору")
     @GetMapping
     public Mono<ResponseEntity<List<ArtStyleDTO>>> getAllArtStyles() {
         log.info("Получен запрос на получение всех стилей изображений");
-        return artStyleRepository.findAllByOrderByName()
+        return artStyleRepository.findAllByOrderById()
                 .map(ArtStyleDTO::fromEntity)
                 .collectList()
                 .map(artStyles -> {

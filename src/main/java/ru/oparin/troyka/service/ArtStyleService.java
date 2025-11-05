@@ -33,12 +33,12 @@ public class ArtStyleService {
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
     /**
-     * Получить все стили, отсортированные по имени.
+     * Получить все стили, отсортированные по идентификатору.
      *
      * @return Flux со стилями
      */
     public Flux<ArtStyle> getAllStyles() {
-        return artStyleRepository.findAllByOrderByName();
+        return artStyleRepository.findAllByOrderById();
     }
 
     /**
