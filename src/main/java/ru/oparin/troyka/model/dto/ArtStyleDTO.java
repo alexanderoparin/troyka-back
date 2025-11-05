@@ -16,11 +16,13 @@ import ru.oparin.troyka.model.entity.ArtStyle;
 @AllArgsConstructor
 public class ArtStyleDTO {
 
+    private Long id;
     private String name;
     private String prompt;
 
     public static ArtStyleDTO fromEntity(ArtStyle artStyle) {
         return ArtStyleDTO.builder()
+                .id(artStyle.getId())
                 .name(artStyle.getName())
                 .prompt(artStyle.getPrompt())
                 .build();
