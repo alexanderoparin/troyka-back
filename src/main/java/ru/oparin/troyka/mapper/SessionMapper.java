@@ -3,12 +3,14 @@ package ru.oparin.troyka.mapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.oparin.troyka.model.dto.*;
+import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.entity.Session;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Компонент для преобразования сущностей сессий в DTO.
@@ -106,6 +108,31 @@ public class SessionMapper {
     }
 
     /**
+     * Преобразует сущность ImageGenerationHistory в SessionMessageDTO с обогащением информацией о стиле.
+     * 
+     * @param history сущность истории генерации
+     * @param stylesMap карта стилей по их идентификаторам
+     * @return DTO сообщения сессии с информацией о стиле
+     */
+    public SessionMessageDTO toSessionMessageDTO(ImageGenerationHistory history, Map<Long, ArtStyle> stylesMap) {
+        SessionMessageDTO dto = toSessionMessageDTO(history);
+        if (dto == null) {
+            return null;
+        }
+        
+        Long styleId = history.getStyleId();
+        if (styleId != null && stylesMap != null) {
+            ArtStyle style = stylesMap.get(styleId);
+            if (style != null) {
+                dto.setStyleId(style.getId());
+                dto.setStyleName(style.getName());
+            }
+        }
+        
+        return dto;
+    }
+
+    /**
      * Преобразует список сущностей ImageGenerationHistory в список SessionMessageDTO.
      * 
      * @param histories список сущностей истории генерации
@@ -118,6 +145,23 @@ public class SessionMapper {
         
         return histories.stream()
                 .map(this::toSessionMessageDTO)
+                .toList();
+    }
+
+    /**
+     * Преобразует список сущностей ImageGenerationHistory в список SessionMessageDTO с обогащением информацией о стиле.
+     * 
+     * @param histories список сущностей истории генерации
+     * @param stylesMap карта стилей по их идентификаторам
+     * @return список DTO сообщений сессии с информацией о стиле
+     */
+    public List<SessionMessageDTO> toSessionMessageDTOList(List<ImageGenerationHistory> histories, Map<Long, ArtStyle> stylesMap) {
+        if (histories == null) {
+            return null;
+        }
+        
+        return histories.stream()
+                .map(history -> toSessionMessageDTO(history, stylesMap))
                 .toList();
     }
 

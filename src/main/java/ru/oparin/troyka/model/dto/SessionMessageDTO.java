@@ -42,4 +42,10 @@ public class SessionMessageDTO {
 
     /** Описание изображения, сгенерированное ИИ (если предоставлено FalAI) */
     private String description;
+
+    /** Идентификатор стиля изображения */
+    private Long styleId;
+
+    /** Название стиля изображения */
+    private String styleName;
 }

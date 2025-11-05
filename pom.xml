@@ -99,6 +99,12 @@
             <artifactId>commons-codec</artifactId>
         </dependency>
 
+        <!-- Caffeine Cache -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Telegram Bot API -->
         <dependency>
             <groupId>org.telegram</groupId>

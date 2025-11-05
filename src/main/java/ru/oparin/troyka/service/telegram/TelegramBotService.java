@@ -585,27 +585,31 @@ public class TelegramBotService {
                 .flatMap(signal -> {
                     if (signal.hasValue()) {
                         UserStyle userStyle = signal.get();
-                        log.debug("Найден сохраненный стиль для userId={}: {}", userId, userStyle.getStyleName());
-                        String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
-                        String message = String.format("""
-                                🎨 *Выберите действие:*
-                                
-                                📝 *Промпт:* %s
-                                
-                                💡 *Текущий стиль:* %s
-                                """, prompt, styleDisplay);
-                        
-                        // Создаем JSON для inline клавиатуры
-                        String keyboardJson = """
-                                {
-                                    "inline_keyboard": [
-                                        [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
-                                        [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
-                                    ]
-                                }
-                                """.formatted(sessionId, userId, sessionId, userId);
-                        
-                        return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
+                        Long styleId = userStyle.getStyleId() != null ? userStyle.getStyleId() : artStyleService.getDefaultUserStyleId();
+                        return artStyleService.getStyleById(styleId)
+                                .flatMap(style -> {
+                                    log.debug("Найден сохраненный стиль для userId={}: {}", userId, style.getName());
+                                    String styleDisplay = style.getName();
+                                    String message = String.format("""
+                                            🎨 *Выберите действие:*
+                                            
+                                            📝 *Промпт:* %s
+                                            
+                                            💡 *Текущий стиль:* %s
+                                            """, prompt, styleDisplay);
+                                    
+                                    // Создаем JSON для inline клавиатуры
+                                    String keyboardJson = """
+                                            {
+                                                "inline_keyboard": [
+                                                    [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
+                                                    [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
+                                                ]
+                                            }
+                                            """.formatted(sessionId, userId, sessionId, userId);
+                                    
+                                    return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
+                                });
                     } else if (signal.isOnComplete()) {
                         log.debug("Сохраненный стиль не найден для userId={}, показываем список стилей", userId);
                         return showStyleList(chatId, userId, sessionId, prompt, inputImageUrls);
@@ -699,8 +703,8 @@ public class TelegramBotService {
             Long styleId = selectedStyle.getId();
             String styleName = selectedStyle.getName();
             
-            // Сохраняем стиль пользователя в БД (по имени для совместимости с UserStyle)
-            return artStyleService.saveOrUpdateUserStyle(userId, styleName)
+            // Сохраняем стиль пользователя в БД по styleId
+            return artStyleService.saveOrUpdateUserStyleById(userId, styleId)
                     .flatMap(saved -> getPromptAndInputUrlsFromDB(userId))
                     .flatMap(tgSession -> {
                         // Получаем промпт и URL фото из БД
@@ -766,13 +770,11 @@ public class TelegramBotService {
                     return telegramBotSessionService.clearInputUrls(userId)
                             .then(telegramBotSessionService.updateWaitingStyle(userId, 0))
                             .then(Mono.defer(() -> {
-                                // Получаем стиль по имени и его id
-                                String styleName = userStyle.getStyleName();
-                                return artStyleService.getStyleByName(styleName)
-                                        .switchIfEmpty(artStyleService.getStyleById(1L))
+                                // Получаем стиль по styleId
+                                Long styleId = userStyle.getStyleId() != null ? userStyle.getStyleId() : artStyleService.getDefaultUserStyleId();
+                                return artStyleService.getStyleById(styleId)
                                         .flatMap(style -> {
-                                            Long styleId = style.getId();
-                                            String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                                            String styleDisplay = style.getName();
                                             
                                             // Отправляем сообщение о начале генерации
                                             String message = String.format("""
@@ -836,10 +838,13 @@ public class TelegramBotService {
                 
                 // Получаем стиль по имени и его id
                             return artStyleService.getStyleByName(styleName)
-                                    .switchIfEmpty(artStyleService.getStyleById(1L))
+                                    .switchIfEmpty(artStyleService.getStyleById(artStyleService.getDefaultUserStyleId()))
                                     .flatMap(style -> {
                                         Long styleId = style.getId();
-                                        String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                                        String styleDisplay = style.getName();
+                                        
+                                        // Сохраняем стиль в БД по id
+                                        artStyleService.saveOrUpdateUserStyleById(userId, styleId).subscribe();
                                         
                                         // Отправляем сообщение о начале генерации
                                         String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);

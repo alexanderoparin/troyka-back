@@ -4,12 +4,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.query.Query;
+import org.springframework.data.relational.core.query.Update;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.SessionNotFoundException;
 import ru.oparin.troyka.mapper.SessionMapper;
 import ru.oparin.troyka.model.dto.*;
+import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.Session;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.repository.SessionRepository;
@@ -29,6 +34,8 @@ public class SessionService {
     private final SessionRepository sessionRepository;
     private final ImageGenerationHistoryRepository imageHistoryRepository;
     private final SessionMapper sessionMapper;
+    private final R2dbcEntityTemplate r2dbcEntityTemplate;
+    private final ArtStyleService artStyleService;
 
     /**
      * Создать новую сессию для пользователя.
@@ -107,11 +114,23 @@ public class SessionService {
                 .flatMap(session ->
                         imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
                                 .collectList()
-                                .map(histories -> {
+                                .flatMap(histories -> {
                                     int totalCount = histories.size();
                                     boolean hasMore = (page + 1) * size < totalCount;
 
-                                    return sessionMapper.toSessionDetailDTO(session, histories, totalCount, hasMore);
+                                    // Загружаем все стили из кеша и обогащаем историю
+                                    return artStyleService.getAllStyles()
+                                            .collectMap(ArtStyle::getId)
+                                            .map(stylesMap -> sessionMapper.toSessionMessageDTOList(histories, stylesMap))
+                                            .map(dtos -> SessionDetailDTO.builder()
+                                                    .id(session.getId())
+                                                    .name(session.getName())
+                                                    .createdAt(session.getCreatedAt())
+                                                    .updatedAt(session.getUpdatedAt())
+                                                    .history(dtos)
+                                                    .totalMessages(totalCount)
+                                                    .hasMore(hasMore)
+                                                    .build());
                                 }))
                 .doOnError(error -> log.error("Ошибка при получении деталей сессии с id={} для пользователя с id={}", sessionId, userId));
     }
@@ -223,12 +242,15 @@ public class SessionService {
      * Вызывается при каждой генерации изображений в сессии.
      *
      * @param sessionId идентификатор сессии
-     * @return количество обновленных записей
+     * @return Mono<Void> - операция завершена
      */
-    public Mono<Integer> updateSessionTimestamp(Long sessionId) {
-        return sessionRepository.updateUpdatedAt(sessionId, Instant.now())
+    public Mono<Void> updateSessionTimestamp(Long sessionId) {
+        return r2dbcEntityTemplate.update(Session.class)
+                .matching(Query.query(Criteria.where("id").is(sessionId)))
+                .apply(Update.update("updatedAt", Instant.now()))
                 .doOnSuccess(count -> log.debug("Обновлено время сессии {}, обновлено записей: {}", sessionId, count))
-                .doOnError(error -> log.error("Ошибка при обновлении времени сессии {}", sessionId, error));
+                .doOnError(error -> log.error("Ошибка при обновлении времени сессии {}", sessionId, error))
+                .then();
     }
 
     /**

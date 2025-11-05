@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
@@ -24,8 +25,9 @@ public class UserStyle {
     @Id
     private Long userId;
 
-    /** Название выбранного стиля (или "none" для без стиля) */
-    private String styleName;
+    /** Идентификатор выбранного стиля (ссылка на art_styles.id). По умолчанию 2 (Реалистичный) */
+    @Column("style_id")
+    private Long styleId;
 
     /** Дата и время создания записи */
     private LocalDateTime createdAt;
