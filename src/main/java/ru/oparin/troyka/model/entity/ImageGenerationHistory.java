@@ -82,6 +82,13 @@ public class ImageGenerationHistory {
     private String description;
 
     /**
+     * Идентификатор стиля изображения (ссылка на art_styles.id).
+     * По умолчанию 1 (Без стиля).
+     */
+    @Column("style_id")
+    private Long styleId;
+
+    /**
      * Получить список URL сгенерированных изображений из JSON.
      * Вспомогательный метод для работы с JSONB полем.
      */

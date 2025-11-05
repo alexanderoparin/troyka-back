@@ -307,30 +307,20 @@ public class TelegramBotService {
     /**
      * Генерировать изображение с указанным стилем.
      */
-    private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, String displayPrompt, List<String> inputImageUrls, String styleName) {
-        log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {} и стилем: {}", 
-                userId, sessionId, prompt, styleName);
+    private Mono<Void> generateImage(Long userId, Long sessionId, String prompt, String displayPrompt, List<String> inputImageUrls, Long styleId) {
+        log.info("Генерация изображения для пользователя {} в сессии {} с промптом: {} и styleId: {}", 
+                userId, sessionId, prompt, styleId);
 
-        // Применяем стиль к промпту
-        Mono<String> finalPromptMono;
-        if (!styleName.equals("none")) {
-            finalPromptMono = artStyleService.getStyleByName(styleName)
-                    .map(style -> {
-                        String stylePrompt = ", " + style.getPrompt();
-                        return prompt + stylePrompt;
-                    })
-                    .defaultIfEmpty(prompt);
-        } else {
-            finalPromptMono = Mono.just(prompt);
-        }
-
-        // Создаем запрос для FAL AI
-        return finalPromptMono.flatMap(finalPrompt -> {
+        // Устанавливаем дефолтное значение styleId = 1, если не указано
+        Long finalStyleId = (styleId != null) ? styleId : 1L;
+        
+        // Создаем запрос для FAL AI (промпт стиля будет добавлен к промпту в FalAIService перед отправкой в FalAI)
         ImageRq imageRq = ImageRq.builder()
-                .prompt(finalPrompt)
+                .prompt(prompt) // Оригинальный промпт пользователя
                 .sessionId(sessionId)
                 .numImages(1)
                 .inputImageUrls(inputImageUrls)
+                .styleId(finalStyleId)
                 .build();
 
         return falAIService.getImageResponse(imageRq, userId)
@@ -380,7 +370,6 @@ public class TelegramBotService {
                                         ❌ *Ошибка генерации*
                                         Произошла ошибка при создании изображения. Попробуйте еще раз.""")
                                         .then();
-                            });
                             });
                 });
     }
@@ -633,13 +622,20 @@ public class TelegramBotService {
     private Mono<Void> showStyleList(Long chatId, Long userId, Long sessionId, String prompt, List<String> inputImageUrls) {
         log.debug("showStyleList вызван для sessionId={}, userId={}, prompt={}", sessionId, userId, prompt);
         
-        return artStyleService.getAllStyles()
-                .collectList()
-                .flatMap(styles -> {
-                    // Добавляем "Без стиля" в начало
-                    List<ArtStyle> allStyles = new ArrayList<>();
-                    allStyles.add(ArtStyle.builder().name("none").prompt("").build());
-                    allStyles.addAll(styles);
+        return artStyleService.getStyleById(1L)
+                .flatMap(defaultStyle -> artStyleService.getAllStyles()
+                        .collectList()
+                        .map(styles -> {
+                            // Добавляем "Без стиля" в начало (id = 1), если его еще нет в списке
+                            List<ArtStyle> allStyles = new ArrayList<>();
+                            allStyles.add(defaultStyle);
+                            // Фильтруем стили, исключая "Без стиля" если он уже есть в БД
+                            styles.stream()
+                                    .filter(style -> !style.getId().equals(1L))
+                                    .forEach(allStyles::add);
+                            return allStyles;
+                        }))
+                .flatMap(allStyles -> {
                     
                     log.debug("Получено стилей: {}, сохраняем в sessionId={}", allStyles.size(), sessionId);
                     
@@ -700,9 +696,10 @@ public class TelegramBotService {
             }
             
             ArtStyle selectedStyle = styles.get(styleIndex - 1);
+            Long styleId = selectedStyle.getId();
             String styleName = selectedStyle.getName();
             
-            // Сохраняем стиль пользователя в БД
+            // Сохраняем стиль пользователя в БД (по имени для совместимости с UserStyle)
             return artStyleService.saveOrUpdateUserStyle(userId, styleName)
                     .flatMap(saved -> getPromptAndInputUrlsFromDB(userId))
                     .flatMap(tgSession -> {
@@ -728,7 +725,7 @@ public class TelegramBotService {
                                 """, prompt, styleDisplay);
                         return telegramBotSessionService.updateWaitingStyle(userId, 0)
                                 .then(sendMessage(chatId, message))
-                                .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+                                .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleId));
                     });
         } catch (NumberFormatException e) {
             return sendMessage(chatId, "❌ Введите номер стиля (цифру)!");
@@ -769,21 +766,27 @@ public class TelegramBotService {
                     return telegramBotSessionService.clearInputUrls(userId)
                             .then(telegramBotSessionService.updateWaitingStyle(userId, 0))
                             .then(Mono.defer(() -> {
-                                // Получаем стиль для отображения
-                                String styleDisplay = userStyle.getStyleName().equals("none") ? "без стиля" : userStyle.getStyleName();
-                                
-                                // Отправляем сообщение о начале генерации
-                                String message = String.format("""
-                                        🎨 *Генерация изображения*
-                                        
-                                        📝 *Промпт:* %s
-                                        
-                                        🎨 *Стиль:* %s
-                                        
-                                        ⏱️ *Ожидайте 5-10 секунд*
-                                        """, prompt, styleDisplay);
-                                return sendMessage(chatId, message)
-                                        .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, userStyle.getStyleName()));
+                                // Получаем стиль по имени и его id
+                                String styleName = userStyle.getStyleName();
+                                return artStyleService.getStyleByName(styleName)
+                                        .switchIfEmpty(artStyleService.getStyleById(1L))
+                                        .flatMap(style -> {
+                                            Long styleId = style.getId();
+                                            String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                                            
+                                            // Отправляем сообщение о начале генерации
+                                            String message = String.format("""
+                                                    🎨 *Генерация изображения*
+                                                    
+                                                    📝 *Промпт:* %s
+                                                    
+                                                    🎨 *Стиль:* %s
+                                                    
+                                                    ⏱️ *Ожидайте 5-10 секунд*
+                                                    """, prompt, styleDisplay);
+                                            return sendMessage(chatId, message)
+                                                    .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleId));
+                                        });
                             }));
                         })
                         .onErrorResume(error -> {
@@ -831,13 +834,18 @@ public class TelegramBotService {
                             // Очищаем URLs после использования
                             telegramBotSessionService.clearInputUrls(userId).subscribe();
                 
-                // Получаем стиль для отображения
-                String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
-                
-                // Отправляем сообщение о начале генерации
-                            String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);
-                            return sendMessage(chatId, message)
-                        .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleName));
+                // Получаем стиль по имени и его id
+                            return artStyleService.getStyleByName(styleName)
+                                    .switchIfEmpty(artStyleService.getStyleById(1L))
+                                    .flatMap(style -> {
+                                        Long styleId = style.getId();
+                                        String styleDisplay = styleName.equals("none") ? "без стиля" : styleName;
+                                        
+                                        // Отправляем сообщение о начале генерации
+                                        String message = String.format("🎨 *Генерация изображения*\n\n📝 *Промпт:* %s\n\n🎨 *Стиль:* %s\n\n⏱️ *Ожидайте 5-10 секунд*", prompt, styleDisplay);
+                                        return sendMessage(chatId, message)
+                                                .then(generateImage(userId, sessionId, prompt, prompt, inputUrls, styleId));
+                                    });
                         });
             }
         }

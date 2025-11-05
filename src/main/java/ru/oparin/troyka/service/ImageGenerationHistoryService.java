@@ -28,43 +28,46 @@ public class ImageGenerationHistoryService {
      * Сохранить историю генерации изображений для конкретного пользователя.
      * Перегрузка метода для случаев, когда userId известен напрямую (например, Telegram бот).
      *
-     * @param userId ID пользователя
-     * @param imageUrls список URL сгенерированных изображений
-     * @param prompt промпт пользователя
-     * @param sessionId идентификатор сессии
+     * @param userId         ID пользователя
+     * @param imageUrls      список URL сгенерированных изображений
+     * @param prompt         промпт пользователя
+     * @param sessionId      идентификатор сессии
      * @param inputImageUrls список URL входных изображений (для отображения в истории)
-     * @param description описание изображения от ИИ (может быть null)
+     * @param description    описание изображения от ИИ (может быть null)
+     * @param styleId        идентификатор стиля (по умолчанию 1 - Без стиля)
      * @return сохраненные записи истории
      */
-    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls, String description) {
-        log.info("Сохранение истории генерации для пользователя {} в сессии {}, промпт: {}, используемые в запросе изображения {}", userId, sessionId, prompt, inputImageUrls);
-        
+    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls, String description, Long styleId) {
+        log.info("Сохранение истории генерации для пользователя {} в сессии {}, промпт: {}, используемые в запросе изображения {}, styleId: {}", userId, sessionId, prompt, inputImageUrls, styleId);
+
         // Преобразуем списки в JSON строки
         List<String> imageUrlsList = new ArrayList<>();
         imageUrls.forEach(imageUrlsList::add);
         String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
         String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
-        
+
+        // Устанавливаем дефолтное значение styleId = 1, если не указано
+        Long finalStyleId = (styleId != null) ? styleId : 1L;
+
         log.info("Сгенерированные изображения: {}", imageUrlsJson);
         log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
         if (description != null && !description.trim().isEmpty()) {
             log.info("Описание от ИИ: {}", description);
         }
-        
+
         // Создаем ОДНУ запись истории для всех сгенерированных изображений
         return imageGenerationHistoryRepository.saveWithJsonb(
-                userId,
-                imageUrlsJson,
-                prompt,
-                LocalDateTime.now(),
-                sessionId,
-                inputImageUrlsJson,
-                description
-        )
-        .doOnNext(history -> 
-                log.info("Запись истории сохранена: ID={}, пользователь={}, сессия={}, изображений={}", 
-                        history.getId(), userId, sessionId, imageUrlsList.size()))
-        .flux();
+                        userId,
+                        imageUrlsJson,
+                        prompt,
+                        LocalDateTime.now(),
+                        sessionId,
+                        inputImageUrlsJson,
+                        description,
+                        finalStyleId
+                )
+                .doOnNext(history -> log.info("Запись истории сохранена: {}", history))
+                .flux();
     }
 
     /**
@@ -75,7 +78,7 @@ public class ImageGenerationHistoryService {
      */
     public Flux<ImageGenerationHistory> getUserImageHistory(Long userId) {
         log.info("Получение истории генераций для пользователя {}", userId);
-        
+
         return imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(userId)
                 .doOnNext(history -> log.debug("Получена запись истории: ID={}, сессия={}", history.getId(), history.getSessionId()))
                 .doOnError(error -> log.error("Ошибка при получении истории генераций для пользователя {}", userId, error));
@@ -84,13 +87,13 @@ public class ImageGenerationHistoryService {
     /**
      * Получить URL последнего сгенерированного изображения из конкретной сессии.
      *
-     * @param userId идентификатор пользователя
+     * @param userId    идентификатор пользователя
      * @param sessionId идентификатор сессии
      * @return URL последнего изображения из сессии или пустой результат
      */
     public Mono<String> getLastGeneratedImageUrlFromSession(Long userId, Long sessionId) {
         log.info("Получение URL последнего сгенерированного изображения для пользователя {} из сессии {}", userId, sessionId);
-        
+
         return imageGenerationHistoryRepository.findByUserIdAndSessionIdOrderByCreatedAtDesc(userId, sessionId)
                 .next() // Берем только первую (последнюю) запись из сессии
                 .flatMap(history -> {

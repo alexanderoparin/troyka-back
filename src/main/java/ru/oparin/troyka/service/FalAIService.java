@@ -42,13 +42,15 @@ public class FalAIService {
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final UserPointsService userPointsService;
     private final SessionService sessionService;
+    private final ArtStyleService artStyleService;
 
     public FalAIService(WebClient.Builder webClientBuilder,
                         FalAiProperties falAiProperties,
                         GenerationProperties generationProperties,
                         ImageGenerationHistoryService imageGenerationHistoryService,
                         UserPointsService userPointsService,
-                        SessionService sessionService) {
+                        SessionService sessionService,
+                        ArtStyleService artStyleService) {
         this.webClient = webClientBuilder
                 .baseUrl(falAiProperties.getApi().getUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -59,6 +61,7 @@ public class FalAIService {
         this.imageGenerationHistoryService = imageGenerationHistoryService;
         this.userPointsService = userPointsService;
         this.sessionService = sessionService;
+        this.artStyleService = artStyleService;
     }
 
     /**
@@ -84,12 +87,22 @@ public class FalAIService {
                     // Получаем или создаем сессию
                     return sessionService.getOrCreateSession(rq.getSessionId(), userId)
                             .flatMap(session -> {
-                                // Списываем поинты и получаем обновленный баланс
-                                return userPointsService.deductPointsFromUser(userId, pointsNeeded)
-                                        .flatMap(userPoints -> Mono.defer(() -> {
-                                            Integer balance = userPoints.getPoints();
-                                            String prompt = rq.getPrompt();
-                                            Map<String, Object> requestBody = createRqBody(rq, prompt, numImages);
+                                // Получаем стиль по id
+                                Long styleId = rq.getStyleId() != null ? rq.getStyleId() : 1L;
+                                return artStyleService.getStyleById(styleId)
+                                        .flatMap(style -> {
+                                            // Списываем поинты и получаем обновленный баланс
+                                            return userPointsService.deductPointsFromUser(userId, pointsNeeded)
+                                                    .flatMap(userPoints -> Mono.defer(() -> {
+                                                        Integer balance = userPoints.getPoints();
+                                                        String userPrompt = rq.getPrompt();
+                                                        
+                                                        // Добавляем промпт стиля к промпту пользователя перед отправкой в FalAI
+                                                        String finalPrompt = (style.getPrompt() != null && !style.getPrompt().trim().isEmpty())
+                                                                ? userPrompt + ", " + style.getPrompt()
+                                                                : userPrompt;
+                                                        
+                                                        Map<String, Object> requestBody = createRqBody(rq, finalPrompt, numImages);
 
                                             List<String> inputImageUrls = rq.getInputImageUrls();
                                             boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
@@ -113,10 +126,11 @@ public class FalAIService {
                                                     .timeout(Duration.ofSeconds(30))
                                                     .map(response -> extractImageResponse(response, balance))
                                                     .flatMap(response -> {
-                                                        // Сохраняем историю в сессии с description
+                                                        // Сохраняем историю в сессии с description и styleId
+                                                        // Сохраняем оригинальный промпт пользователя (без стиля)
                                                         return imageGenerationHistoryService.saveHistories(
-                                                                        userId, response.getImageUrls(), prompt,
-                                                                        session.getId(), inputImageUrls, response.getDescription())
+                                                                        userId, response.getImageUrls(), userPrompt,
+                                                                        session.getId(), inputImageUrls, response.getDescription(), styleId)
                                                                 .then(Mono.just(response));
                                                     })
                                                     .flatMap(response -> {
@@ -126,7 +140,8 @@ public class FalAIService {
                                                     })
                                                     .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}", session.getId(), response))
                                                     .onErrorResume(e -> exceptionHandling(userId, e, pointsNeeded));
-                                        }));
+                                                    }));
+                                        });
                             });
                 });
     }

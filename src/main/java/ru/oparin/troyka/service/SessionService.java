@@ -211,8 +211,7 @@ public class SessionService {
     public Mono<Session> getOrCreateSession(Long sessionId, Long userId) {
         if (sessionId != null) {
             log.info("Получение сессии {} для пользователя {}", sessionId, userId);
-            return sessionRepository.findByIdAndUserId(sessionId, userId)
-                    .switchIfEmpty(Mono.error(new SessionNotFoundException("Сессия " + sessionId + " не найдена или не принадлежит пользователю " + userId)));
+            return getSessionMonoOrThrow(sessionId, userId);
         } else {
             return getOrCreateDefaultSession(userId)
                     .map(sessionMapper::toSessionEntity);

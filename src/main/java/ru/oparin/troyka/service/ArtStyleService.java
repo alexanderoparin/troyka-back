@@ -24,6 +24,10 @@ import java.time.LocalDateTime;
 @Slf4j
 public class ArtStyleService {
 
+    private static final Long DEFAULT_STYLE_ID = 1L;
+    private static final String DEFAULT_STYLE_NAME = "Без стиля";
+    private static final String DEFAULT_STYLE_PROMPT = "";
+
     private final ArtStyleRepository artStyleRepository;
     private final UserStyleRepository userStyleRepository;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
@@ -38,6 +42,21 @@ public class ArtStyleService {
     }
 
     /**
+     * Получить стиль по идентификатору.
+     * Если стиль не найден, возвращает дефолтный стиль "Без стиля" с id = 1.
+     *
+     * @param styleId идентификатор стиля
+     * @return Mono со стилем
+     */
+    public Mono<ArtStyle> getStyleById(Long styleId) {
+        if (styleId == null) {
+            return Mono.just(getDefaultStyle());
+        }
+        return artStyleRepository.findById(styleId)
+                .switchIfEmpty(Mono.just(getDefaultStyle()));
+    }
+
+    /**
      * Получить стиль по имени.
      *
      * @param name название стиля
@@ -45,6 +64,19 @@ public class ArtStyleService {
      */
     public Mono<ArtStyle> getStyleByName(String name) {
         return artStyleRepository.findByName(name);
+    }
+
+    /**
+     * Получить дефолтный стиль "Без стиля".
+     *
+     * @return дефолтный стиль
+     */
+    private ArtStyle getDefaultStyle() {
+        return ArtStyle.builder()
+                .id(DEFAULT_STYLE_ID)
+                .name(DEFAULT_STYLE_NAME)
+                .prompt(DEFAULT_STYLE_PROMPT)
+                .build();
     }
 
     /**

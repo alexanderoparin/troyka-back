@@ -18,8 +18,11 @@ import org.springframework.data.relational.core.mapping.Table;
 @Table("art_styles")
 public class ArtStyle {
 
-    /** Название стиля (например, "Реалистичный", "Аниме") - используется как первичный ключ */
+    /** Уникальный идентификатор стиля */
     @Id
+    private Long id;
+
+    /** Название стиля (например, "Реалистичный", "Аниме") */
     private String name;
 
     /** Промпт для добавления к основному промпту пользователя */
