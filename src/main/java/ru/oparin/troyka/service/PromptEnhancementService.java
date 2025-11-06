@@ -167,7 +167,20 @@ public class PromptEnhancementService {
             throw new PromptEnhancementException("Улучшенный промпт пуст", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        return enhancedPrompt.trim();
+        // Удаляем reasoning content, если он присутствует
+        // Вариант 1: <think>...</think>
+        enhancedPrompt = enhancedPrompt.replaceAll("(?s)<think>.*?</think>\\s*", "");
+        // Вариант 2: <reasoning>...</reasoning>
+        enhancedPrompt = enhancedPrompt.replaceAll("(?s)<reasoning>.*?</reasoning>\\s*", "");
+        
+        String cleanedPrompt = enhancedPrompt.trim();
+        
+        if (cleanedPrompt.isEmpty()) {
+            log.error("Улучшенный промпт пуст после очистки от reasoning content");
+            throw new PromptEnhancementException("Улучшенный промпт пуст", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        return cleanedPrompt;
     }
 
     /**
