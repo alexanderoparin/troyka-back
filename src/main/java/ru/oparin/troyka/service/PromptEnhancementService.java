@@ -55,6 +55,7 @@ public class PromptEnhancementService {
     public Mono<String> enhancePrompt(String userPrompt, List<String> imageUrls, ArtStyle userStyle) {
         String systemPrompt = buildSystemPrompt(userStyle);
         Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, imageUrls);
+        log.debug("Отправляем запрос на улучшение промпта в model = {}: {}", properties.getModel(), requestBody);
 
         return webClient.post()
                 .uri(ENDPOINT)
@@ -62,6 +63,7 @@ public class PromptEnhancementService {
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<DeepInfraResponseDTO>() {})
                 .timeout(Duration.ofMillis(properties.getTimeout()))
+                .doOnNext(response -> log.info("Полный ответ от DeepInfra API: {}", response))
                 .map(this::extractEnhancedPrompt)
                 .onErrorMap(this::mapToPromptEnhancementException);
     }
