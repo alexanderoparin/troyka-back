@@ -28,7 +28,7 @@ import java.util.List;
 public class ArtStyleService {
 
     private static final Long DEFAULT_STYLE_ID = 1L;
-    private static final Long DEFAULT_USER_STYLE_ID = 2L; // Дефолтный стиль для нового пользователя (Реалистичный)
+    private static final Long DEFAULT_USER_STYLE_ID = 2L;
     private static final String DEFAULT_STYLE_NAME = "Без стиля";
     private static final String DEFAULT_STYLE_PROMPT = "";
     private static final String CACHE_KEY_ALL_STYLES = "all-styles";
@@ -37,6 +37,15 @@ public class ArtStyleService {
     private final UserStyleRepository userStyleRepository;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
     private final Cache<String, List<ArtStyle>> artStylesCache;
+
+    /**
+     * Получить дефолтный styleId (1, Без стиля).
+     *
+     * @return дефолтный styleId (1, Без стиля)
+     */
+    public Long getDefaultStyleId() {
+        return DEFAULT_STYLE_ID;
+    }
 
     /**
      * Получить дефолтный styleId для нового пользователя.

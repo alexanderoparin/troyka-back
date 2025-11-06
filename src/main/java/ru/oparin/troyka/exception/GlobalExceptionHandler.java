@@ -82,4 +82,19 @@ public class GlobalExceptionHandler {
                         "status", ex.getStatus().value()
                 )));
     }
+
+    @ExceptionHandler(PromptEnhancementException.class)
+    public Mono<ResponseEntity<Map<String, Object>>> handlePromptEnhancementException(PromptEnhancementException ex) {
+        log.error("Ошибка улучшения промпта: {}", ex.getMessage());
+
+        if (ex.getCause() != null) {
+            log.error("Cause: {}", ex.getCause().getMessage());
+        }
+
+        return Mono.just(ResponseEntity.status(ex.getStatus())
+                .body(Map.of(
+                        "error", ex.getMessage(),
+                        "status", ex.getStatus().value()
+                )));
+    }
 }

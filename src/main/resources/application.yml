@@ -75,6 +75,16 @@ fal:
       edit: nano-banana/edit
     timeout: 30000
 
+# DeepInfra API configuration
+deepinfra:
+  api:
+    key: ${deepinfra_api_key}
+    url: https://api.deepinfra.com/v1
+  model: google/gemini-2.5-flash
+  timeout: 30000
+  max-tokens: ${deepinfra_max_tokens:1500}
+  temperature: ${deepinfra_temperature:0.5}
+
 # File storage configuration
 file:
   upload-dir: ${UPLOAD_DIR:/var/www/uploads/}
