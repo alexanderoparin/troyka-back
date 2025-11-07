@@ -15,13 +15,11 @@ public class DeepInfraProperties {
 
     private Api api;
 
-    private String model;
-
     private Integer timeout;
 
-    private Integer maxTokens;
+    private ModelConfig llama;
 
-    private Double temperature;
+    private ModelConfig gemini;
 
     @Getter
     @Setter
@@ -30,6 +28,16 @@ public class DeepInfraProperties {
     public static class Api {
         private String url;
         private String key;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ModelConfig {
+        private String model;
+        private Integer maxTokens;
+        private Double temperature;
     }
 }
 

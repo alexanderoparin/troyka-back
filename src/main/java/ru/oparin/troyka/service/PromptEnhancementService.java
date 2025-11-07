@@ -21,9 +21,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Сервис для улучшения промптов через DeepInfra API (Gemini 2.5 Flash).
+ * Сервис для улучшения промптов через DeepInfra API.
+ * Использует Llama 3.1 8B Instruct для текстовых промптов (без изображений).
+ * Использует Gemini 2.5 Flash для промптов с изображениями.
  */
 @Slf4j
 @Service
@@ -54,8 +58,15 @@ public class PromptEnhancementService {
      */
     public Mono<String> enhancePrompt(String userPrompt, List<String> imageUrls, ArtStyle userStyle) {
         String systemPrompt = buildSystemPrompt(userStyle);
-        Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, imageUrls);
-        log.debug("Отправляем запрос на улучшение промпта в model = {}: {}", properties.getModel(), requestBody);
+        
+        // Выбираем модель и параметры в зависимости от наличия изображений
+        boolean hasImages = !CollectionUtils.isEmpty(imageUrls);
+        DeepInfraProperties.ModelConfig modelConfig = hasImages 
+                ? properties.getGemini() 
+                : properties.getLlama();
+        
+        Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, imageUrls, modelConfig);
+        log.debug("Отправляем запрос на улучшение промпта в model = {}: {}", modelConfig.getModel(), requestBody);
 
         return webClient.post()
                 .uri(ENDPOINT)
@@ -105,11 +116,12 @@ public class PromptEnhancementService {
     /**
      * Построить тело запроса в формате OpenAI.
      */
-    private Map<String, Object> buildRequestBody(String systemPrompt, String userPrompt, List<String> imageUrls) {
+    private Map<String, Object> buildRequestBody(String systemPrompt, String userPrompt, List<String> imageUrls, 
+                                                  DeepInfraProperties.ModelConfig modelConfig) {
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", properties.getModel());
-        requestBody.put("max_tokens", properties.getMaxTokens());
-        requestBody.put("temperature", properties.getTemperature());
+        requestBody.put("model", modelConfig.getModel());
+        requestBody.put("max_tokens", modelConfig.getMaxTokens());
+        requestBody.put("temperature", modelConfig.getTemperature());
 
         List<Map<String, Object>> messages = new ArrayList<>();
 
@@ -167,11 +179,25 @@ public class PromptEnhancementService {
             throw new PromptEnhancementException("Улучшенный промпт пуст", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        // Удаляем reasoning content, если он присутствует
-        // Вариант 1: <think>...</think>
-        enhancedPrompt = enhancedPrompt.replaceAll("(?s)<think>.*?</think>\\s*", "");
-        // Вариант 2: <reasoning>...</reasoning>
-        enhancedPrompt = enhancedPrompt.replaceAll("(?s)<reasoning>.*?</reasoning>\\s*", "");
+        // Извлекаем промпт из reasoning блока, если он там находится
+        // Ищем паттерн: "the revised prompt will be:" или "revised prompt:" с последующим текстом в кавычках
+        // Паттерн должен работать даже если весь контент внутри <think> или <think>
+        Pattern reasoningPattern = Pattern.compile(
+            "(?s).*?(?:the revised prompt will be|revised prompt will be|revised prompt):\\s*\"([^\"]+)\".*?",
+            Pattern.CASE_INSENSITIVE
+        );
+        Matcher reasoningMatcher = reasoningPattern.matcher(enhancedPrompt);
+        
+        if (reasoningMatcher.find()) {
+            // Нашли промпт внутри reasoning блока
+            enhancedPrompt = reasoningMatcher.group(1);
+        } else {
+            // Удаляем reasoning content, если он присутствует
+            // Вариант 1: <think>...</think>
+            enhancedPrompt = enhancedPrompt.replaceAll("(?s)<think>.*?</think>\\s*", "");
+            // Вариант 2: <reasoning>...</reasoning>
+            enhancedPrompt = enhancedPrompt.replaceAll("(?s)<reasoning>.*?</reasoning>\\s*", "");
+        }
         
         String cleanedPrompt = enhancedPrompt.trim();
         
