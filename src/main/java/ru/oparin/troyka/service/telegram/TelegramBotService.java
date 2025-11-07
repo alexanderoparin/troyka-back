@@ -15,10 +15,7 @@ import ru.oparin.troyka.model.entity.TelegramBotSession;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.entity.UserStyle;
 import ru.oparin.troyka.repository.UserRepository;
-import ru.oparin.troyka.service.ArtStyleService;
-import ru.oparin.troyka.service.FalAIService;
-import ru.oparin.troyka.service.ImageGenerationHistoryService;
-import ru.oparin.troyka.service.UserPointsService;
+import ru.oparin.troyka.service.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -42,6 +39,7 @@ public class TelegramBotService {
     private final TelegramMessageService telegramMessageService;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final GenerationProperties generationProperties;
+    private final PromptEnhancementService promptEnhancementService;
     
     // Временное хранилище для списка стилей во время выбора
     private final Map<Long, List<ArtStyle>> sessionStyles = new HashMap<>();
@@ -602,11 +600,12 @@ public class TelegramBotService {
                                     String keyboardJson = """
                                             {
                                                 "inline_keyboard": [
+                                                    [{"text": "💡 Улучшить промпт с помощью ИИ", "callback_data": "enhance_prompt:%d:%d"}],
                                                     [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
                                                     [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
                                                 ]
                                             }
-                                            """.formatted(sessionId, userId, sessionId, userId);
+                                            """.formatted(sessionId, userId, sessionId, userId, sessionId, userId);
                                     
                                     return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
                                 });
@@ -794,6 +793,63 @@ public class TelegramBotService {
                         .onErrorResume(error -> {
                             log.error("Ошибка при обработке generate_current для userId={}", userId, error);
                             return sendMessage(chatId, "❌ Произошла ошибка при генерации изображения");
+                        });
+            }
+        }
+        
+        // Парсим callback_data: enhance_prompt:sessionId:userId
+        if (data != null && data.startsWith("enhance_prompt:")) {
+            String[] parts = data.split(":", 3);
+            if (parts.length >= 3) {
+                Long sessionId = Long.parseLong(parts[1]);
+                Long userId = Long.parseLong(parts[2]);
+                
+                // Получаем промпт и URL фото из БД
+                return getPromptAndInputUrlsFromDB(userId)
+                        .flatMap(tgSession -> {
+                            String originalPrompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
+                            List<String> inputUrls = tgSession.getInputImageUrls() != null 
+                                    ? telegramBotSessionService.parseInputUrls(tgSession.getInputImageUrls()) 
+                                    : List.of();
+                            
+                            if (originalPrompt.trim().isEmpty()) {
+                                return sendMessage(chatId, "❌ Промпт пуст. Отправьте промпт для улучшения.");
+                            }
+                            
+                            // Отправляем сообщение о начале улучшения
+                            return sendMessage(chatId, "💡 *Улучшение промпта с помощью ИИ...*\n\n⏱️ *Ожидайте 3-5 секунд*")
+                                    .then(artStyleService.getUserStyle(userId))
+                                    .switchIfEmpty(Mono.defer(() -> {
+                                        // Если стиль не найден, используем дефолтный
+                                        return artStyleService.getStyleById(artStyleService.getDefaultUserStyleId())
+                                                .map(style -> {
+                                                    UserStyle defaultUserStyle = new UserStyle();
+                                                    defaultUserStyle.setUserId(userId);
+                                                    defaultUserStyle.setStyleId(artStyleService.getDefaultUserStyleId());
+                                                    return defaultUserStyle;
+                                                });
+                                    }))
+                                    .flatMap(userStyle -> {
+                                        Long styleId = userStyle.getStyleId() != null ? userStyle.getStyleId() : artStyleService.getDefaultUserStyleId();
+                                        return artStyleService.getStyleById(styleId)
+                                                .flatMap(style -> promptEnhancementService.enhancePrompt(originalPrompt, inputUrls, style))
+                                                .flatMap(enhancedPrompt -> {
+                                                    // Обновляем промпт в БД
+                                                    return telegramBotSessionService.updatePromptAndInputUrls(userId, enhancedPrompt, inputUrls)
+                                                            .then(sendMessage(chatId, String.format("""
+                                                                    ✅ *Промпт улучшен!*
+                                                                    
+                                                                    📝 *Было:* %s
+                                                                    
+                                                                    ✨ *Стало:* %s
+                                                                    """, originalPrompt, enhancedPrompt)))
+                                                            .then(showStyleSelection(chatId, userId, sessionId, enhancedPrompt, inputUrls));
+                                                })
+                                                .onErrorResume(error -> {
+                                                    log.error("Ошибка улучшения промпта для userId={}", userId, error);
+                                                    return sendMessage(chatId, "❌ Не удалось улучшить промпт. Попробуйте еще раз или используйте оригинальный промпт.");
+                                                });
+                                    });
                         });
             }
         }
