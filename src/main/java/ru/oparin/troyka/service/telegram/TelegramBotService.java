@@ -602,12 +602,10 @@ public class TelegramBotService {
                                     log.debug("Найден сохраненный стиль для userId={}: {}", userId, style.getName());
                                     String styleDisplay = style.getName();
                                     String message = String.format("""
-                                            🎨 *Выберите действие:*
-                                            
-                                            📝 *Промпт:* %s
-                                            
                                             💡 *Текущий стиль:* %s
-                                            """, prompt, styleDisplay);
+                                            
+                                            🎨 *Выберите действие:*
+                                            """, styleDisplay);
                                     
                                     // Создаем JSON для inline клавиатуры
                                     String keyboardJson = """
@@ -850,13 +848,8 @@ public class TelegramBotService {
                                                 .flatMap(enhancedPrompt -> {
                                                     // Обновляем промпт в БД
                                                     return telegramBotSessionService.updatePromptAndInputUrls(userId, enhancedPrompt, inputUrls)
-                                                            .then(sendMessage(chatId, String.format("""
-                                                                    ✅ *Промпт улучшен!*
-                                                                    
-                                                                    📝 *Было:* %s
-                                                                    
-                                                                    ✨ *Стало:* %s
-                                                                    """, originalPrompt, enhancedPrompt)))
+                                                            // Отправляем чистый промпт для копирования
+                                                            .then(sendMessage(chatId, enhancedPrompt))
                                                             .then(showStyleSelection(chatId, userId, sessionId, enhancedPrompt, inputUrls));
                                                 })
                                                 .onErrorResume(error -> {
@@ -882,7 +875,7 @@ public class TelegramBotService {
                                 
                                 📝 Отправьте новый текст промпта для замены текущего.
                                 
-                                💡 Вы можете скорректировать улучшенный промпт или написать свой.
+                                💡 Вы можете скопировать и скорректировать улучшенный промпт или написать свой.
                                 """));
             }
         }
