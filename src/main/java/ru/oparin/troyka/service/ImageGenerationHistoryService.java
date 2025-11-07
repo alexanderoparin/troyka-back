@@ -37,25 +37,14 @@ public class ImageGenerationHistoryService {
      * @param styleId        идентификатор стиля (по умолчанию 1 - Без стиля)
      * @return сохраненные записи истории
      */
-    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId, List<String> inputImageUrls, String description, Long styleId) {
-        log.info("Сохранение истории генерации для пользователя {} в сессии {}, промпт: {}, используемые в запросе изображения {}, styleId: {}", userId, sessionId, prompt, inputImageUrls, styleId);
-
+    public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId,
+                                                      List<String> inputImageUrls, String description, Long styleId) {
         // Преобразуем списки в JSON строки
         List<String> imageUrlsList = new ArrayList<>();
         imageUrls.forEach(imageUrlsList::add);
         String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
         String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
 
-        // Устанавливаем дефолтное значение styleId = 1, если не указано
-        Long finalStyleId = (styleId != null) ? styleId : 1L;
-
-        log.info("Сгенерированные изображения: {}", imageUrlsJson);
-        log.info("Используемые в запросе изображения: {}", inputImageUrlsJson);
-        if (description != null && !description.trim().isEmpty()) {
-            log.info("Описание от ИИ: {}", description);
-        }
-
-        // Создаем ОДНУ запись истории для всех сгенерированных изображений
         return imageGenerationHistoryRepository.saveWithJsonb(
                         userId,
                         imageUrlsJson,
@@ -64,7 +53,7 @@ public class ImageGenerationHistoryService {
                         sessionId,
                         inputImageUrlsJson,
                         description,
-                        finalStyleId
+                        styleId
                 )
                 .doOnNext(history -> log.info("Запись истории сохранена: {}", history))
                 .flux();

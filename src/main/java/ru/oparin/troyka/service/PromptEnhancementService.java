@@ -69,7 +69,7 @@ public class PromptEnhancementService {
     }
 
     /**
-     * Построить системный промпт с учетом стиля пользователя (Вариант 2).
+     * Построить системный промпт с учетом стиля пользователя
      */
     private String buildSystemPrompt(ArtStyle userStyle) {
         String styleName = userStyle.getName() != null ? userStyle.getName() : "общем";
