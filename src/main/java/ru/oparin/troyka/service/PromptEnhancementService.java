@@ -180,23 +180,43 @@ public class PromptEnhancementService {
         }
 
         // Извлекаем промпт из reasoning блока, если он там находится
-        // Ищем паттерн: "the revised prompt will be:" или "revised prompt:" с последующим текстом в кавычках
-        // Паттерн должен работать даже если весь контент внутри <think> или <think>
-        Pattern reasoningPattern = Pattern.compile(
-            "(?s).*?(?:the revised prompt will be|revised prompt will be|revised prompt):\\s*\"([^\"]+)\".*?",
+        // Вариант 1: Ищем паттерн с кавычками - текст в кавычках после ключевых фраз
+        // Учитываем возможные переносы строк между фразой и кавычкой
+        Pattern reasoningPatternWithQuotes = Pattern.compile(
+            "(?s).*?(?:the revised prompt will be|revised prompt will be|revised prompt|here's the final prompt|here is the final prompt|final prompt will be|the final prompt):\\s*\"([^\"]+)\".*?",
             Pattern.CASE_INSENSITIVE
         );
-        Matcher reasoningMatcher = reasoningPattern.matcher(enhancedPrompt);
+        Matcher reasoningMatcherWithQuotes = reasoningPatternWithQuotes.matcher(enhancedPrompt);
         
-        if (reasoningMatcher.find()) {
-            // Нашли промпт внутри reasoning блока
-            enhancedPrompt = reasoningMatcher.group(1);
+        if (reasoningMatcherWithQuotes.find()) {
+            // Нашли промпт внутри reasoning блока в кавычках
+            enhancedPrompt = reasoningMatcherWithQuotes.group(1);
         } else {
-            // Удаляем reasoning content, если он присутствует
-            // Вариант 1: <think>...</think>
-            enhancedPrompt = enhancedPrompt.replaceAll("(?s)<think>.*?</think>\\s*", "");
-            // Вариант 2: <reasoning>...</reasoning>
-            enhancedPrompt = enhancedPrompt.replaceAll("(?s)<reasoning>.*?</reasoning>\\s*", "");
+            // Вариант 2: Ищем текст после ключевых фраз до закрывающего тега reasoning
+            // Это для случаев, когда промпт не в кавычках или кавычки многострочные
+            Pattern reasoningPatternExtract = Pattern.compile(
+                "(?s).*?(?:here's the final prompt|here is the final prompt|the final prompt|final prompt):\\s*(.+?)(?=\\s*</think>|\\s*</reasoning>|$)",
+                Pattern.CASE_INSENSITIVE
+            );
+            Matcher reasoningMatcherExtract = reasoningPatternExtract.matcher(enhancedPrompt);
+            
+            if (reasoningMatcherExtract.find()) {
+                // Нашли промпт после фразы
+                String extractedPrompt = reasoningMatcherExtract.group(1).trim();
+                // Удаляем возможные кавычки в начале и конце
+                if (extractedPrompt.startsWith("\"") && extractedPrompt.endsWith("\"")) {
+                    extractedPrompt = extractedPrompt.substring(1, extractedPrompt.length() - 1).trim();
+                }
+                // Удаляем возможные переносы строк в начале и конце
+                extractedPrompt = extractedPrompt.replaceAll("^\\s*[\\r\\n]+", "").replaceAll("[\\r\\n]+\\s*$", "");
+                enhancedPrompt = extractedPrompt;
+            } else {
+                // Удаляем reasoning content, если он присутствует
+                // Вариант 1: <think>...</think>
+                enhancedPrompt = enhancedPrompt.replaceAll("(?s)<think>.*?</think>\\s*", "");
+                // Вариант 2: <reasoning>...</reasoning>
+                enhancedPrompt = enhancedPrompt.replaceAll("(?s)<reasoning>.*?</reasoning>\\s*", "");
+            }
         }
         
         String cleanedPrompt = enhancedPrompt.trim();

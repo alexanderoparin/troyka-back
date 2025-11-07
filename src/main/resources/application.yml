@@ -89,7 +89,7 @@ deepinfra:
   # Настройки для Gemini (с изображениями)
   gemini:
     model: google/gemini-2.5-flash
-    max-tokens: ${deepinfra_gemini_max_tokens:1200}
+    max-tokens: ${deepinfra_gemini_max_tokens:2000}
     temperature: ${deepinfra_gemini_temperature:0.3}
 
 # File storage configuration
