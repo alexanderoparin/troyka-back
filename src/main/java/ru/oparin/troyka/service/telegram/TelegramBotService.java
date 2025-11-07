@@ -209,6 +209,19 @@ public class TelegramBotService {
                                                         Integer waitingStyle = tgSession.getWaitingStyle();
                                                         log.debug("waitingStyle для userId={}: {}", user.getId(), waitingStyle);
                                                         
+                                                        if (waitingStyle != null && waitingStyle == -1) {
+                                                            // Ожидание редактирования промпта
+                                                            log.debug("Редактирование промпта для userId={}", user.getId());
+                                                            return telegramBotSessionService.updatePromptAndInputUrls(user.getId(), prompt, inputImageUrls)
+                                                                    .then(telegramBotSessionService.updateWaitingStyle(user.getId(), 0))
+                                                                    .then(sendMessage(chatId, String.format("""
+                                                                            ✅ *Промпт обновлен!*
+                                                                            
+                                                                            📝 *Новый промпт:* %s
+                                                                            """, prompt)))
+                                                                    .then(showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls));
+                                                        }
+                                                        
                                                         if (waitingStyle != null && waitingStyle > 0) {
                                                             // Проверяем, является ли ввод цифрой (выбор стиля)
                                                             try {
@@ -601,11 +614,12 @@ public class TelegramBotService {
                                             {
                                                 "inline_keyboard": [
                                                     [{"text": "💡 Улучшить промпт с помощью ИИ", "callback_data": "enhance_prompt:%d:%d"}],
+                                                    [{"text": "✏️ Редактировать промпт", "callback_data": "edit_prompt:%d:%d"}],
                                                     [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
                                                     [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
                                                 ]
                                             }
-                                            """.formatted(sessionId, userId, sessionId, userId, sessionId, userId);
+                                            """.formatted(sessionId, userId, sessionId, userId, sessionId, userId, sessionId, userId);
                                     
                                     return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboardJson);
                                 });
@@ -817,7 +831,7 @@ public class TelegramBotService {
                             }
                             
                             // Отправляем сообщение о начале улучшения
-                            return sendMessage(chatId, "💡 *Улучшение промпта с помощью ИИ...*\n\n⏱️ *Ожидайте 3-5 секунд*")
+                            return sendMessage(chatId, "💡 *Улучшение промпта с помощью ИИ...*\n\n⏱️ *Ожидайте 10-15 секунд*")
                                     .then(artStyleService.getUserStyle(userId))
                                     .switchIfEmpty(Mono.defer(() -> {
                                         // Если стиль не найден, используем дефолтный
@@ -851,6 +865,25 @@ public class TelegramBotService {
                                                 });
                                     });
                         });
+            }
+        }
+        
+        // Парсим callback_data: edit_prompt:sessionId:userId
+        if (data != null && data.startsWith("edit_prompt:")) {
+            String[] parts = data.split(":", 3);
+            if (parts.length >= 3) {
+                Long sessionId = Long.parseLong(parts[1]);
+                Long userId = Long.parseLong(parts[2]);
+                
+                // Устанавливаем флаг ожидания редактирования промпта
+                return telegramBotSessionService.updateWaitingStyle(userId, -1)
+                        .then(sendMessage(chatId, """
+                                ✏️ *Редактирование промпта*
+                                
+                                📝 Отправьте новый текст промпта для замены текущего.
+                                
+                                💡 Вы можете скорректировать улучшенный промпт или написать свой.
+                                """));
             }
         }
         
