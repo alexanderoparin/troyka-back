@@ -197,6 +197,8 @@ public class PromptEnhancementService {
                     HttpStatus.SERVICE_UNAVAILABLE,
                     e);
         } else if (e instanceof WebClientResponseException webE) {
+            String responseBody = webE.getResponseBodyAsString();
+            log.error("DeepInfra API вернул ошибку. Статус: {}, тело ответа: {}", webE.getStatusCode(), responseBody);
             return new PromptEnhancementException(
                     String.format("Сервис улучшения промптов вернул ошибку. Статус: %s, причина: %s", 
                             webE.getStatusCode(), webE.getStatusText()),

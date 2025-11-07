@@ -82,8 +82,8 @@ deepinfra:
     url: https://api.deepinfra.com/v1
   model: google/gemini-2.5-flash
   timeout: 30000
-  max-tokens: ${deepinfra_max_tokens:1500}
-  temperature: ${deepinfra_temperature:0.5}
+  max-tokens: ${deepinfra_max_tokens:1000}
+  temperature: ${deepinfra_temperature:0.3}
 
 # File storage configuration
 file:
