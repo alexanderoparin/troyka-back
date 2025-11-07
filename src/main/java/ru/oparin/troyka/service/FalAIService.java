@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import static ru.oparin.troyka.model.dto.fal.OutputFormatEnum.JPEG;
 import static ru.oparin.troyka.util.JsonUtils.removingBlob;
@@ -123,7 +124,7 @@ public class FalAIService {
                                                     .retrieve()
                                                     .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
                                                     })
-                                                    .timeout(Duration.ofSeconds(30))
+                                                    .timeout(Duration.ofMinutes(3))
                                                     .map(response -> extractImageResponse(response, balance))
                                                     .flatMap(response -> {
                                                         // Сохраняем историю в сессии с description и styleId
@@ -162,25 +163,43 @@ public class FalAIService {
      * Обработка исключений
      */
     private Mono<ImageRs> exceptionHandling(Long userId, Throwable e, Integer pointsNeeded) {
+        log.error("Ошибка при работе с fal.ai для userId={}, pointsNeeded={}: {}", userId, pointsNeeded, e.getMessage(), e);
+        
         if (e instanceof FalAIException) {
             // Уже наш кастомный эксепшн — возврат поинтов уже был
             return Mono.error(e);
+        } else if (e instanceof TimeoutException || 
+                   (e.getCause() != null && e.getCause() instanceof TimeoutException) ||
+                   (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout"))) {
+            log.warn("Timeout при запросе к fal.ai для userId={}. Возвращаем поинты.", userId);
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(
+                            "Превышено время ожидания ответа от сервиса генерации. Попробуйте позже.",
+                            HttpStatus.REQUEST_TIMEOUT)));
         } else if (e instanceof WebClientRequestException) {
+            log.warn("Ошибка подключения к fal.ai для userId={}. Возвращаем поинты.", userId);
             return userPointsService.addPointsToUser(userId, pointsNeeded)
                     .then(Mono.error(new FalAIException(
                             "Не удалось подключиться к сервису генерации. Проверьте интернет или попробуйте позже.",
                             HttpStatus.SERVICE_UNAVAILABLE)));
         } else if (e instanceof WebClientResponseException webE) {
             String responseBody = webE.getResponseBodyAsString();
+            log.warn("Ошибка от fal.ai для userId={}. Статус: {}, тело: {}. Возвращаем поинты.", 
+                    userId, webE.getStatusCode(), responseBody);
             String message = "Сервис генерации вернул ошибку. Статус: " + webE.getStatusCode()
-                    + ", причина: " + webE.getStatusText()
-                    + ", тело ответа: " + responseBody;
+                    + ", причина: " + webE.getStatusText();
+            if (responseBody != null && !responseBody.isEmpty()) {
+                message += ", тело ответа: " + responseBody;
+            }
             return userPointsService.addPointsToUser(userId, pointsNeeded)
                     .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
-        } else return userPointsService.addPointsToUser(userId, pointsNeeded)
-                .then(Mono.error(new FalAIException(
-                        "Произошла ошибка при работе с сервисом генерации: " + e.getMessage(),
-                        HttpStatus.INTERNAL_SERVER_ERROR)));
+        } else {
+            log.warn("Неизвестная ошибка при работе с fal.ai для userId={}. Возвращаем поинты.", userId);
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(
+                            "Произошла ошибка при работе с сервисом генерации: " + e.getMessage(),
+                            HttpStatus.INTERNAL_SERVER_ERROR)));
+        }
     }
 
     /**
