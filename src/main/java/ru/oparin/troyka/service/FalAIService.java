@@ -124,17 +124,12 @@ public class FalAIService {
      * Тело сообщения, которое будет отправлено в fal.ai
      */
     private FalAIRequestDTO createRqBody(ImageRq rq, String prompt, Integer numImages, List<String> inputImageUrls) {
-        FalAIRequestDTO.FalAIRequestDTOBuilder builder = FalAIRequestDTO.builder()
+        return FalAIRequestDTO.builder()
                 .prompt(prompt)
                 .numImages(numImages)
                 .outputFormat(rq.getOutputFormat().name().toLowerCase())
-                .aspectRatio(rq.getAspectRatio());
-
-        if (!CollectionUtils.isEmpty(inputImageUrls)) {
-            builder.imageUrls(removingBlob(inputImageUrls));
-        }
-
-        return builder.build();
+                .imageUrls(removingBlob(inputImageUrls))
+                .aspectRatio(rq.getAspectRatio()).build();
     }
 
     /**

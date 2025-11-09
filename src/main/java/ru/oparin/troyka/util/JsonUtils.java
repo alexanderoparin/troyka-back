@@ -2,6 +2,7 @@ package ru.oparin.troyka.util;
 
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -9,7 +10,7 @@ import java.util.stream.Collectors;
 /**
  * Утилитный класс для работы с JSON.
  * Предоставляет методы для сериализации и десериализации простых структур данных.
- * 
+ * <p>
  * TODO: В будущем заменить на Jackson или Gson для более надежной работы с JSON.
  */
 @UtilityClass
@@ -27,7 +28,7 @@ public class JsonUtils {
         if (list == null || list.isEmpty()) {
             return null;
         }
-        
+
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < list.size(); i++) {
             if (i > 0) {
@@ -43,7 +44,7 @@ public class JsonUtils {
             json.append("\"").append(escapedItem).append("\"");
         }
         json.append("]");
-        
+
         return json.toString();
     }
 
@@ -58,15 +59,15 @@ public class JsonUtils {
         if (jsonObject == null) {
             return List.of();
         }
-        
+
         String json = jsonObject.toString();
-        
+
         // Обрабатываем JsonByteArrayInput формат
         if (json.startsWith("JsonByteArrayInput{") && json.endsWith("}")) {
             // Извлекаем содержимое из JsonByteArrayInput{...}
             json = json.substring("JsonByteArrayInput{".length(), json.length() - 1);
         }
-        
+
         return parseJsonToList(json);
     }
 
@@ -81,22 +82,22 @@ public class JsonUtils {
         if (json == null || json.trim().isEmpty() || json.equals("null")) {
             return List.of();
         }
-        
+
         try {
             String content = json.trim();
-            
+
             // Проверяем, что это JSON массив
             if (!content.startsWith("[") || !content.endsWith("]")) {
                 return List.of();
             }
-            
+
             // Убираем квадратные скобки
             content = content.substring(1, content.length() - 1).trim();
-            
+
             if (content.isEmpty()) {
                 return List.of();
             }
-            
+
             // Простой парсинг элементов массива
             return List.of(content.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")) // Разделяем по запятым, не внутри кавычек
                     .stream()
@@ -115,7 +116,7 @@ public class JsonUtils {
                     })
                     .filter(item -> !item.isEmpty())
                     .collect(Collectors.toList());
-                    
+
         } catch (Exception e) {
             return List.of();
         }
@@ -125,7 +126,9 @@ public class JsonUtils {
      * Убираем blob из URL'ов.
      */
     public static List<String> removingBlob(List<String> inputImageUrls) {
-        return inputImageUrls.stream()
+        if (CollectionUtils.isEmpty(inputImageUrls)) {
+            return null;
+        } else return inputImageUrls.stream()
                 .map(url -> url.startsWith("blob:") ? url.substring(5) : url)
                 .toList();
     }
