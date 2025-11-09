@@ -1,5 +1,6 @@
 package ru.oparin.troyka.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.relational.core.query.Criteria;
@@ -15,15 +16,11 @@ import java.time.LocalDateTime;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class UserPointsService {
     
     private final UserPointsRepository userPointsRepository;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
-    
-    public UserPointsService(UserPointsRepository userPointsRepository, R2dbcEntityTemplate r2dbcEntityTemplate) {
-        this.userPointsRepository = userPointsRepository;
-        this.r2dbcEntityTemplate = r2dbcEntityTemplate;
-    }
     
     /**
      * Получить баланс пользователя
@@ -101,26 +98,5 @@ public class UserPointsService {
         return getUserPoints(userId)
                 .map(points -> points >= requiredPoints)
                 .defaultIfEmpty(false);
-    }
-    
-    /**
-     * Инициализировать поинты пользователя (при регистрации)
-     */
-    @Transactional
-    public Mono<UserPoints> initializeUserPoints(Long userId) {
-        return userPointsRepository.existsByUserId(userId)
-                .flatMap(exists -> {
-                    if (exists) {
-                        return Mono.error(new IllegalStateException("У пользователя уже есть запись о поинтах"));
-                    } else {
-                        UserPoints userPoints = UserPoints.builder()
-                                .userId(userId)
-                                .points(0)
-                                .createdAt(LocalDateTime.now())
-                                .updatedAt(LocalDateTime.now())
-                                .build();
-                        return userPointsRepository.save(userPoints);
-                    }
-                });
     }
 }

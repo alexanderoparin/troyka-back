@@ -11,7 +11,6 @@ import java.util.List;
 
 /**
  * DTO для запроса генерации изображения с помощью FAL AI.
- * Поддерживает работу с сессиями для организации истории генераций.
  */
 @Data
 @Builder
@@ -19,6 +18,10 @@ import java.util.List;
 @AllArgsConstructor
 @Schema(description = "Запрос для генерации изображения с помощью промпта от FAL AI")
 public class ImageRq {
+
+    /** Идентификатор сессии для сохранения истории генерации */
+    @Schema(description = "Идентификатор сессии для сохранения истории генерации. Если не указан, будет создана или получена дефолтная сессия")
+    private Long sessionId;
 
     /** Описание изображения (промпт) */
     @NotBlank(message = "Промпт не может быть пустым")
@@ -31,18 +34,22 @@ public class ImageRq {
     private List<String> inputImageUrls;
 
     /** Количество изображений для генерации */
+    @Builder.Default
     @Schema(description = "Количество изображений", example = "2")
-    private Integer numImages;
+    private Integer numImages = 1;
 
     /** Формат выходных изображений */
+    @Builder.Default
     @Schema(description = "Формат изображений", example = "JPEG")
-    private OutputFormatEnum outputFormat;
-
-    /** Идентификатор сессии для сохранения истории генерации */
-    @Schema(description = "Идентификатор сессии для сохранения истории генерации. Если не указан, будет создана или получена дефолтная сессия")
-    private Long sessionId;
+    private OutputFormatEnum outputFormat = OutputFormatEnum.JPEG;
 
     /** Идентификатор стиля изображения */
+    @Builder.Default
     @Schema(description = "Идентификатор стиля изображения (ссылка на art_styles.id). По умолчанию 1 (Без стиля)", example = "1")
-    private Long styleId;
+    private Long styleId = 1L;
+
+    /** Соотношение сторон изображения */
+    @Builder.Default
+    @Schema(description = "Соотношение сторон изображения. Возможные значения: 21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16. По умолчанию: 1:1", example = "1:1")
+    private String aspectRatio = "1:1";
 }

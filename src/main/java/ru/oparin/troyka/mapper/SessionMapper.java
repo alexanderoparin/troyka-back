@@ -104,6 +104,7 @@ public class SessionMapper {
                 .imageCount(imageUrls.size())
                 .outputFormat("JPEG") // TODO: Получить из истории или добавить поле
                 .description(history.getDescription())
+                .aspectRatio(history.getAspectRatio())
                 .build();
     }
 

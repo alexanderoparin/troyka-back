@@ -38,7 +38,7 @@ public class ImageGenerationHistoryService {
      * @return сохраненные записи истории
      */
     public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId,
-                                                      List<String> inputImageUrls, String description, Long styleId) {
+                                                      List<String> inputImageUrls, String description, Long styleId, String aspectRatio) {
         // Преобразуем списки в JSON строки
         List<String> imageUrlsList = new ArrayList<>();
         imageUrls.forEach(imageUrlsList::add);
@@ -53,7 +53,8 @@ public class ImageGenerationHistoryService {
                         sessionId,
                         inputImageUrlsJson,
                         description,
-                        styleId
+                        styleId,
+                        aspectRatio != null ? aspectRatio : "1:1"
                 )
                 .doOnNext(history -> log.info("Запись истории сохранена: {}", history))
                 .flux();

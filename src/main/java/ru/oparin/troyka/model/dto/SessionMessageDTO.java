@@ -48,4 +48,7 @@ public class SessionMessageDTO {
 
     /** Название стиля изображения */
     private String styleName;
+
+    /** Соотношение сторон изображения */
+    private String aspectRatio;
 }

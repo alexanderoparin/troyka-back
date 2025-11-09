@@ -14,18 +14,12 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.FalAiProperties;
 import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.exception.FalAIException;
-import ru.oparin.troyka.model.dto.fal.FalAIImageDTO;
-import ru.oparin.troyka.model.dto.fal.FalAIResponseDTO;
-import ru.oparin.troyka.model.dto.fal.ImageRq;
-import ru.oparin.troyka.model.dto.fal.ImageRs;
+import ru.oparin.troyka.model.dto.fal.*;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
-import static ru.oparin.troyka.model.dto.fal.OutputFormatEnum.JPEG;
 import static ru.oparin.troyka.util.JsonUtils.removingBlob;
 
 /**
@@ -69,13 +63,12 @@ public class FalAIService {
      * Получить ответ с изображениями от FAL AI с поддержкой сессий.
      * Автоматически создает или получает дефолтную сессию, если sessionId не указан.
      *
-     * @param rq     запрос на генерацию изображения
-     * @param userId идентификатор пользователя
+     * @param imageRq запрос на генерацию изображения
+     * @param userId  идентификатор пользователя
      * @return ответ с сгенерированными изображениями
      */
-    public Mono<ImageRs> getImageResponse(ImageRq rq, Long userId) {
-        // Проверяем, достаточно ли поинтов у пользователя
-        Integer numImages = rq.getNumImages() == null ? 1 : rq.getNumImages();
+    public Mono<ImageRs> getImageResponse(ImageRq imageRq, Long userId) {
+        Integer numImages = imageRq.getNumImages();
         Integer pointsNeeded = numImages * generationProperties.getPointsPerImage();
 
         return userPointsService.hasEnoughPoints(userId, pointsNeeded)
@@ -83,80 +76,65 @@ public class FalAIService {
                     if (!hasEnough) {
                         return Mono.error(new FalAIException(
                                 "Недостаточно поинтов для генерации изображений. Требуется: " + pointsNeeded, HttpStatus.PAYMENT_REQUIRED));
+                    } else {
+                        return sessionService.getOrCreateSession(imageRq.getSessionId(), userId)
+                                .flatMap(session -> {
+                                    Long styleId = imageRq.getStyleId();
+                                    return artStyleService.getStyleById(styleId)
+                                            .flatMap(style ->
+                                                    userPointsService.deductPointsFromUser(userId, pointsNeeded)
+                                                            .flatMap(userPoints -> Mono.defer(() -> {
+                                                                Integer balance = userPoints.getPoints();
+                                                                String userPrompt = imageRq.getPrompt();
+                                                                String finalPrompt = userPrompt + ", " + style.getPrompt();
+                                                                List<String> inputImageUrls = imageRq.getInputImageUrls();
+
+                                                                FalAIRequestDTO requestBody = createRqBody(imageRq, finalPrompt, numImages, inputImageUrls);
+
+                                                                boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
+                                                                String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
+                                                                String fullModelPath = PREFIX_PATH + model;
+                                                                String fullUrl = prop.getApi().getUrl() + fullModelPath;
+                                                                String modelType = isNewImage ? "создание" : "редактирование";
+                                                                log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", modelType, fullUrl, requestBody);
+
+                                                                return webClient.post()
+                                                                        .uri(fullModelPath)
+                                                                        .bodyValue(requestBody)
+                                                                        .retrieve()
+                                                                        .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
+                                                                        })
+                                                                        .timeout(Duration.ofMinutes(3))
+                                                                        .map(response -> extractImageResponse(response, balance))
+                                                                         .flatMap(response -> imageGenerationHistoryService.saveHistories(
+                                                                                         userId, response.getImageUrls(), userPrompt,
+                                                                                         session.getId(), inputImageUrls, response.getDescription(), styleId, imageRq.getAspectRatio())
+                                                                                 .then(Mono.just(response)))
+                                                                        .flatMap(response -> sessionService.updateSessionTimestamp(session.getId())
+                                                                                .then(Mono.just(response)))
+                                                                        .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}", session.getId(), response))
+                                                                        .onErrorResume(e -> exceptionHandling(userId, e, pointsNeeded));
+                                                            })));
+                                });
                     }
-
-                    // Получаем или создаем сессию
-                    return sessionService.getOrCreateSession(rq.getSessionId(), userId)
-                            .flatMap(session -> {
-                                // Получаем стиль по id
-                                Long styleId = rq.getStyleId() != null ? rq.getStyleId() : 1L;
-                                return artStyleService.getStyleById(styleId)
-                                        .flatMap(style -> {
-                                            // Списываем поинты и получаем обновленный баланс
-                                            return userPointsService.deductPointsFromUser(userId, pointsNeeded)
-                                                    .flatMap(userPoints -> Mono.defer(() -> {
-                                                        Integer balance = userPoints.getPoints();
-                                                        String userPrompt = rq.getPrompt();
-                                                        
-                                                        // Добавляем промпт стиля к промпту пользователя перед отправкой в FalAI
-                                                        String finalPrompt = (style.getPrompt() != null && !style.getPrompt().trim().isEmpty())
-                                                                ? userPrompt + ", " + style.getPrompt()
-                                                                : userPrompt;
-                                                        
-                                                        Map<String, Object> requestBody = createRqBody(rq, finalPrompt, numImages);
-
-                                            List<String> inputImageUrls = rq.getInputImageUrls();
-                                            boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
-
-                                            if (!isNewImage) {
-                                                requestBody.put("image_urls", removingBlob(inputImageUrls));
-                                            }
-
-                                            String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
-                                            String fullModelPath = PREFIX_PATH + model;
-                                            String fullUrl = prop.getApi().getUrl() + fullModelPath;
-                                            String modelType = isNewImage ? "создание" : "редактирование";
-                                            log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", modelType, fullUrl, requestBody);
-
-                                            return webClient.post()
-                                                    .uri(fullModelPath)
-                                                    .bodyValue(requestBody)
-                                                    .retrieve()
-                                                    .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
-                                                    })
-                                                    .timeout(Duration.ofMinutes(3))
-                                                    .map(response -> extractImageResponse(response, balance))
-                                                    .flatMap(response -> {
-                                                        // Сохраняем историю в сессии с description и styleId
-                                                        // Сохраняем оригинальный промпт пользователя (без стиля)
-                                                        return imageGenerationHistoryService.saveHistories(
-                                                                        userId, response.getImageUrls(), userPrompt,
-                                                                        session.getId(), inputImageUrls, response.getDescription(), styleId)
-                                                                .then(Mono.just(response));
-                                                    })
-                                                    .flatMap(response -> {
-                                                        // Обновляем время сессии
-                                                        return sessionService.updateSessionTimestamp(session.getId())
-                                                                .then(Mono.just(response));
-                                                    })
-                                                    .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}", session.getId(), response))
-                                                    .onErrorResume(e -> exceptionHandling(userId, e, pointsNeeded));
-                                                    }));
-                                        });
-                            });
                 });
     }
 
     /**
      * Тело сообщения, которое будет отправлено в fal.ai
      */
-    private Map<String, Object> createRqBody(ImageRq rq, String prompt, Integer numImages) {
-        String outputFormat = rq.getOutputFormat() == null ? JPEG.name().toLowerCase() : rq.getOutputFormat().name().toLowerCase();
-        return new HashMap<>(Map.of(
-                "prompt", prompt,
-                "num_images", numImages,
-                "output_format", outputFormat
-        ));
+    private FalAIRequestDTO createRqBody(ImageRq rq, String prompt, Integer numImages, List<String> inputImageUrls) {
+        FalAIRequestDTO.FalAIRequestDTOBuilder builder = FalAIRequestDTO.builder()
+                .prompt(prompt)
+                .numImages(numImages)
+                .outputFormat(rq.getOutputFormat().name().toLowerCase())
+                .aspectRatio(rq.getAspectRatio());
+
+        if (!CollectionUtils.isEmpty(inputImageUrls)) {
+            builder.imageUrls(removingBlob(inputImageUrls));
+        }
+
+        return builder.build();
     }
 
     /**
@@ -164,13 +142,13 @@ public class FalAIService {
      */
     private Mono<ImageRs> exceptionHandling(Long userId, Throwable e, Integer pointsNeeded) {
         log.error("Ошибка при работе с fal.ai для userId={}, pointsNeeded={}: {}", userId, pointsNeeded, e.getMessage(), e);
-        
+
         if (e instanceof FalAIException) {
             // Уже наш кастомный эксепшн — возврат поинтов уже был
             return Mono.error(e);
-        } else if (e instanceof TimeoutException || 
-                   (e.getCause() != null && e.getCause() instanceof TimeoutException) ||
-                   (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout"))) {
+        } else if (e instanceof TimeoutException ||
+                (e.getCause() != null && e.getCause() instanceof TimeoutException) ||
+                (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout"))) {
             log.warn("Timeout при запросе к fal.ai для userId={}. Возвращаем поинты.", userId);
             return userPointsService.addPointsToUser(userId, pointsNeeded)
                     .then(Mono.error(new FalAIException(
@@ -184,7 +162,7 @@ public class FalAIService {
                             HttpStatus.SERVICE_UNAVAILABLE)));
         } else if (e instanceof WebClientResponseException webE) {
             String responseBody = webE.getResponseBodyAsString();
-            log.warn("Ошибка от fal.ai для userId={}. Статус: {}, тело: {}. Возвращаем поинты.", 
+            log.warn("Ошибка от fal.ai для userId={}. Статус: {}, тело: {}. Возвращаем поинты.",
                     userId, webE.getStatusCode(), responseBody);
             String message = "Сервис генерации вернул ошибку. Статус: " + webE.getStatusCode()
                     + ", причина: " + webE.getStatusText();

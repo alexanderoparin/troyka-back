@@ -85,10 +85,10 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
      * @param styleId идентификатор стиля (по умолчанию 1 - Без стиля)
      * @return сохраненная запись
      */
-    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls, description, style_id) " +
-           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb, :description, :styleId) " +
+    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls, description, style_id, aspect_ratio) " +
+           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb, :description, :styleId, :aspectRatio) " +
            "RETURNING *")
     Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrlsJson, String prompt, 
                                                java.time.LocalDateTime createdAt, Long sessionId, 
-                                               String inputImageUrlsJson, String description, Long styleId);
+                                               String inputImageUrlsJson, String description, Long styleId, String aspectRatio);
 }
