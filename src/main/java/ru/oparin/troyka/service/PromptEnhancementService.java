@@ -50,6 +50,7 @@ public class PromptEnhancementService {
 
     /**
      * Улучшить промпт пользователя с учетом стиля и опциональных изображений.
+     * Использует retry с увеличенным лимитом токенов при нехватке токенов и fallback на оригинальный промпт.
      *
      * @param userPrompt исходный промпт пользователя
      * @param imageUrls опциональный список URL изображений для анализа
@@ -65,8 +66,53 @@ public class PromptEnhancementService {
                 ? properties.getGemini() 
                 : properties.getLlama();
         
-        Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, imageUrls, modelConfig);
-        log.debug("Отправляем запрос на улучшение промпта в model = {}: {}", modelConfig.getModel(), requestBody);
+        // Первая попытка с обычным лимитом
+        return makeEnhancementRequest(systemPrompt, userPrompt, imageUrls, modelConfig, modelConfig.getMaxTokens())
+                .flatMap(response -> {
+                    DeepInfraResponseDTO.Choice firstChoice = response.getChoices().get(0);
+                    String finishReason = firstChoice.getFinishReason();
+                    String enhancedPrompt = extractEnhancedPrompt(response, false);
+                    
+                    // Если промпт пустой из-за нехватки токенов, делаем retry с увеличенным лимитом
+                    if ((enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) 
+                            && "length".equals(finishReason)) {
+                        log.warn("Нехватка токенов при первом запросе (max_tokens={}). Повторяем с увеличенным лимитом (8000)", 
+                                modelConfig.getMaxTokens());
+                        
+                        // Retry с увеличенным лимитом (8000 токенов)
+                        return makeEnhancementRequest(systemPrompt, userPrompt, imageUrls, modelConfig, 4000)
+                                .map(retryResponse -> {
+                                    String retryPrompt = extractEnhancedPrompt(retryResponse, true);
+                                    // Если после retry все еще пустой, возвращаем оригинальный промпт
+                                    if (retryPrompt == null || retryPrompt.trim().isEmpty()) {
+                                        log.warn("Улучшенный промпт пуст даже после retry с увеличенным лимитом. Возвращаем оригинальный промпт.");
+                                        return userPrompt;
+                                    }
+                                    return retryPrompt;
+                                });
+                    }
+                    
+                    // Если промпт пустой по другой причине, возвращаем оригинальный как fallback
+                    if (enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) {
+                        log.warn("Улучшенный промпт пуст (finish_reason={}). Возвращаем оригинальный промпт как fallback.", finishReason);
+                        return Mono.just(userPrompt);
+                    }
+                    
+                    return Mono.just(enhancedPrompt);
+                })
+                .onErrorMap(this::mapToPromptEnhancementException);
+    }
+    
+    /**
+     * Выполнить запрос на улучшение промпта с указанным лимитом токенов.
+     */
+    private Mono<DeepInfraResponseDTO> makeEnhancementRequest(String systemPrompt, String userPrompt, 
+                                                             List<String> imageUrls, 
+                                                             DeepInfraProperties.ModelConfig modelConfig,
+                                                             Integer maxTokens) {
+        Map<String, Object> requestBody = buildRequestBody(systemPrompt, userPrompt, imageUrls, modelConfig, maxTokens);
+        log.debug("Отправляем запрос на улучшение промпта в model = {} с max_tokens = {}: {}", 
+                modelConfig.getModel(), maxTokens, requestBody);
 
         return webClient.post()
                 .uri(ENDPOINT)
@@ -74,9 +120,7 @@ public class PromptEnhancementService {
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<DeepInfraResponseDTO>() {})
                 .timeout(Duration.ofMillis(properties.getTimeout()))
-                .doOnNext(response -> log.info("Полный ответ от DeepInfra API: {}", response))
-                .map(this::extractEnhancedPrompt)
-                .onErrorMap(this::mapToPromptEnhancementException);
+                .doOnNext(response -> log.info("Полный ответ от DeepInfra API: {}", response));
     }
 
     /**
@@ -117,10 +161,10 @@ public class PromptEnhancementService {
      * Построить тело запроса в формате OpenAI.
      */
     private Map<String, Object> buildRequestBody(String systemPrompt, String userPrompt, List<String> imageUrls, 
-                                                  DeepInfraProperties.ModelConfig modelConfig) {
+                                                  DeepInfraProperties.ModelConfig modelConfig, Integer maxTokens) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", modelConfig.getModel());
-        requestBody.put("max_tokens", modelConfig.getMaxTokens());
+        requestBody.put("max_tokens", maxTokens);
         requestBody.put("temperature", modelConfig.getTemperature());
 
         List<Map<String, Object>> messages = new ArrayList<>();
@@ -158,8 +202,12 @@ public class PromptEnhancementService {
 
     /**
      * Извлечь улучшенный промпт из ответа DeepInfra API.
+     * 
+     * @param response ответ от DeepInfra API
+     * @param isRetry флаг, указывающий что это повторная попытка после нехватки токенов
+     * @return улучшенный промпт или null/пустую строку, если промпт пустой
      */
-    private String extractEnhancedPrompt(DeepInfraResponseDTO response) {
+    private String extractEnhancedPrompt(DeepInfraResponseDTO response, boolean isRetry) {
         if (response.getChoices() == null || response.getChoices().isEmpty()) {
             log.error("Ответ от DeepInfra API не содержит choices");
             throw new PromptEnhancementException("Ответ от DeepInfra API не содержит улучшенного промпта", HttpStatus.INTERNAL_SERVER_ERROR);
@@ -173,10 +221,16 @@ public class PromptEnhancementService {
         }
 
         String enhancedPrompt = firstChoice.getMessage().getContent();
+        String finishReason = firstChoice.getFinishReason();
         
+        // Если промпт пустой, возвращаем null или пустую строку (fallback будет обработан в enhancePrompt)
         if (enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) {
-            log.error("Улучшенный промпт пуст, finish_reason: {}", firstChoice.getFinishReason());
-            throw new PromptEnhancementException("Улучшенный промпт пуст", HttpStatus.INTERNAL_SERVER_ERROR);
+            if (isRetry) {
+                log.warn("Улучшенный промпт пуст даже после retry (finish_reason={})", finishReason);
+            } else {
+                log.warn("Улучшенный промпт пуст (finish_reason={})", finishReason);
+            }
+            return enhancedPrompt; // Может быть null или пустая строка
         }
 
         // Извлекаем промпт из reasoning блока, если он там находится
@@ -222,8 +276,8 @@ public class PromptEnhancementService {
         String cleanedPrompt = enhancedPrompt.trim();
         
         if (cleanedPrompt.isEmpty()) {
-            log.error("Улучшенный промпт пуст после очистки от reasoning content");
-            throw new PromptEnhancementException("Улучшенный промпт пуст", HttpStatus.INTERNAL_SERVER_ERROR);
+            log.warn("Улучшенный промпт пуст после очистки от reasoning content");
+            return null; // Возвращаем null для fallback на оригинальный промпт
         }
 
         return cleanedPrompt;
