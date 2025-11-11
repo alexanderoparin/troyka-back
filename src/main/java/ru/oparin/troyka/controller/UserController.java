@@ -36,7 +36,11 @@ public class UserController {
     @GetMapping("/me")
     public Mono<ResponseEntity<UserInfoDTO>> getCurrentUserInfo() {
         return userService.getCurrentUser()
-                .map(ResponseEntity::ok);
+                .map(ResponseEntity::ok)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Пользователь не найден для валидного токена");
+                    return Mono.just(ResponseEntity.status(401).build());
+                }));
     }
 
     @Operation(summary = "Получение истории генерации изображений",
