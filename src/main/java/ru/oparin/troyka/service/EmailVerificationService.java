@@ -96,7 +96,6 @@ public class EmailVerificationService {
         message.setText(buildVerificationEmailContent(username, token));
         
         mailSender.send(message);
-        log.info("Письмо подтверждения отправлено: {} -> {}", token, email);
     }
 
     private String buildVerificationEmailContent(String username, String token) {

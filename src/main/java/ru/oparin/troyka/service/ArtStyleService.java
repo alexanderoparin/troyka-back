@@ -3,6 +3,7 @@ package ru.oparin.troyka.service;
 import com.github.benmanes.caffeine.cache.Cache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.relational.core.query.Criteria;
 import org.springframework.data.relational.core.query.Query;
@@ -64,7 +65,7 @@ public class ArtStyleService {
      */
     public Flux<ArtStyle> getAllStyles() {
         List<ArtStyle> cached = artStylesCache.getIfPresent(CACHE_KEY_ALL_STYLES);
-        
+
         if (cached != null) {
             log.debug("Возвращаем стили из кеша");
             return Flux.fromIterable(cached);
@@ -190,7 +191,7 @@ public class ArtStyleService {
     /**
      * Сохранить или обновить стиль пользователя по styleId (upsert).
      *
-     * @param userId ID пользователя
+     * @param userId  ID пользователя
      * @param styleId идентификатор стиля
      * @return Mono с сохраненным стилем
      */
@@ -201,29 +202,53 @@ public class ArtStyleService {
                     Long existingStyleId = existing.getStyleId();
                     // Обновляем только если стиль изменился
                     if (existingStyleId == null || !existingStyleId.equals(styleId)) {
-                        log.debug("Обновляем существующий стиль для userId={} с styleId={} на styleId={}", userId, existingStyleId, styleId);
-                        return r2dbcEntityTemplate.update(UserStyle.class)
-                                .matching(Query.query(Criteria.where("userId").is(userId)))
-                                .apply(Update.update("styleId", styleId)
-                                        .set("updatedAt", LocalDateTime.now()))
-                                .then(userStyleRepository.findByUserId(userId));
+                        return updateUserStyle(userId, styleId);
                     }
                     return Mono.just(existing);
                 })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // Создаем новый стиль
-                    log.debug("Создаем новый стиль для userId={}", userId);
-                    UserStyle userStyle = UserStyle.builder()
-                            .userId(userId)
-                            .styleId(styleId)
-                            .createdAt(LocalDateTime.now())
-                            .updatedAt(LocalDateTime.now())
-                            .build();
-                    return r2dbcEntityTemplate.insert(UserStyle.class)
-                            .using(userStyle)
-                            .thenReturn(userStyle);
-                }));
+                .switchIfEmpty(Mono.defer(() -> createUserStyle(userId, styleId)));
     }
 
-}
 
+    /**
+     * Обновить существующий стиль пользователя.
+     *
+     * @param userId  ID пользователя
+     * @param styleId идентификатор стиля
+     * @return Mono с обновленным стилем
+     */
+    private Mono<UserStyle> updateUserStyle(Long userId, Long styleId) {
+        log.debug("Обновляем существующий стиль для userId={} на styleId={}", userId, styleId);
+        return r2dbcEntityTemplate.update(UserStyle.class)
+                .matching(Query.query(Criteria.where("userId").is(userId)))
+                .apply(Update.update("styleId", styleId)
+                        .set("updatedAt", LocalDateTime.now()))
+                .then(userStyleRepository.findByUserId(userId));
+    }
+
+    /**
+     * Создать новый стиль пользователя.
+     * Обрабатывает race condition: если при вставке возникает DuplicateKeyException,
+     * значит запись уже создана другим запросом, и нужно обновить её.
+     *
+     * @param userId  ID пользователя
+     * @param styleId идентификатор стиля
+     * @return Mono с созданным стилем
+     */
+    private Mono<UserStyle> createUserStyle(Long userId, Long styleId) {
+        log.debug("Создаем новый стиль для userId={}", userId);
+        UserStyle userStyle = UserStyle.builder()
+                .userId(userId)
+                .styleId(styleId)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return r2dbcEntityTemplate.insert(UserStyle.class)
+                .using(userStyle)
+                .thenReturn(userStyle)
+                .onErrorResume(DuplicateKeyException.class, e -> {
+                    log.debug("Обнаружен race condition при создании стиля для userId={}, обновляем существующую запись", userId);
+                    return updateUserStyle(userId, styleId);
+                });
+    }
+}
