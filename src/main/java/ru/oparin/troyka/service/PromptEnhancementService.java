@@ -34,6 +34,11 @@ import java.util.regex.Pattern;
 public class PromptEnhancementService {
 
     private static final String ENDPOINT = "/openai/chat/completions";
+    private static final String CONTENT_FILTER_ERROR_MESSAGE = 
+            "Промпт или изображение были заблокированы фильтром безопасности. " +
+            "Попробуйте изменить текст промпта или загрузить другое изображение.";
+    private static final String FINISH_REASON_CONTENT_FILTER = "content_filter";
+    private static final String FINISH_REASON_LENGTH = "length";
 
     private final WebClient webClient;
     private final DeepInfraProperties properties;
@@ -73,27 +78,42 @@ public class PromptEnhancementService {
                     String finishReason = firstChoice.getFinishReason();
                     String enhancedPrompt = extractEnhancedPrompt(response, false);
                     
+                    // Если content_filter - выбрасываем исключение с понятным сообщением для пользователя
+                    if (FINISH_REASON_CONTENT_FILTER.equals(finishReason)) {
+                        return handleContentFilter(userPrompt, imageUrls);
+                    }
+                    
                     // Если промпт пустой из-за нехватки токенов, делаем retry с увеличенным лимитом
-                    if ((enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) 
-                            && "length".equals(finishReason)) {
-                        log.warn("Нехватка токенов при первом запросе (max_tokens={}). Повторяем с увеличенным лимитом (8000)", 
+                    if (isPromptEmpty(enhancedPrompt) && FINISH_REASON_LENGTH.equals(finishReason)) {
+                        log.warn("Нехватка токенов при первом запросе (max_tokens={}). Повторяем с увеличенным лимитом (4000)", 
                                 modelConfig.getMaxTokens());
                         
-                        // Retry с увеличенным лимитом (8000 токенов)
+                        // Retry с увеличенным лимитом (4000 токенов)
                         return makeEnhancementRequest(systemPrompt, userPrompt, imageUrls, modelConfig, 4000)
-                                .map(retryResponse -> {
+                                .handle((retryResponse, sink) -> {
+                                    String retryFinishReason = retryResponse.getChoices().get(0).getFinishReason();
                                     String retryPrompt = extractEnhancedPrompt(retryResponse, true);
-                                    // Если после retry все еще пустой, возвращаем оригинальный промпт
-                                    if (retryPrompt == null || retryPrompt.trim().isEmpty()) {
-                                        log.warn("Улучшенный промпт пуст даже после retry с увеличенным лимитом. Возвращаем оригинальный промпт.");
-                                        return userPrompt;
+                                    
+                                    // Если content_filter при retry - выбрасываем исключение
+                                    if (FINISH_REASON_CONTENT_FILTER.equals(retryFinishReason)) {
+                                        log.warn("Gemini заблокировал ответ фильтром безопасности при retry.");
+                                        sink.error(new PromptEnhancementException(CONTENT_FILTER_ERROR_MESSAGE, HttpStatus.UNPROCESSABLE_ENTITY));
+                                        return;
                                     }
-                                    return retryPrompt;
+                                    
+                                    // Если после retry все еще пустой, возвращаем оригинальный промпт
+                                    if (isPromptEmpty(retryPrompt)) {
+                                        log.warn("Улучшенный промпт пуст даже после retry с увеличенным лимитом (finish_reason={}). Возвращаем оригинальный промпт.",
+                                                retryFinishReason);
+                                        sink.next(userPrompt);
+                                        return;
+                                    }
+                                    sink.next(retryPrompt);
                                 });
                     }
                     
                     // Если промпт пустой по другой причине, возвращаем оригинальный как fallback
-                    if (enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) {
+                    if (isPromptEmpty(enhancedPrompt)) {
                         log.warn("Улучшенный промпт пуст (finish_reason={}). Возвращаем оригинальный промпт как fallback.", finishReason);
                         return Mono.just(userPrompt);
                     }
@@ -224,7 +244,7 @@ public class PromptEnhancementService {
         String finishReason = firstChoice.getFinishReason();
         
         // Если промпт пустой, возвращаем null или пустую строку (fallback будет обработан в enhancePrompt)
-        if (enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) {
+        if (isPromptEmpty(enhancedPrompt)) {
             if (isRetry) {
                 log.warn("Улучшенный промпт пуст даже после retry (finish_reason={})", finishReason);
             } else {
@@ -281,6 +301,22 @@ public class PromptEnhancementService {
         }
 
         return cleanedPrompt;
+    }
+
+    /**
+     * Проверить, является ли промпт пустым.
+     */
+    private boolean isPromptEmpty(String prompt) {
+        return prompt == null || prompt.trim().isEmpty();
+    }
+
+    /**
+     * Обработать ситуацию с content_filter - выбрасывает исключение с понятным сообщением.
+     */
+    private Mono<String> handleContentFilter(String userPrompt, List<String> imageUrls) {
+        log.warn("Gemini заблокировал ответ фильтром безопасности (content_filter). Промпт: '{}', изображений: {}", 
+                userPrompt, imageUrls != null ? imageUrls.size() : 0);
+        return Mono.error(new PromptEnhancementException(CONTENT_FILTER_ERROR_MESSAGE, HttpStatus.UNPROCESSABLE_ENTITY));
     }
 
     /**

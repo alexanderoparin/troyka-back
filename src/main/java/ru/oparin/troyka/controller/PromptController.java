@@ -43,14 +43,7 @@ public class PromptController {
                 ))
                 .map(enhancedPrompt -> ResponseEntity.ok(EnhancePromptResponse.builder()
                         .enhancedPrompt(enhancedPrompt)
-                        .build()))
-                .onErrorResume(e -> {
-                    log.error("Ошибка при улучшении промпта", e);
-                    return Mono.just(ResponseEntity.internalServerError()
-                            .body(EnhancePromptResponse.builder()
-                                    .enhancedPrompt(request.getPrompt())
-                                    .build()));
-                });
+                        .build()));
     }
 }
 
