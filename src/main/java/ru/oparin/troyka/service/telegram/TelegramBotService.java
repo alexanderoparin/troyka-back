@@ -6,10 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.GenerationProperties;
+import ru.oparin.troyka.mapper.TelegramMapper;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
-import ru.oparin.troyka.model.dto.telegram.TelegramMessage;
-import ru.oparin.troyka.model.dto.telegram.TelegramPhoto;
-import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
+import ru.oparin.troyka.model.dto.telegram.*;
 import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.TelegramBotSession;
 import ru.oparin.troyka.model.entity.User;
@@ -40,6 +39,7 @@ public class TelegramBotService {
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final GenerationProperties generationProperties;
     private final PromptEnhancementService promptEnhancementService;
+    private final TelegramMapper telegramMapper;
     
     // Временное хранилище для списка стилей во время выбора
     private final Map<Long, List<ArtStyle>> sessionStyles = new HashMap<>();
@@ -294,6 +294,54 @@ public class TelegramBotService {
     }
 
     /**
+     * Обновить данные пользователя из Telegram.
+     * Обновляет только те поля, которые изменились.
+     * 
+     * @param user пользователь для обновления
+     * @param telegramUser данные пользователя из Telegram
+     * @return true, если были изменения и нужно сохранить пользователя
+     */
+    private Mono<Boolean> updateUserTelegramData(User user, TelegramUser telegramUser) {
+        return Mono.fromCallable(() -> {
+            if (user == null || telegramUser == null) {
+                return false;
+            }
+            
+            boolean hasChanges = false;
+            Long telegramId = telegramUser.getId();
+            String username = telegramUser.getUsername();
+            String firstName = telegramUser.getFirstName();
+            String lastName = telegramUser.getLastName();
+            
+            // Обновляем telegramId, если изменился
+            if (telegramId != null && !telegramId.equals(user.getTelegramId())) {
+                user.setTelegramId(telegramId);
+                hasChanges = true;
+            }
+            
+            // Обновляем username, если передан и изменился
+            if (username != null && !username.equals(user.getTelegramUsername())) {
+                user.setTelegramUsername(username);
+                hasChanges = true;
+            }
+            
+            // Обновляем firstName, если передан и изменился
+            if (firstName != null || lastName != null) {
+                String fullName = firstName != null
+                        ? (lastName != null ? firstName + " " + lastName : firstName)
+                        : lastName;
+                
+                if (fullName != null && !fullName.equals(user.getTelegramFirstName())) {
+                    user.setTelegramFirstName(fullName);
+                    hasChanges = true;
+                }
+            }
+            
+            return hasChanges;
+        });
+    }
+
+    /**
      * Создать пользователя из данных Telegram.
      */
     private Mono<User> createUserFromTelegram(Long telegramId, String username, String firstName, String lastName) {
@@ -419,7 +467,18 @@ public class TelegramBotService {
     public Mono<Void> processUpdate(TelegramUpdate update) {
         // Обработка callback query (нажатие на inline-кнопки)
         if (update.getCallbackQuery() != null) {
-            return handleCallbackQuery(update.getCallbackQuery());
+            TelegramCallbackQuery callbackQuery = update.getCallbackQuery();
+            TelegramUser telegramUser = callbackQuery.getFrom();
+            
+            // Обновляем данные пользователя из Telegram при каждом взаимодействии (только если изменились)
+            Mono<Void> updateUserDataMono = userRepository.findByTelegramId(telegramUser.getId())
+                    .flatMap(user -> updateUserTelegramData(user, telegramUser)
+                            .flatMap(hasChanges -> hasChanges 
+                                    ? userRepository.save(user).thenReturn(true)
+                                    : Mono.just(false)))
+                    .then();
+            
+            return updateUserDataMono.then(handleCallbackQuery(callbackQuery));
         }
 
         if (update.getMessage() == null) {
@@ -429,15 +488,21 @@ public class TelegramBotService {
 
         TelegramMessage message = update.getMessage();
         Long chatId = message.getChat().getId();
-        Long telegramId = message.getFrom().getId();
-        String username = message.getFrom().getUsername();
-        String firstName = message.getFrom().getFirstName();
-        String lastName = message.getFrom().getLastName();
+        TelegramUser telegramUser = message.getFrom();
+        Long telegramId = telegramUser.getId();
 
         log.debug("Обработка сообщения от пользователя {} в чате {}: {}", telegramId, chatId,
                 message.getText() != null ? message.getText() : "медиа");
 
-        try {
+        // Обновляем данные пользователя из Telegram при каждом взаимодействии (только если изменились)
+        Mono<Void> updateUserDataMono = userRepository.findByTelegramId(telegramId)
+                .flatMap(user -> updateUserTelegramData(user, telegramUser)
+                        .flatMap(hasChanges -> hasChanges 
+                                ? userRepository.save(user).thenReturn(true)
+                                : Mono.just(false)))
+                .then();
+
+        return updateUserDataMono.then(Mono.defer(() -> {
             // Обработка ответов на сообщения (диалог с изображениями)
             if (message.getReplyToMessage() != null) {
                 return handleReplyMessage(chatId, telegramId, message);
@@ -445,7 +510,7 @@ public class TelegramBotService {
 
             // Обработка команд
             if (message.getText() != null && message.getText().startsWith("/")) {
-                return handleCommand(chatId, telegramId, username, firstName, lastName, message.getText());
+                return handleCommand(chatId, telegramId, telegramUser.getUsername(), telegramUser.getFirstName(), telegramUser.getLastName(), message.getText());
             }
 
             // Обработка фото с подписью
@@ -472,15 +537,14 @@ public class TelegramBotService {
                     
                     Отправьте текстовое описание для генерации изображения или фото с подписью.
                     """);
-
-        } catch (Exception error) {
+        })).onErrorResume(error -> {
             log.error("Ошибка обработки сообщения от пользователя {} в чате {}: {}", telegramId, chatId, error.getMessage(), error);
             return sendMessage(chatId, """
                     ❌ *Произошла ошибка*
                     
                     Попробуйте еще раз или обратитесь в поддержку: https://24reshai.ru/contacts
                     """);
-        }
+        });
     }
 
     /**
@@ -768,8 +832,8 @@ public class TelegramBotService {
                     artStyleService.getUserStyle(userId),
                     getPromptAndInputUrlsFromDB(userId)
                 ).flatMap(tuple -> {
-                    var userStyle = tuple.getT1();
-                    var tgSession = tuple.getT2();
+                    UserStyle userStyle = tuple.getT1();
+                    TelegramBotSession tgSession = tuple.getT2();
                     
                     // Получаем промпт и URL фото из БД
                     String prompt = tgSession.getCurrentPrompt() != null ? tgSession.getCurrentPrompt() : "";
