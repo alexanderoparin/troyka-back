@@ -364,10 +364,18 @@ docker run -p 8080:8080 \
 src/main/java/ru/oparin/troyka/
 ├── config/          # Конфигурация приложения
 ├── controller/      # REST контроллеры
+│   └── AdminController.java  # Админ-панель
 ├── service/         # Бизнес-логика
-│   └── telegram/    # Telegram Bot сервисы
+│   ├── telegram/    # Telegram Bot сервисы
+│   ├── AdminService.java  # Админ-панель
+│   └── FileCleanupService.java  # Очистка файлов
+├── scheduled/       # Планировщики задач
+│   └── CleanupScheduler.java  # Очистка токенов, платежей, файлов
 ├── repository/      # Репозитории для работы с БД
 ├── model/           # Модели данных (entity, dto)
+│   └── dto/admin/   # DTO для админ-панели
+├── mapper/          # Мапперы данных
+│   └── TelegramMapper.java  # Маппинг Telegram данных
 ├── security/         # Конфигурация безопасности
 ├── exception/       # Обработка исключений
 ├── util/            # Утилиты
