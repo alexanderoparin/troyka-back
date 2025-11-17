@@ -16,6 +16,7 @@ import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.JwtService;
 
 @RequiredArgsConstructor
@@ -24,6 +25,7 @@ import ru.oparin.troyka.service.JwtService;
 public class SecurityConfig {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
     @Bean
     public CorsWebFilter corsFilter() {
@@ -63,6 +65,7 @@ public class SecurityConfig {
                         .pathMatchers("/fal/**").authenticated()
                         .pathMatchers("/users/**").authenticated()
                         .pathMatchers("/api/sessions/**").authenticated()
+                        .pathMatchers("/admin/**").hasRole("ADMIN")
                         .pathMatchers("/payment/**").permitAll()
                         .pathMatchers("/art-styles/**").authenticated()
                         .anyExchange().authenticated()
@@ -117,6 +120,6 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter() {
-        return new JwtAuthenticationFilter(jwtService);
+        return new JwtAuthenticationFilter(jwtService, userRepository);
     }
 }

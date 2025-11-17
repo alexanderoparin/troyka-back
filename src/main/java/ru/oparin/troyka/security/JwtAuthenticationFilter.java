@@ -1,6 +1,8 @@
 package ru.oparin.troyka.security;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.stereotype.Component;
@@ -8,17 +10,22 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.enums.Role;
+import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.JwtService;
 
 import java.util.ArrayList;
+import java.util.List;
 
 @Component
 public class JwtAuthenticationFilter implements WebFilter {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -28,14 +35,24 @@ public class JwtAuthenticationFilter implements WebFilter {
         if (token != null && jwtService.validateToken(token)) {
             String username = jwtService.getUsernameFromToken(token);
 
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(username, null, new ArrayList<>());
+            return userRepository.findByUsername(username)
+                    .map(user -> {
+                        List<GrantedAuthority> authorities = new ArrayList<>();
+                        if (user.getRole() == Role.ADMIN) {
+                            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+                        }
+                        authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+                        
+                        return new UsernamePasswordAuthenticationToken(username, null, authorities);
+                    })
+                    .switchIfEmpty(Mono.just(new UsernamePasswordAuthenticationToken(username, null, new ArrayList<>())))
+                    .flatMap(authentication -> {
+                        SecurityContext securityContext = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+                        securityContext.setAuthentication(authentication);
 
-            SecurityContext securityContext = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
-            securityContext.setAuthentication(authentication);
-
-            return chain.filter(exchange)
-                    .contextWrite(ReactiveSecurityContextHolder.withSecurityContext(Mono.just(securityContext)));
+                        return chain.filter(exchange)
+                                .contextWrite(ReactiveSecurityContextHolder.withSecurityContext(Mono.just(securityContext)));
+                    });
         }
 
         return chain.filter(exchange);
