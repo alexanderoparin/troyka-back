@@ -247,6 +247,14 @@ public class FileService {
                 Resource resource = new UrlResource(file.toUri());
 
                 if (resource.exists() && resource.isReadable()) {
+                    // Логируем размер файла для диагностики
+                    try {
+                        long fileSize = Files.size(file);
+                        log.debug("Размер файла {}: {} байт ({} МБ)", filename, fileSize, fileSize / (1024.0 * 1024.0));
+                    } catch (IOException e) {
+                        log.warn("Не удалось получить размер файла: {}", filename);
+                    }
+
                     String contentType;
                     try {
                         contentType = Files.probeContentType(file);
@@ -258,6 +266,9 @@ public class FileService {
                     return ResponseEntity.ok()
                             .contentType(MediaType.parseMediaType(contentType))
                             .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
+                            // Добавляем заголовки кеширования для ускорения повторных запросов
+                            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600") // Кешируем на 1 час
+                            .header(HttpHeaders.ETAG, "\"" + filename + "-" + Files.getLastModifiedTime(file).toMillis() + "\"")
                             .body(resource);
                 } else {
                     log.warn("Файл {} не найден или недоступен для чтения", filename);
