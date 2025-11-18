@@ -86,11 +86,17 @@ deepinfra:
     model: meta-llama/Meta-Llama-3.1-8B-Instruct
     max-tokens: ${deepinfra_llama_max_tokens:2000}
     temperature: ${deepinfra_llama_temperature:0.7}
-  # Настройки для Gemini (с изображениями)
+  # Настройки для Qwen2.5-VL-32B-Instruct (с изображениями, основная модель)
+  qwen25-vl:
+    model: Qwen/Qwen2.5-VL-32B-Instruct
+    max-tokens: ${deepinfra_qwen25_vl_max_tokens:4092}
+    temperature: ${deepinfra_qwen25_vl_temperature:0.7}
+  # Настройки для Gemini (с изображениями, fallback модель)
   gemini:
     model: google/gemini-2.5-flash
     max-tokens: ${deepinfra_gemini_max_tokens:3000}
     temperature: ${deepinfra_gemini_temperature:0.3}
+
 
 # File storage configuration
 file:

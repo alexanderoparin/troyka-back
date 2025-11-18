@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 /**
  * Сервис для улучшения промптов через DeepInfra API.
  * Использует Llama 3.1 8B Instruct для текстовых промптов (без изображений).
- * Использует Gemini 2.5 Flash для промптов с изображениями.
+ * Для промптов с изображениями: сначала Qwen2.5-VL-32B-Instruct, при ошибках - fallback на Gemini 2.5 Flash.
  */
 @Slf4j
 @Service
@@ -38,7 +38,6 @@ public class PromptEnhancementService {
             "Промпт или изображение были заблокированы фильтром безопасности. " +
             "Попробуйте изменить текст промпта или загрузить другое изображение.";
     private static final String FINISH_REASON_CONTENT_FILTER = "content_filter";
-    private static final String FINISH_REASON_LENGTH = "length";
 
     private final WebClient webClient;
     private final DeepInfraProperties properties;
@@ -56,6 +55,7 @@ public class PromptEnhancementService {
     /**
      * Улучшить промпт пользователя с учетом стиля и опциональных изображений.
      * Использует retry с увеличенным лимитом токенов при нехватке токенов и fallback на оригинальный промпт.
+     * Для промптов с изображениями: сначала пытается Qwen2.5-VL-32B-Instruct, при ошибках - fallback на Gemini.
      *
      * @param userPrompt исходный промпт пользователя
      * @param imageUrls опциональный список URL изображений для анализа
@@ -67,11 +67,36 @@ public class PromptEnhancementService {
         
         // Выбираем модель и параметры в зависимости от наличия изображений
         boolean hasImages = !CollectionUtils.isEmpty(imageUrls);
-        DeepInfraProperties.ModelConfig modelConfig = hasImages 
-                ? properties.getGemini() 
-                : properties.getLlama();
         
-        // Первая попытка с обычным лимитом
+        if (hasImages) {
+            // Для промптов с изображениями: сначала Qwen, при ошибках - fallback на Gemini
+            DeepInfraProperties.ModelConfig primaryModel = properties.getQwen25Vl();
+            DeepInfraProperties.ModelConfig fallbackModel = properties.getGemini();
+            
+            return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, primaryModel, false)
+                    .onErrorResume(error -> {
+                        log.warn("Ошибка при использовании модели {}: {}. Переключаемся на Gemini как fallback.", 
+                                primaryModel.getModel(), error.getMessage());
+                        return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, fallbackModel, true);
+                    });
+        } else {
+            // Для текстовых промптов используем Llama
+            return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, properties.getLlama(), false);
+        }
+    }
+    
+    /**
+     * Улучшить промпт с использованием указанной модели.
+     * 
+     * @param systemPrompt системный промпт
+     * @param userPrompt промпт пользователя
+     * @param imageUrls список URL изображений
+     * @param modelConfig конфигурация модели
+     * @param isFallback флаг, указывающий что это fallback запрос
+     * @return улучшенный промпт
+     */
+    private Mono<String> enhancePromptWithModel(String systemPrompt, String userPrompt, List<String> imageUrls,
+                                                DeepInfraProperties.ModelConfig modelConfig, boolean isFallback) {
         return makeEnhancementRequest(systemPrompt, userPrompt, imageUrls, modelConfig, modelConfig.getMaxTokens())
                 .flatMap(response -> {
                     DeepInfraResponseDTO.Choice firstChoice = response.getChoices().get(0);
@@ -83,36 +108,7 @@ public class PromptEnhancementService {
                         return handleContentFilter(userPrompt, imageUrls);
                     }
                     
-                    // Если промпт пустой из-за нехватки токенов, делаем retry с увеличенным лимитом
-                    if (isPromptEmpty(enhancedPrompt) && FINISH_REASON_LENGTH.equals(finishReason)) {
-                        log.warn("Нехватка токенов при первом запросе (max_tokens={}). Повторяем с увеличенным лимитом (4000)", 
-                                modelConfig.getMaxTokens());
-                        
-                        // Retry с увеличенным лимитом (4000 токенов)
-                        return makeEnhancementRequest(systemPrompt, userPrompt, imageUrls, modelConfig, 4000)
-                                .handle((retryResponse, sink) -> {
-                                    String retryFinishReason = retryResponse.getChoices().get(0).getFinishReason();
-                                    String retryPrompt = extractEnhancedPrompt(retryResponse, true);
-                                    
-                                    // Если content_filter при retry - выбрасываем исключение
-                                    if (FINISH_REASON_CONTENT_FILTER.equals(retryFinishReason)) {
-                                        log.warn("Gemini заблокировал ответ фильтром безопасности при retry.");
-                                        sink.error(new PromptEnhancementException(CONTENT_FILTER_ERROR_MESSAGE, HttpStatus.UNPROCESSABLE_ENTITY));
-                                        return;
-                                    }
-                                    
-                                    // Если после retry все еще пустой, возвращаем оригинальный промпт
-                                    if (isPromptEmpty(retryPrompt)) {
-                                        log.warn("Улучшенный промпт пуст даже после retry с увеличенным лимитом (finish_reason={}). Возвращаем оригинальный промпт.",
-                                                retryFinishReason);
-                                        sink.next(userPrompt);
-                                        return;
-                                    }
-                                    sink.next(retryPrompt);
-                                });
-                    }
-                    
-                    // Если промпт пустой по другой причине, возвращаем оригинальный как fallback
+                    // Если промпт пустой, возвращаем оригинальный как fallback
                     if (isPromptEmpty(enhancedPrompt)) {
                         log.warn("Улучшенный промпт пуст (finish_reason={}). Возвращаем оригинальный промпт как fallback.", finishReason);
                         return Mono.just(userPrompt);
@@ -120,7 +116,14 @@ public class PromptEnhancementService {
                     
                     return Mono.just(enhancedPrompt);
                 })
-                .onErrorMap(this::mapToPromptEnhancementException);
+                .onErrorMap(error -> {
+                    // Если это fallback запрос, не преобразуем ошибку - пусть она пробросится дальше
+                    if (isFallback) {
+                        return error;
+                    }
+                    // Для основного запроса преобразуем ошибку для последующего fallback
+                    return mapToPromptEnhancementException(error);
+                });
     }
     
     /**
@@ -314,7 +317,7 @@ public class PromptEnhancementService {
      * Обработать ситуацию с content_filter - выбрасывает исключение с понятным сообщением.
      */
     private Mono<String> handleContentFilter(String userPrompt, List<String> imageUrls) {
-        log.warn("Gemini заблокировал ответ фильтром безопасности (content_filter). Промпт: '{}', изображений: {}", 
+        log.warn("Модель заблокировала ответ фильтром безопасности (content_filter). Промпт: '{}', изображений: {}", 
                 userPrompt, imageUrls != null ? imageUrls.size() : 0);
         return Mono.error(new PromptEnhancementException(CONTENT_FILTER_ERROR_MESSAGE, HttpStatus.UNPROCESSABLE_ENTITY));
     }

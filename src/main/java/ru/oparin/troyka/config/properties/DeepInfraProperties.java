@@ -19,6 +19,8 @@ public class DeepInfraProperties {
 
     private ModelConfig llama;
 
+    private ModelConfig qwen25Vl;
+
     private ModelConfig gemini;
 
     @Getter
