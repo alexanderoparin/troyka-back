@@ -25,6 +25,6 @@ public class AdminStatsDTO {
     private Long paidPaymentsCount;
     private Long pendingPaymentsCount;
     private Long failedPaymentsCount;
-    private BigDecimal averagePaymentAmount;
+    private BigDecimal yearRevenue;
 }
 

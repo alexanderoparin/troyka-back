@@ -94,6 +94,7 @@ public class AdminService {
         LocalDateTime todayStart = now.with(LocalTime.MIN);
         LocalDateTime weekStart = now.minusDays(7).with(LocalTime.MIN);
         LocalDateTime monthStart = now.minusDays(30).with(LocalTime.MIN);
+        LocalDateTime yearStart = now.minusYears(1).with(LocalTime.MIN);
 
         Mono<Long> totalUsersMono = withRetry(userRepository.count());
         
@@ -107,25 +108,25 @@ public class AdminService {
         
         Mono<BigDecimal> monthRevenueMono = calculateRevenueSince(monthStart);
         
+        Mono<BigDecimal> yearRevenueMono = calculateRevenueSince(yearStart);
+        
         Mono<Long> paidCountMono = paymentRepository.findByStatus(PaymentStatus.PAID).count();
         
         Mono<Long> pendingCountMono = paymentRepository.findByStatus(PaymentStatus.PENDING).count();
         
         Mono<Long> failedCountMono = paymentRepository.findByStatus(PaymentStatus.FAILED).count();
-        
-        Mono<BigDecimal> avgPaymentMono = calculateAveragePayment();
 
-        Mono<Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long, Long>> firstZip = 
+        Mono<Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long>> firstZip = 
                 Mono.zip(totalUsersMono, totalPaymentsMono, totalRevenueMono, todayRevenueMono, 
-                        weekRevenueMono, monthRevenueMono, paidCountMono, pendingCountMono);
+                        weekRevenueMono, monthRevenueMono, yearRevenueMono, paidCountMono);
         
-        Mono<Tuple2<Long, BigDecimal>> secondZip = 
-                Mono.zip(failedCountMono, avgPaymentMono);
+        Mono<Tuple2<Long, Long>> secondZip = 
+                Mono.zip(pendingCountMono, failedCountMono);
 
         return Mono.zip(firstZip, secondZip)
                 .map(tuple -> {
-                    Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long, Long> first = tuple.getT1();
-                    Tuple2<Long, BigDecimal> second = tuple.getT2();
+                    Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long> first = tuple.getT1();
+                    Tuple2<Long, Long> second = tuple.getT2();
                     
                     return AdminStatsDTO.builder()
                             .totalUsers(first.getT1())
@@ -134,10 +135,10 @@ public class AdminService {
                             .todayRevenue(first.getT4())
                             .weekRevenue(first.getT5())
                             .monthRevenue(first.getT6())
-                            .paidPaymentsCount(first.getT7())
-                            .pendingPaymentsCount(first.getT8())
-                            .failedPaymentsCount(second.getT1())
-                            .averagePaymentAmount(second.getT2())
+                            .yearRevenue(first.getT7())
+                            .paidPaymentsCount(first.getT8())
+                            .pendingPaymentsCount(second.getT1())
+                            .failedPaymentsCount(second.getT2())
                             .build();
                 });
     }
@@ -157,19 +158,6 @@ public class AdminService {
                 .switchIfEmpty(Mono.just(BigDecimal.ZERO));
     }
 
-    private Mono<BigDecimal> calculateAveragePayment() {
-        return paymentRepository.findByStatus(PaymentStatus.PAID)
-                .map(Payment::getAmount)
-                .collectList()
-                .map(amounts -> {
-                    if (amounts.isEmpty()) {
-                        return BigDecimal.ZERO;
-                    }
-                    BigDecimal sum = amounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-                    return sum.divide(BigDecimal.valueOf(amounts.size()), 2, java.math.RoundingMode.HALF_UP);
-                })
-                .switchIfEmpty(Mono.just(BigDecimal.ZERO));
-    }
 
 }
 

@@ -219,8 +219,26 @@ public class SessionService {
     }
 
     /**
+     * Создать новую дефолтную сессию с автоматическим названием.
+     * Название будет установлено как "Сессия {id}" после сохранения.
+     *
+     * @param userId идентификатор пользователя
+     * @return созданная сессия
+     */
+    private Mono<Session> createDefaultSession(Long userId) {
+        Session newSession = sessionMapper.createSessionEntity(userId, null);
+        return sessionRepository.save(newSession)
+                .flatMap(savedSession -> {
+                    String sessionNameWithId = "Сессия " + savedSession.getId();
+                    savedSession.setName(sessionNameWithId);
+                    return sessionRepository.save(savedSession);
+                });
+    }
+
+    /**
      * Получить сессию по ID или создать/получить дефолтную сессию.
      * Если sessionId указан, возвращает существующую сессию.
+     * Если сессия не найдена, создает новую дефолтную сессию.
      * Если sessionId null, возвращает или создает дефолтную сессию пользователя.
      *
      * @param sessionId идентификатор сессии (может быть null)
@@ -230,10 +248,19 @@ public class SessionService {
     public Mono<Session> getOrCreateSession(Long sessionId, Long userId) {
         if (sessionId != null) {
             log.info("Получение сессии {} для пользователя {}", sessionId, userId);
-            return getSessionMonoOrThrow(sessionId, userId);
+            return sessionRepository.findByIdAndUserId(sessionId, userId)
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.warn("Сессия {} не найдена для пользователя {}, создаем новую дефолтную сессию", sessionId, userId);
+                        return createDefaultSession(userId);
+                    }));
         } else {
-            return getOrCreateDefaultSession(userId)
-                    .map(sessionMapper::toSessionEntity);
+            log.info("Получение дефолтной сессии для пользователя {}", userId);
+            return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId)
+                    .next()
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.info("У пользователя {} нет сессий, создаем дефолтную", userId);
+                        return createDefaultSession(userId);
+                    }));
         }
     }
 
