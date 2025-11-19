@@ -73,7 +73,6 @@ fal:
     model:
       create: nano-banana
       edit: nano-banana/edit
-    timeout: 30000
 
 # DeepInfra API configuration
 deepinfra:

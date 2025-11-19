@@ -17,8 +17,6 @@ public class FalAiProperties {
 
     private Model model;
 
-    private Integer timeout;
-
     @Getter
     @Setter
     @NoArgsConstructor
