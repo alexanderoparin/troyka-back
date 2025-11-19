@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 /**
  * Сервис для улучшения промптов через DeepInfra API.
  * Использует Llama 3.1 8B Instruct для текстовых промптов (без изображений).
- * Для промптов с изображениями: сначала Qwen2.5-VL-32B-Instruct, при ошибках - fallback на Gemini 2.5 Flash.
+ * Для промптов с изображениями: сначала Gemini 2.5 Flash, при ошибках - fallback на Qwen2.5-VL-32B-Instruct.
  */
 @Slf4j
 @Service
@@ -55,7 +55,7 @@ public class PromptEnhancementService {
     /**
      * Улучшить промпт пользователя с учетом стиля и опциональных изображений.
      * Использует retry с увеличенным лимитом токенов при нехватке токенов и fallback на оригинальный промпт.
-     * Для промптов с изображениями: сначала пытается Qwen2.5-VL-32B-Instruct, при ошибках - fallback на Gemini.
+     * Для промптов с изображениями: сначала пытается Gemini 2.5 Flash, при ошибках - fallback на Qwen2.5-VL-32B-Instruct.
      *
      * @param userPrompt исходный промпт пользователя
      * @param imageUrls опциональный список URL изображений для анализа
@@ -69,13 +69,13 @@ public class PromptEnhancementService {
         boolean hasImages = !CollectionUtils.isEmpty(imageUrls);
         
         if (hasImages) {
-            // Для промптов с изображениями: сначала Qwen, при ошибках - fallback на Gemini
-            DeepInfraProperties.ModelConfig primaryModel = properties.getQwen25Vl();
-            DeepInfraProperties.ModelConfig fallbackModel = properties.getGemini();
+            // Для промптов с изображениями: сначала Gemini, при ошибках - fallback на Qwen
+            DeepInfraProperties.ModelConfig primaryModel = properties.getGemini();
+            DeepInfraProperties.ModelConfig fallbackModel = properties.getQwen25Vl();
             
             return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, primaryModel, false)
                     .onErrorResume(error -> {
-                        log.warn("Ошибка при использовании модели {}: {}. Переключаемся на Gemini как fallback.", 
+                        log.warn("Ошибка при использовании модели {}: {}. Переключаемся на Qwen как fallback.", 
                                 primaryModel.getModel(), error.getMessage());
                         return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, fallbackModel, true);
                     });
