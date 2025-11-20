@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import ru.oparin.troyka.config.properties.FalAiProperties;
 import ru.oparin.troyka.model.enums.PaymentStatus;
 import ru.oparin.troyka.repository.EmailVerificationTokenRepository;
 import ru.oparin.troyka.repository.PasswordResetTokenRepository;
 import ru.oparin.troyka.repository.PaymentRepository;
+import ru.oparin.troyka.service.FalAIHealthCheckService;
 import ru.oparin.troyka.service.FileCleanupService;
 
 import java.time.LocalDateTime;
@@ -24,6 +26,8 @@ public class CleanupScheduler {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PaymentRepository paymentRepository;
     private final FileCleanupService fileCleanupService;
+    private final FalAIHealthCheckService falAIHealthCheckService;
+    private final FalAiProperties falAiProperties;
 
     /**
      * Очистка протухших токенов каждый день в 02:00
@@ -87,6 +91,25 @@ public class CleanupScheduler {
                     .subscribe();
         } catch (Exception e) {
             log.error("Ошибка при очистке старых файлов", e);
+        }
+    }
+
+    /**
+     * Проверка доступности FAL AI API.
+     * Выполняется по расписанию каждые 5 минут.
+     */
+    @Scheduled(fixedRateString = "${fal.ai.health-check.interval-ms:300000}")
+    public void checkFalAIHealth() {
+        FalAiProperties.HealthCheck healthCheck = falAiProperties.getHealthCheck();
+        if (healthCheck == null || !healthCheck.isEnabled()) {
+            log.debug("Проверка здоровья FAL AI отключена");
+            return;
+        }
+        
+        try {
+            falAIHealthCheckService.checkFalAIHealth();
+        } catch (Exception e) {
+            log.error("Ошибка при проверке здоровья FAL AI", e);
         }
     }
 }

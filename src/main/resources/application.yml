@@ -73,6 +73,12 @@ fal:
     model:
       create: nano-banana
       edit: nano-banana/edit
+    health-check:
+      enabled: ${FAL_HEALTH_CHECK_ENABLED:true}
+      interval-ms: ${FAL_HEALTH_CHECK_INTERVAL_MS:300000}  # 5 минут
+      retry-count: ${FAL_HEALTH_CHECK_RETRY_COUNT:3}
+      retry-delay-ms: ${FAL_HEALTH_CHECK_RETRY_DELAY_MS:2000}
+      timeout-ms: ${FAL_HEALTH_CHECK_TIMEOUT_MS:5000}
 
 # DeepInfra API configuration
 deepinfra:

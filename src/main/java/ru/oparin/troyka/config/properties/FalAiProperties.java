@@ -17,6 +17,8 @@ public class FalAiProperties {
 
     private Model model;
 
+    private HealthCheck healthCheck;
+
     @Getter
     @Setter
     @NoArgsConstructor
@@ -33,5 +35,17 @@ public class FalAiProperties {
     public static class Model  {
         private String create;
         private String edit;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class HealthCheck {
+        private boolean enabled;
+        private long intervalMs;
+        private int retryCount;
+        private long retryDelayMs;
+        private long timeoutMs;
     }
 }
