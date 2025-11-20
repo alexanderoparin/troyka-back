@@ -33,12 +33,15 @@ public class AuthService {
     private long expiration;
 
     public Mono<AuthResponse> register(RegisterRequest request) {
-        return userService.existsByUsernameOrEmail(request.getUsername(), request.getEmail())
+        String trimmedUsername = request.getUsername().trim();
+        String trimmedEmail = request.getEmail().trim();
+        
+        return userService.existsByUsernameOrEmail(trimmedUsername, trimmedEmail)
                 .then(Mono.defer(() -> {
 
                     User user = User.builder()
-                            .username(request.getUsername())
-                            .email(request.getEmail())
+                            .username(trimmedUsername)
+                            .email(trimmedEmail)
                             .password(passwordEncoder.encode(request.getPassword()))
                             .role(Role.USER)
                             .build();
@@ -65,7 +68,8 @@ public class AuthService {
     }
 
     public Mono<AuthResponse> login(LoginRequest request) {
-        return userService.findByUsernameOrThrow(request.getUsername())
+        String trimmedUsername = request.getUsername().trim();
+        return userService.findByUsernameOrThrow(trimmedUsername)
                 .flatMap(user -> {
                     if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
                         return Mono.error(new AuthException(

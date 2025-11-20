@@ -32,7 +32,7 @@ public class AuthController {
     @Operation(summary = "Регистрация нового пользователя",
             description = "Создает нового пользователя в системе и возвращает JWT токен")
     @PostMapping("/register")
-    public Mono<ResponseEntity<AuthResponse>> register(@RequestBody RegisterRequest request) {
+    public Mono<ResponseEntity<AuthResponse>> register(@Valid @RequestBody RegisterRequest request) {
         log.info("Получен запрос на регистрацию нового пользователя: {}", request);
         return authService.register(request)
                 .map(ResponseEntity::ok);
@@ -41,7 +41,7 @@ public class AuthController {
     @Operation(summary = "Вход в систему",
             description = "Аутентификация пользователя и получение JWT токена")
     @PostMapping("/login")
-    public Mono<ResponseEntity<AuthResponse>> login(@RequestBody LoginRequest request) {
+    public Mono<ResponseEntity<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         log.info("Получен запрос на авторизацию пользователя с логином: {}", request.getUsername());
         return authService.login(request)
                 .map(ResponseEntity::ok);
