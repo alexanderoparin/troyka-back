@@ -64,19 +64,6 @@ public class SystemStatusService {
                         .build());
     }
 
-    /**
-     * Получить дефолтное сообщение для статуса.
-     *
-     * @param status статус системы
-     * @return дефолтное сообщение или null для ACTIVE
-     */
-    public static String getDefaultMessage(SystemStatus status) {
-        return switch (status) {
-            case DEGRADED -> "Система работает с ограничениями, возможны задержки";
-            case MAINTENANCE -> "Серьезные проблемы с инфраструктурой, сервис может быть недоступен";
-            case ACTIVE -> null;
-        };
-    }
 
     /**
      * Обновить статус системы.
@@ -110,7 +97,7 @@ public class SystemStatusService {
                     ? null 
                     : (message != null && !message.trim().isEmpty() 
                             ? message.trim() 
-                            : getDefaultMessage(status));
+                            : status.getDefaultMessage());
             
             SystemStatusHistory history = SystemStatusHistory.builder()
                     .status(status)

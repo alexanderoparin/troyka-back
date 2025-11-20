@@ -78,7 +78,7 @@ public class FalAIHealthCheckService {
                                 log.warn("FAL AI API недоступен после {} попыток, устанавливаем статус DEGRADED", healthCheckProperties.getRetryCount());
                                 systemStatusService.updateStatus(
                                         SystemStatus.DEGRADED,
-                                        SystemStatusService.getDefaultMessage(SystemStatus.DEGRADED),
+                                        SystemStatus.DEGRADED.getDefaultMessage(),
                                         true
                                 ).subscribe();
                             }
@@ -87,7 +87,7 @@ public class FalAIHealthCheckService {
                             log.error("Ошибка при проверке доступности FAL AI API", error);
                             systemStatusService.updateStatus(
                                     SystemStatus.DEGRADED,
-                                    SystemStatusService.getDefaultMessage(SystemStatus.DEGRADED),
+                                    SystemStatus.DEGRADED.getDefaultMessage(),
                                     true
                             ).subscribe();
                         }
