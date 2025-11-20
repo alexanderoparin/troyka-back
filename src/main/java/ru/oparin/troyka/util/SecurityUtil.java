@@ -59,4 +59,35 @@ public class SecurityUtil {
                     return Mono.just(user);
                 });
     }
+
+    /**
+     * Проверить доступ пользователя к студии.
+     * Пользователь может использовать студию, если:
+     * - email подтвержден (emailVerified = true), ИЛИ
+     * - привязан Telegram (telegramId != null)
+     * 
+     * @param userService сервис для работы с пользователями
+     * @return Mono с ID пользователя, если доступ разрешен
+     * @throws AuthException если доступ запрещен
+     */
+    public static Mono<Long> checkStudioAccess(UserService userService) {
+        return getCurrentUsername()
+                .flatMap(userService::findByUsernameOrThrow)
+                .flatMap(user -> {
+                    Boolean emailVerified = user.getEmailVerified();
+                    Long telegramId = user.getTelegramId();
+                    
+                    // Доступ разрешен, если email подтвержден ИЛИ привязан Telegram
+                    boolean hasAccess = (emailVerified != null && emailVerified) || telegramId != null;
+                    
+                    if (!hasAccess) {
+                        return Mono.error(new AuthException(
+                                HttpStatus.FORBIDDEN,
+                                "Для использования студии необходимо подтвердить email или привязать Telegram"
+                        ));
+                    }
+                    
+                    return Mono.just(user.getId());
+                });
+    }
 }

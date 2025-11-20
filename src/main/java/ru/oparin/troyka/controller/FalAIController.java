@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
 import ru.oparin.troyka.service.FalAIService;
@@ -27,10 +28,17 @@ public class FalAIController {
             description = "Генерация изображения на основе промпта, если заполнено поле imageUrls, то это редактирование переданных изображений")
     @PostMapping("/image/run/create")
     public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .doOnNext(userId -> log.info("Получен запрос на создание изображения от пользователя с ID: {}", userId))
                 .flatMap(userId -> falAIService.getImageResponse(rq, userId))
-                .map(ResponseEntity::ok);
+                .map(ResponseEntity::ok)
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при создании изображения: {}", error.getMessage());
+                    } else {
+                        log.error("Ошибка при создании изображения", error);
+                    }
+                });
     }
 
     @Operation(summary = "Получение баланса пользователя",

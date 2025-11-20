@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.*;
 import ru.oparin.troyka.service.SessionService;
 import ru.oparin.troyka.service.UserService;
@@ -42,10 +43,16 @@ public class SessionController {
     @Operation(summary = "Получить дефолтную сессию", 
                description = "Возвращает или создает дефолтную сессию пользователя")
     public Mono<ResponseEntity<SessionDTO>> getDefaultSession() {
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(sessionService::getOrCreateDefaultSession)
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при получении дефолтной сессии", error));
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при получении дефолтной сессии: {}", error.getMessage());
+                    } else {
+                        log.error("Ошибка при получении дефолтной сессии", error);
+                    }
+                });
     }
 
     /**
@@ -65,10 +72,16 @@ public class SessionController {
             @Parameter(description = "Размер страницы") 
             @RequestParam(defaultValue = "10") int size) {
         
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.getSessionsList(userId, page, size))
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при получении списка сессий", error));
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при получении списка сессий: {}", error.getMessage());
+                    } else {
+                        log.error("Ошибка при получении списка сессий", error);
+                    }
+                });
     }
 
     /**
@@ -84,10 +97,16 @@ public class SessionController {
     public Mono<ResponseEntity<CreateSessionResponseDTO>> createSession(
             @Valid @RequestBody CreateSessionRequestDTO request) {
         
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.createSession(userId, request.getName()))
                 .map(sessionDTO -> ResponseEntity.status(HttpStatus.CREATED).body(sessionDTO))
-                .doOnError(error -> log.error("Ошибка при создании сессии", error));
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при создании сессии: {}", error.getMessage());
+                    } else {
+                        log.error("Ошибка при создании сессии", error);
+                    }
+                });
     }
 
     /**
@@ -110,10 +129,16 @@ public class SessionController {
             @Parameter(description = "Размер страницы истории") 
             @RequestParam(defaultValue = "20") int size) {
         
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.getSessionDetail(sessionId, userId, page, size))
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при получении деталей сессии {}", sessionId, error));
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при получении деталей сессии {}: {}", sessionId, error.getMessage());
+                    } else {
+                        log.error("Ошибка при получении деталей сессии {}", sessionId, error);
+                    }
+                });
     }
 
     /**
@@ -132,10 +157,16 @@ public class SessionController {
             @PathVariable Long sessionId,
             @Valid @RequestBody RenameSessionRequestDTO request) {
         
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.renameSession(sessionId, userId, request.getName()))
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при переименовании сессии {}", sessionId, error));
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при переименовании сессии {}: {}", sessionId, error.getMessage());
+                    } else {
+                        log.error("Ошибка при переименовании сессии {}", sessionId, error);
+                    }
+                });
     }
 
     /**
@@ -152,9 +183,15 @@ public class SessionController {
             @Parameter(description = "Идентификатор сессии") 
             @PathVariable Long sessionId) {
         
-        return SecurityUtil.getCurrentUserId(userService)
+        return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.deleteSession(sessionId, userId))
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при удалении сессии {}", sessionId, error));
+                .doOnError(error -> {
+                    if (error instanceof AuthException) {
+                        log.error("Ошибка при удалении сессии {}: {}", sessionId, error.getMessage());
+                    } else {
+                        log.error("Ошибка при удалении сессии {}", sessionId, error);
+                    }
+                });
     }
 }

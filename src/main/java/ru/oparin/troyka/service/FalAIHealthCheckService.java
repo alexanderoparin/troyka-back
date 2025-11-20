@@ -49,14 +49,12 @@ public class FalAIHealthCheckService {
             log.debug("Проверка здоровья FAL AI отключена");
             return;
         }
-
-        log.debug("Начало проверки доступности FAL AI API");
         
         checkFalAIWithRetries()
                 .subscribe(
                         isHealthy -> {
                             if (isHealthy) {
-                                log.debug("FAL AI API доступен, проверяем текущий статус");
+                                log.debug("Результат проверки по расписанию - FAL AI API доступен");
                                 // Если система была в проблемном состоянии, проверяем, нужно ли вернуть ACTIVE
                                 systemStatusService.getCurrentStatusWithMetadata()
                                         .flatMap(currentStatus -> {
@@ -119,31 +117,19 @@ public class FalAIHealthCheckService {
      * @return true, если API доступен, false - если недоступен
      */
     private Mono<Boolean> checkFalAIHealthOnce() {
-        // Используем HEAD запрос к базовому URL для проверки доступности
-        // Это легче, чем делать полный GET запрос
         return webClient.head()
                 .uri("/")
                 .retrieve()
                 .toBodilessEntity()
                 .timeout(Duration.ofMillis(healthCheckProperties.getTimeoutMs()))
-                .map(response -> {
-                    log.debug("FAL AI API доступен, статус: {}", response.getStatusCode());
-                    return true;
-                })
+                .map(response -> true)
                 .onErrorResume(WebClientRequestException.class, e -> {
                     log.debug("Ошибка подключения к FAL AI API: {}", e.getMessage());
                     return Mono.just(false);
                 })
-                .onErrorResume(WebClientResponseException.class, e -> {
-                    // Если сервер ответил (даже с ошибкой), значит он доступен
-                    // 401/403 - сервер работает, но нужна авторизация (это нормально)
-                    // 404 - может быть нормально, если эндпоинт не существует
-                    // 5XX - проблемы, но сервер отвечает
-                    log.debug("FAL AI API ответил с кодом: {}", e.getStatusCode());
-                    // Считаем доступным, если получили любой ответ от сервера
-                    return Mono.just(e.getStatusCode().is2xxSuccessful() || 
-                                    e.getStatusCode().is4xxClientError());
-                })
+                .onErrorResume(WebClientResponseException.class, e ->
+                        Mono.just(e.getStatusCode().is2xxSuccessful() ||
+                                e.getStatusCode().is4xxClientError()))
                 .onErrorResume(Exception.class, e -> {
                     log.debug("Неожиданная ошибка при проверке FAL AI API: {}", e.getMessage());
                     return Mono.just(false);

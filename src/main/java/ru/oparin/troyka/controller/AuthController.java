@@ -99,6 +99,28 @@ public class AuthController {
                 });
     }
 
+    @Operation(summary = "Проверка и автоматическая отправка письма подтверждения",
+            description = "Проверяет наличие активного токена и отправляет письмо, если нужно (токена нет или он старше часа)")
+    @PostMapping("/check-and-send-verification")
+    public Mono<ResponseEntity<MessageResponse>> checkAndSendVerificationEmail() {
+        return SecurityUtil.getCurrentUsername()
+                .flatMap(userService::findByUsernameOrThrow)
+                .flatMap(user -> {
+                    if (user.getEmailVerified() != null && user.getEmailVerified()) {
+                        return Mono.just(ResponseEntity.ok(new MessageResponse("Email уже подтвержден")));
+                    }
+                    return emailVerificationService.checkAndSendVerificationEmailIfNeeded(user)
+                            .map(wasSent -> wasSent 
+                                    ? new MessageResponse("Письмо подтверждения отправлено на ваш email")
+                                    : new MessageResponse("Письмо уже было отправлено недавно"))
+                            .map(ResponseEntity::ok);
+                })
+                .onErrorResume(e -> {
+                    log.error("Ошибка при проверке и отправке письма подтверждения", e);
+                    return Mono.just(ResponseEntity.badRequest().body(new MessageResponse("Ошибка при отправке письма")));
+                });
+    }
+
     @Operation(summary = "Вход через Telegram",
             description = "Аутентификация пользователя через Telegram Login Widget")
     @PostMapping("/telegram/login")

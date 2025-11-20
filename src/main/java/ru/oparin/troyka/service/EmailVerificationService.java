@@ -30,6 +30,26 @@ public class EmailVerificationService {
     private String frontendUrl;
 
     public Mono<Void> sendVerificationEmail(User user) {
+        // Проверяем, не был ли создан токен совсем недавно (в последние 5 секунд) другим запросом
+        return tokenRepository.findLatestByUserId(user.getId())
+                .flatMap(latestToken -> {
+                    LocalDateTime fiveSecondsAgo = LocalDateTime.now().minusSeconds(5);
+                    // Если токен был создан менее 5 секунд назад, не создаем новый
+                    if (latestToken.getCreatedAt().isAfter(fiveSecondsAgo)) {
+                        log.info("Для пользователя {} уже есть очень свежий токен (создан {}), не создаем дубликат", 
+                                user.getUsername(), latestToken.getCreatedAt());
+                        return Mono.empty();
+                    }
+                    // Токен старый или его нет, создаем новый
+                    return createAndSendToken(user);
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    // Токена нет, создаем новый
+                    return createAndSendToken(user);
+                }));
+    }
+
+    private Mono<Void> createAndSendToken(User user) {
         // Создаем токен подтверждения
         String token = generateVerificationToken();
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(24); // Токен действителен 24 часа
@@ -127,5 +147,42 @@ public class EmailVerificationService {
 
     private String generateVerificationToken() {
         return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /**
+     * Проверяет наличие активного токена для пользователя и отправляет письмо, если нужно.
+     * Письмо отправляется автоматически, если:
+     * - токена нет в БД, ИЛИ
+     * - последний токен был создан более часа назад
+     * 
+     * @param user пользователь
+     * @return Mono<Boolean> true если письмо было отправлено, false если уже есть свежий токен
+     */
+    public Mono<Boolean> checkAndSendVerificationEmailIfNeeded(User user) {
+        return tokenRepository.findLatestByUserId(user.getId())
+                .flatMap(latestToken -> {
+                    LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
+                    // Если токен создан менее часа назад, не отправляем письмо
+                    if (latestToken.getCreatedAt().isAfter(oneHourAgo)) {
+                        log.info("Для пользователя {} уже есть свежий токен (создан {}), письмо не отправляем", 
+                                user.getUsername(), latestToken.getCreatedAt());
+                        return Mono.just(false);
+                    }
+                    // Токен старый, отправляем новое письмо
+                    log.info("Для пользователя {} найден старый токен (создан {}), отправляем новое письмо", 
+                            user.getUsername(), latestToken.getCreatedAt());
+                    return sendVerificationEmail(user)
+                            .then(Mono.just(true))
+                            .doOnSuccess(v -> log.info("Письмо подтверждения отправлено пользователю: {} <{}>", 
+                                    user.getUsername(), user.getEmail()));
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    // Токена нет, отправляем письмо
+                    log.info("Для пользователя {} нет токена, отправляем письмо подтверждения", user.getUsername());
+                    return sendVerificationEmail(user)
+                            .then(Mono.just(true))
+                            .doOnSuccess(v -> log.info("Письмо подтверждения отправлено пользователю: {} <{}>", 
+                                    user.getUsername(), user.getEmail()));
+                }));
     }
 }

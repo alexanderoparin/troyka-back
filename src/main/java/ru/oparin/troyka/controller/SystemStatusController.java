@@ -31,8 +31,7 @@ public class SystemStatusController {
     @GetMapping("/status")
     public Mono<ResponseEntity<SystemStatusResponse>> getStatus() {
         return systemStatusService.getCurrentStatus()
-                .map(ResponseEntity::ok)
-                .doOnNext(status -> log.debug("Запрос статуса системы: {}", status.getBody()));
+                .map(ResponseEntity::ok);
     }
 }
 

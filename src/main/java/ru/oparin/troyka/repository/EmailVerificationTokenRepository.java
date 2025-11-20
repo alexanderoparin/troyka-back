@@ -16,4 +16,7 @@ public interface EmailVerificationTokenRepository extends ReactiveCrudRepository
     
     @Query("DELETE FROM email_verification_token WHERE expires_at < :now")
     Mono<Long> deleteByExpiresAtBefore(LocalDateTime now);
+
+    @Query("SELECT * FROM email_verification_token WHERE user_id = :userId ORDER BY created_at DESC LIMIT 1")
+    Mono<EmailVerificationToken> findLatestByUserId(Long userId);
 }
