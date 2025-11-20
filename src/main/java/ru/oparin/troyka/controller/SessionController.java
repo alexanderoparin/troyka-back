@@ -47,9 +47,7 @@ public class SessionController {
                 .flatMap(sessionService::getOrCreateDefaultSession)
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при получении дефолтной сессии: {}", error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при получении дефолтной сессии", error);
                     }
                 });
@@ -76,9 +74,7 @@ public class SessionController {
                 .flatMap(userId -> sessionService.getSessionsList(userId, page, size))
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при получении списка сессий: {}", error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при получении списка сессий", error);
                     }
                 });
@@ -101,9 +97,7 @@ public class SessionController {
                 .flatMap(userId -> sessionService.createSession(userId, request.getName()))
                 .map(sessionDTO -> ResponseEntity.status(HttpStatus.CREATED).body(sessionDTO))
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при создании сессии: {}", error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при создании сессии", error);
                     }
                 });
@@ -133,9 +127,7 @@ public class SessionController {
                 .flatMap(userId -> sessionService.getSessionDetail(sessionId, userId, page, size))
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при получении деталей сессии {}: {}", sessionId, error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при получении деталей сессии {}", sessionId, error);
                     }
                 });
@@ -161,9 +153,7 @@ public class SessionController {
                 .flatMap(userId -> sessionService.renameSession(sessionId, userId, request.getName()))
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при переименовании сессии {}: {}", sessionId, error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при переименовании сессии {}", sessionId, error);
                     }
                 });
@@ -187,9 +177,7 @@ public class SessionController {
                 .flatMap(userId -> sessionService.deleteSession(sessionId, userId))
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при удалении сессии {}: {}", sessionId, error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при удалении сессии {}", sessionId, error);
                     }
                 });

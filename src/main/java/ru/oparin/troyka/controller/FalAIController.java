@@ -33,9 +33,7 @@ public class FalAIController {
                 .flatMap(userId -> falAIService.getImageResponse(rq, userId))
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
-                    if (error instanceof AuthException) {
-                        log.error("Ошибка при создании изображения: {}", error.getMessage());
-                    } else {
+                    if (!(error instanceof AuthException)) {
                         log.error("Ошибка при создании изображения", error);
                     }
                 });
