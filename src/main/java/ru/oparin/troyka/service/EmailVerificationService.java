@@ -172,17 +172,13 @@ public class EmailVerificationService {
                     log.info("Для пользователя {} найден старый токен (создан {}), отправляем новое письмо", 
                             user.getUsername(), latestToken.getCreatedAt());
                     return sendVerificationEmail(user)
-                            .then(Mono.just(true))
-                            .doOnSuccess(v -> log.info("Письмо подтверждения отправлено пользователю: {} <{}>", 
-                                    user.getUsername(), user.getEmail()));
+                            .then(Mono.just(true));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Токена нет, отправляем письмо
                     log.info("Для пользователя {} нет токена, отправляем письмо подтверждения", user.getUsername());
                     return sendVerificationEmail(user)
-                            .then(Mono.just(true))
-                            .doOnSuccess(v -> log.info("Письмо подтверждения отправлено пользователю: {} <{}>", 
-                                    user.getUsername(), user.getEmail()));
+                            .then(Mono.just(true));
                 }));
     }
 }
