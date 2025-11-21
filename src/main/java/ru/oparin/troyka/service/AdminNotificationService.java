@@ -15,6 +15,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.enums.Role;
+import ru.oparin.troyka.service.telegram.TelegramBotSessionService;
+import ru.oparin.troyka.service.telegram.TelegramMessageService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -30,6 +32,8 @@ public class AdminNotificationService {
 
     private final JavaMailSender mailSender;
     private final R2dbcEntityTemplate r2dbcEntityTemplate;
+    private final TelegramMessageService telegramMessageService;
+    private final TelegramBotSessionService telegramBotSessionService;
 
     @Value("${app.email.from:noreply@24reshai.ru}")
     private String fromEmail;
@@ -70,21 +74,28 @@ public class AdminNotificationService {
 
             // Получаем список всех администраторов
             return getAdminUsers()
-                    .filter(admin -> admin.getEmail() != null && !admin.getEmail().trim().isEmpty())
                     .collectList()
                     .flatMap(admins -> {
                         if (admins.isEmpty()) {
-                            log.warn("Не найдено администраторов с заполненным email для отправки уведомления о балансе Fal.ai");
+                            log.warn("Не найдено администраторов для отправки уведомления о балансе Fal.ai");
                             return Mono.empty();
                         }
 
-                        // Отправляем письмо каждому администратору
+                        // Отправляем письмо и Telegram уведомление каждому администратору
+                        // Email отправляется только тем, у кого заполнен email
+                        // Telegram отправляется только тем, у кого есть telegramId
                         return Flux.fromIterable(admins)
-                                .flatMap(admin -> sendBalanceNotificationEmail(admin, errorMessage))
+                                .flatMap(admin -> {
+                                    Mono<Void> emailMono = (admin.getEmail() != null && !admin.getEmail().trim().isEmpty())
+                                            ? sendBalanceNotificationEmail(admin, errorMessage)
+                                            : Mono.empty();
+                                    Mono<Void> telegramMono = sendBalanceNotificationTelegram(admin, errorMessage);
+                                    return Mono.when(emailMono, telegramMono);
+                                })
                                 .then(Mono.fromRunnable(() -> {
                                     // Сохраняем время отправки в кэш
                                     lastNotificationTime.put(FAL_BALANCE_EXHAUSTED_KEY, LocalDateTime.now());
-                                    log.info("Уведомление о балансе Fal.ai отправлено {} администраторам", admins.size());
+                                    log.info("Уведомление о балансе Fal.ai отправлено {} администраторам (email и/или Telegram)", admins.size());
                                 }));
                     });
         })
@@ -124,6 +135,64 @@ public class AdminNotificationService {
                 log.error("Ошибка при отправке уведомления администратору {}: {}", admin.getEmail(), e.getMessage(), e);
             }
         });
+    }
+
+    /**
+     * Отправить уведомление администратору в Telegram о проблеме с балансом Fal.ai.
+     *
+     * @param admin администратор, которому отправляется уведомление
+     * @param errorMessage сообщение об ошибке от Fal.ai
+     */
+    private Mono<Void> sendBalanceNotificationTelegram(User admin, String errorMessage) {
+        // Проверяем, есть ли у админа telegramId
+        if (admin.getTelegramId() == null) {
+            log.debug("У администратора {} нет telegramId, пропускаем отправку Telegram уведомления", admin.getUsername());
+            return Mono.empty();
+        }
+
+        // Получаем chatId из TelegramBotSession
+        // Отправляем только если админ уже начинал диалог с ботом (есть сессия)
+        // Это гарантирует, что бот может отправить сообщение (не будет ошибки "bot can't initiate conversation")
+        return telegramBotSessionService.getTelegramBotSessionEntityByUserId(admin.getId())
+                .flatMap(telegramBotSession -> {
+                    Long chatId = telegramBotSession.getChatId();
+                    String telegramMessage = buildTelegramMessage(errorMessage);
+                    return telegramMessageService.sendMessage(chatId, telegramMessage)
+                            .doOnSuccess(v -> log.info("Telegram уведомление о балансе Fal.ai отправлено администратору {} (chatId: {})", 
+                                    admin.getUsername(), chatId))
+                            .onErrorResume(e -> {
+                                log.warn("Ошибка при отправке Telegram уведомления администратору {} (chatId: {}): {}", 
+                                        admin.getUsername(), chatId, e.getMessage());
+                                return Mono.empty(); // Не блокируем отправку email при ошибке Telegram
+                            });
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.debug("У администратора {} нет активной сессии Telegram бота, пропускаем отправку Telegram уведомления. " +
+                            "Админ должен сначала написать боту /start", admin.getUsername());
+                    return Mono.empty();
+                }))
+                .onErrorResume(e -> {
+                    log.warn("Ошибка при получении Telegram сессии для администратора {}: {}", admin.getUsername(), e.getMessage());
+                    return Mono.empty();
+                });
+    }
+
+    /**
+     * Построить сообщение для Telegram с уведомлением о балансе.
+     *
+     * @param errorMessage сообщение об ошибке от Fal.ai
+     * @return текст сообщения для Telegram
+     */
+    private String buildTelegramMessage(String errorMessage) {
+        return String.format(
+                "⚠️ *Критическое уведомление: Исчерпан баланс Fal.ai*\n\n" +
+                "Обнаружена критическая проблема с балансом сервиса Fal.ai.\n\n" +
+                "*Детали ошибки:*\n`%s`\n\n" +
+                "Необходимо пополнить баланс на [fal.ai/dashboard/billing](https://fal.ai/dashboard/billing)\n\n" +
+                "До пополнения баланса генерация изображений будет недоступна для пользователей.\n\n" +
+                "_Это автоматическое уведомление. Повторное уведомление будет отправлено через час, если проблема сохранится._",
+                errorMessage.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]")
+        );
     }
 
     /**
