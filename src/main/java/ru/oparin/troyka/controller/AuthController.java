@@ -5,13 +5,16 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.auth.*;
 import ru.oparin.troyka.service.*;
 import ru.oparin.troyka.service.telegram.TelegramAuthService;
+import ru.oparin.troyka.util.IpUtil;
 import ru.oparin.troyka.util.JwtUtil;
 import ru.oparin.troyka.util.SecurityUtil;
 
@@ -32,10 +35,35 @@ public class AuthController {
     @Operation(summary = "Регистрация нового пользователя",
             description = "Создает нового пользователя в системе и возвращает JWT токен")
     @PostMapping("/register")
-    public Mono<ResponseEntity<AuthResponse>> register(@Valid @RequestBody RegisterRequest request) {
+    public Mono<ResponseEntity<?>> register(@Valid @RequestBody RegisterRequest request, 
+                                             ServerWebExchange exchange) {
         log.info("Получен запрос на регистрацию нового пользователя: {}", request);
-        return authService.register(request)
-                .map(ResponseEntity::ok);
+        return IpUtil.extractClientIp(exchange)
+                .<ResponseEntity<?>>flatMap(clientIp -> {
+                    log.debug("IP адрес клиента для регистрации: {}", clientIp);
+                    return authService.register(request, clientIp)
+                            .<ResponseEntity<?>>map(authResponse -> ResponseEntity.ok(authResponse))
+                            .onErrorResume(e -> {
+                                if (e instanceof AuthException authEx) {
+                                    log.warn("Ошибка аутентификации при регистрации: {}", authEx.getMessage());
+                                    return Mono.<ResponseEntity<?>>just(ResponseEntity.status(authEx.getStatus())
+                                            .body(new MessageResponse(authEx.getMessage())));
+                                }
+                                log.error("Ошибка при регистрации пользователя", e);
+                                return Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(new MessageResponse("Ошибка при регистрации")));
+                            });
+                })
+                .onErrorResume(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage() != null && e.getMessage().contains("IP адрес")) {
+                        log.error("Критическая ошибка: не удалось определить IP адрес клиента", e);
+                        return Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                .body(new MessageResponse("Ошибка сервера. Обратитесь в поддержку.")));
+                    }
+                    log.error("Ошибка при извлечении IP адреса", e);
+                    return Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(new MessageResponse("Ошибка при регистрации")));
+                });
     }
 
     @Operation(summary = "Вход в систему",

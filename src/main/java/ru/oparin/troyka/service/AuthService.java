@@ -28,43 +28,58 @@ public class AuthService {
     private final UserPointsService userPointsService;
     private final EmailVerificationService emailVerificationService;
     private final GenerationProperties generationProperties;
+    private final RateLimitingService rateLimitingService;
 
     @Value("${jwt.expiration}")
     private long expiration;
 
-    public Mono<AuthResponse> register(RegisterRequest request) {
+    public Mono<AuthResponse> register(RegisterRequest request, String clientIp) {
         String trimmedUsername = request.getUsername().trim();
         String trimmedEmail = request.getEmail().trim();
         
-        return userService.existsByUsernameOrEmail(trimmedUsername, trimmedEmail)
-                .then(Mono.defer(() -> {
+        // Проверяем rate limit перед регистрацией
+        return rateLimitingService.isRegistrationAllowed(clientIp)
+                .flatMap(isAllowed -> {
+                    if (!isAllowed) {
+                        log.warn("Попытка регистрации заблокирована из-за превышения лимита для IP: {}", clientIp);
+                        return Mono.error(new AuthException(
+                                HttpStatus.TOO_MANY_REQUESTS,
+                                "Превышен лимит регистраций. Попробуйте позже."
+                        ));
+                    }
+                    
+                    return userService.existsByUsernameOrEmail(trimmedUsername, trimmedEmail)
+                            .then(Mono.defer(() -> {
 
-                    User user = User.builder()
-                            .username(trimmedUsername)
-                            .email(trimmedEmail)
-                            .password(passwordEncoder.encode(request.getPassword()))
-                            .role(Role.USER)
-                            .build();
+                                User user = User.builder()
+                                        .username(trimmedUsername)
+                                        .email(trimmedEmail)
+                                        .password(passwordEncoder.encode(request.getPassword()))
+                                        .role(Role.USER)
+                                        .build();
 
-                    return userService.saveUser(user)
-                            .flatMap(savedUser -> {
-                                // Добавляем бесплатные поинты пользователю при регистрации
-                                return userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration())
-                                        .then(emailVerificationService.sendVerificationEmail(savedUser))
-                                        .then(Mono.fromCallable(() -> {
-                                            String token = jwtService.generateToken(savedUser);
-                                            log.info("Пользователь {} зарегистрирован с {} бесплатными поинтами, письмо подтверждения отправлено", savedUser.getUsername(), generationProperties.getPointsOnRegistration());
-                                            return new AuthResponse(
-                                                    token,
-                                                    savedUser.getUsername(),
-                                                    savedUser.getEmail(),
-                                                    savedUser.getRole().name(),
-                                                    LocalDateTime.now().plusSeconds(expiration / 1000),
-                                                    true
-                                            );
-                                        }));
-                            });
-                }));
+                                return userService.saveUser(user)
+                                        .flatMap(savedUser -> {
+                                            // Регистрируем попытку регистрации в rate limiter
+                                            return rateLimitingService.recordRegistrationAttempt(clientIp)
+                                                    .then(userPointsService.addPointsToUser(savedUser.getId(), generationProperties.getPointsOnRegistration()))
+                                                    .then(emailVerificationService.sendVerificationEmail(savedUser))
+                                                    .then(Mono.fromCallable(() -> {
+                                                        String token = jwtService.generateToken(savedUser);
+                                                        log.info("Пользователь {} зарегистрирован с {} бесплатными поинтами, письмо подтверждения отправлено. IP: {}", 
+                                                                savedUser.getUsername(), generationProperties.getPointsOnRegistration(), clientIp);
+                                                        return new AuthResponse(
+                                                                token,
+                                                                savedUser.getUsername(),
+                                                                savedUser.getEmail(),
+                                                                savedUser.getRole().name(),
+                                                                LocalDateTime.now().plusSeconds(expiration / 1000),
+                                                                true
+                                                        );
+                                                    }));
+                                        });
+                            }));
+                });
     }
 
     public Mono<AuthResponse> login(LoginRequest request) {
