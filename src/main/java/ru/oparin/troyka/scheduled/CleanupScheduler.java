@@ -137,7 +137,6 @@ public class CleanupScheduler {
             Flux<ImageGenerationHistory> activeRequests = imageGenerationHistoryRepository.findAll()
                     .filter(history -> QueueStatus.isActive(history.getQueueStatus()))
                     .flatMap(history -> {
-                        log.debug("Опрос статуса запроса {} (falRequestId: {})", history.getId(), history.getFalRequestId());
                         return falAIQueueService.pollStatus(history)
                                 .onErrorResume(e -> {
                                     log.error("Ошибка при опросе статуса запроса {}", history.getId(), e);

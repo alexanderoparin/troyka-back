@@ -135,26 +135,11 @@ public class FalAIQueueService {
      */
     public Mono<ImageGenerationHistory> pollStatus(ImageGenerationHistory history) {
         String falRequestId = history.getFalRequestId();
-        if (falRequestId == null) {
-            log.warn("Попытка опросить статус для записи без falRequestId: {}", history.getId());
-            return Mono.just(history);
-        }
-
-        // Для опроса статуса нужно использовать базовый model_id без подпути
-        // Согласно документации Fal.ai: "subpath should be used when making the request, 
-        // but not when getting request status or results"
-        // Например, если запрос был отправлен на nano-banana/edit, 
-        // то для опроса статуса нужно использовать nano-banana
         boolean isNewImage = CollectionUtils.isEmpty(history.getInputImageUrls());
         String model = isNewImage ? falAiProperties.getModel().getCreate() : falAiProperties.getModel().getEdit();
         // Извлекаем базовый model_id (убираем подпуть после "/", если есть)
         String baseModelId = model.contains("/") ? model.substring(0, model.indexOf("/")) : model;
         String statusPath = PREFIX_PATH + baseModelId + "/requests/" + falRequestId + "/status";
-
-        log.debug("Опрос статуса запроса {}: модель={}, базовый model_id={}, путь={}",
-                falRequestId, model, baseModelId, statusPath);
-
-        log.debug("Опрос статуса запроса {} в очереди Fal.ai", falRequestId);
 
         return queueWebClient.get()
                 .uri(statusPath)
