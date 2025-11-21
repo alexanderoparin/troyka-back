@@ -162,19 +162,14 @@ public class FalAIQueueService {
                                 });
                     }
                     return clientResponse.bodyToMono(String.class)
-                            .doOnNext(rawResponse -> {
-                                log.info("Сырой ответ от Fal.ai для запроса {}: {}", falRequestId, rawResponse);
-                            })
                             .flatMap(rawResponse -> {
                                 try {
                                     FalAIQueueStatusDTO status = objectMapper.readValue(rawResponse, FalAIQueueStatusDTO.class);
-                                    log.info("Распарсенный ответ от Fal.ai для запроса {}: status={}, responseUrl={}, queuePosition={}, полный объект: {}", 
-                                            falRequestId, status.getStatus(), status.getResponseUrl(), status.getQueuePosition(), status);
                                     return Mono.just(status);
                                 } catch (Exception e) {
                                     log.error("Ошибка при парсинге ответа от Fal.ai для запроса {}. Сырой ответ: {}", 
                                             falRequestId, rawResponse, e);
-                                    return Mono.error(new RuntimeException("Failed to parse Fal.ai response", e));
+                                    return Mono.error(new FalAIException("Не удалось разобрать ответ от Fal.ai", HttpStatus.INTERNAL_SERVER_ERROR));
                                 }
                             });
                 })

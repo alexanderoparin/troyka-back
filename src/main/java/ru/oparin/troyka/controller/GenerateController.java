@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIQueueRequestStatusDTO;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.service.FalAIQueueService;
@@ -40,7 +41,15 @@ public class GenerateController {
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> falAIQueueService.submitToQueue(imageRq, userId))
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при отправке запроса в очередь", error));
+                .doOnError(error -> {
+                    if (error instanceof FalAIException falEx) {
+                        // Ожидаемые бизнес-ошибки логируем без стектрейса
+                        log.warn("Ошибка при отправке запроса в очередь: {}", falEx.getMessage());
+                    } else {
+                        // Неожиданные ошибки логируем с полным стектрейсом
+                        log.error("Ошибка при отправке запроса в очередь", error);
+                    }
+                });
     }
 
     /**
@@ -56,7 +65,13 @@ public class GenerateController {
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> falAIQueueService.getRequestStatus(id, userId))
                 .map(ResponseEntity::ok)
-                .doOnError(error -> log.error("Ошибка при получении статуса запроса {}", id, error));
+                .doOnError(error -> {
+                    if (error instanceof FalAIException falEx) {
+                        log.warn("Ошибка при получении статуса запроса {}: {}", id, falEx.getMessage());
+                    } else {
+                        log.error("Ошибка при получении статуса запроса {}", id, error);
+                    }
+                });
     }
 
     /**
@@ -73,6 +88,12 @@ public class GenerateController {
                     Flux<FalAIQueueRequestStatusDTO> activeRequests = falAIQueueService.getUserActiveRequests(userId);
                     return Mono.just(ResponseEntity.ok(activeRequests));
                 })
-                .doOnError(error -> log.error("Ошибка при получении активных запросов пользователя", error));
+                .doOnError(error -> {
+                    if (error instanceof FalAIException falEx) {
+                        log.warn("Ошибка при получении активных запросов пользователя: {}", falEx.getMessage());
+                    } else {
+                        log.error("Ошибка при получении активных запросов пользователя", error);
+                    }
+                });
     }
 }
