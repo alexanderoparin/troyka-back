@@ -26,9 +26,7 @@ public class UserService {
 
     public Mono<UserInfoDTO> getCurrentUser() {
         return SecurityUtil.getCurrentUsername()
-                .doOnNext(username -> log.debug("Получение информации о пользователе: {}", username))
                 .flatMap(userRepository::findByUsername)
-                .doOnNext(user -> log.debug("Пользователь найден: {}", user.getUsername()))
                 .switchIfEmpty(Mono.defer(() -> {
                     log.warn("Пользователь не найден в БД для валидного токена");
                     return Mono.empty();

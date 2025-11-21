@@ -63,6 +63,7 @@ public class SecurityConfig {
                         .pathMatchers("/files/**").permitAll()
                         .pathMatchers("/images/**").permitAll()
                         .pathMatchers("/fal/**").authenticated()
+                        .pathMatchers("/generate/**").authenticated()
                         .pathMatchers("/users/**").authenticated()
                         .pathMatchers("/api/sessions/**").authenticated()
                         .pathMatchers("/admin/**").hasRole("ADMIN")

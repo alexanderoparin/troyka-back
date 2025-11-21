@@ -4,12 +4,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.FalAiProperties;
+import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.enums.PaymentStatus;
+import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.repository.EmailVerificationTokenRepository;
+import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.repository.PasswordResetTokenRepository;
 import ru.oparin.troyka.repository.PaymentRepository;
 import ru.oparin.troyka.service.FalAIHealthCheckService;
+import ru.oparin.troyka.service.FalAIQueueService;
 import ru.oparin.troyka.service.FileCleanupService;
 
 import java.time.LocalDateTime;
@@ -28,6 +34,8 @@ public class CleanupScheduler {
     private final FileCleanupService fileCleanupService;
     private final FalAIHealthCheckService falAIHealthCheckService;
     private final FalAiProperties falAiProperties;
+    private final FalAIQueueService falAIQueueService;
+    private final ImageGenerationHistoryRepository imageGenerationHistoryRepository;
 
     /**
      * Очистка протухших токенов каждый день в 02:00
@@ -110,6 +118,38 @@ public class CleanupScheduler {
             falAIHealthCheckService.checkFalAIHealth();
         } catch (Exception e) {
             log.error("Ошибка при проверке здоровья FAL AI", e);
+        }
+    }
+
+    /**
+     * Опрос статусов активных запросов в очереди Fal.ai.
+     * Выполняется каждые 5 секунд (настраивается через fal.ai.queue.polling-interval-ms).
+     */
+    @Scheduled(fixedRateString = "${fal.ai.queue.polling-interval-ms:5000}")
+    public void pollFalAIQueueRequests() {
+        FalAiProperties.Queue queue = falAiProperties.getQueue();
+        if (!queue.isEnabled()) {
+            log.debug("Polling очереди Fal.ai отключен");
+            return;
+        }
+
+        try {
+            Flux<ImageGenerationHistory> activeRequests = imageGenerationHistoryRepository.findAll()
+                    .filter(history -> QueueStatus.isActive(history.getQueueStatus()))
+                    .flatMap(history -> {
+                        log.debug("Опрос статуса запроса {} (falRequestId: {})", history.getId(), history.getFalRequestId());
+                        return falAIQueueService.pollStatus(history)
+                                .onErrorResume(e -> {
+                                    log.error("Ошибка при опросе статуса запроса {}", history.getId(), e);
+                                    return Mono.just(history);
+                                });
+                    });
+
+            activeRequests
+                    .doOnError(error -> log.error("Ошибка при опросе очереди Fal.ai", error))
+                    .subscribe();
+        } catch (Exception e) {
+            log.error("Ошибка при запуске опроса очереди Fal.ai", e);
         }
     }
 }

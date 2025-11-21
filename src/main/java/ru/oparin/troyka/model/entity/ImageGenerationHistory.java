@@ -3,9 +3,11 @@ package ru.oparin.troyka.model.entity;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
+import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.util.JsonUtils;
 
 import java.time.LocalDateTime;
@@ -97,6 +99,44 @@ public class ImageGenerationHistory {
     private String aspectRatio;
 
     /**
+     * Идентификатор запроса в очереди Fal.ai.
+     * Используется для отслеживания статуса запроса через API Fal.ai.
+     */
+    @Column("fal_request_id")
+    private String falRequestId;
+
+    /**
+     * Статус запроса в очереди Fal.ai.
+     * Возможные значения: IN_QUEUE, IN_PROGRESS, COMPLETED, FAILED.
+     * null означает, что запрос был выполнен синхронно (старый способ).
+     */
+    @Column("queue_status")
+    private QueueStatus queueStatus;
+
+    /**
+     * Позиция запроса в очереди Fal.ai.
+     * Показывает, на какой позиции находится запрос в очереди.
+     * null, если запрос не в очереди или уже обрабатывается.
+     */
+    @Column("queue_position")
+    private Integer queuePosition;
+
+    /**
+     * Количество запрошенных изображений.
+     * Используется для корректного расчета возврата поинтов при ошибках.
+     */
+    @Column("num_images")
+    private Integer numImages;
+
+    /**
+     * Дата и время последнего обновления статуса запроса.
+     * Автоматически обновляется при изменении статуса.
+     */
+    @LastModifiedDate
+    @Column("updated_at")
+    private LocalDateTime updatedAt;
+
+    /**
      * Получить список URL сгенерированных изображений из JSON.
      * Вспомогательный метод для работы с JSONB полем.
      */
@@ -136,5 +176,15 @@ public class ImageGenerationHistory {
     @Transient
     public void setInputImageUrls(List<String> urls) {
         this.inputImageUrlsJson = JsonUtils.convertListToJson(urls);
+    }
+
+    /**
+     * Проверить, является ли запрос активным (в очереди или обрабатывается).
+     * 
+     * @return true если запрос активен (IN_QUEUE или IN_PROGRESS), false в противном случае
+     */
+    @Transient
+    public boolean isActive() {
+        return QueueStatus.isActive(queueStatus);
     }
 }

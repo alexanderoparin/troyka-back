@@ -275,7 +275,7 @@ public class SessionService {
         return r2dbcEntityTemplate.update(Session.class)
                 .matching(Query.query(Criteria.where("id").is(sessionId)))
                 .apply(Update.update("updatedAt", Instant.now()))
-                .doOnSuccess(count -> log.debug("Обновлено время сессии {}, обновлено записей: {}", sessionId, count))
+                .doOnSuccess(count -> log.debug("Обновлено время сессии {}", sessionId))
                 .doOnError(error -> log.error("Ошибка при обновлении времени сессии {}", sessionId, error))
                 .then();
     }

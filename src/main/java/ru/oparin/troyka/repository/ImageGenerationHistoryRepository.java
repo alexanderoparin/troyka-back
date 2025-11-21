@@ -7,6 +7,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
  * Repository для работы с историей генерации изображений.
  * Предоставляет методы для CRUD операций и специфичные запросы для истории генераций.
@@ -89,6 +92,89 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
            "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb, :description, :styleId, :aspectRatio) " +
            "RETURNING *")
     Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrlsJson, String prompt, 
-                                               java.time.LocalDateTime createdAt, Long sessionId, 
+                                               LocalDateTime createdAt, Long sessionId, 
                                                String inputImageUrlsJson, String description, Long styleId, String aspectRatio);
+
+    /**
+     * Найти запись истории по идентификатору запроса Fal.ai.
+     *
+     * @param falRequestId идентификатор запроса в очереди Fal.ai
+     * @return запись истории или пустой результат
+     */
+    Mono<ImageGenerationHistory> findByFalRequestId(String falRequestId);
+
+    /**
+     * Найти все активные записи истории пользователя (в очереди или обрабатываются).
+     *
+     * @param userId идентификатор пользователя
+     * @param queueStatuses список статусов для поиска
+     * @return поток активных записей истории пользователя
+     */
+    Flux<ImageGenerationHistory> findByUserIdAndQueueStatusIn(Long userId, List<String> queueStatuses);
+
+    /**
+     * Найти все активные записи истории сессии (в очереди или обрабатываются).
+     *
+     * @param sessionId идентификатор сессии
+     * @param queueStatuses список статусов для поиска
+     * @return поток активных записей истории сессии
+     */
+    Flux<ImageGenerationHistory> findBySessionIdAndQueueStatusIn(Long sessionId, List<String> queueStatuses);
+
+    /**
+     * Обновить запись истории с правильным приведением JSONB полей.
+     * Использует кастомный SQL-запрос для корректной работы с JSONB полями при UPDATE.
+     *
+     * @param id идентификатор записи
+     * @param imageUrlsJson JSON строка с URL сгенерированных изображений
+     * @param inputImageUrlsJson JSON строка с URL входных изображений
+     * @param queueStatus статус очереди
+     * @param queuePosition позиция в очереди
+     * @param updatedAt время обновления
+     * @return обновленная запись
+     */
+    @Query("UPDATE troyka.image_generation_history " +
+           "SET image_urls = :imageUrlsJson::jsonb, " +
+           "    input_image_urls = CASE WHEN :inputImageUrlsJson IS NULL THEN NULL ELSE :inputImageUrlsJson::jsonb END, " +
+           "    queue_status = :queueStatus, " +
+           "    queue_position = :queuePosition, " +
+           "    updated_at = :updatedAt, " +
+           "    description = :description " +
+           "WHERE id = :id " +
+           "RETURNING *")
+    Mono<ImageGenerationHistory> updateWithJsonb(Long id, String imageUrlsJson, String inputImageUrlsJson,
+                                                  String queueStatus, Integer queuePosition, LocalDateTime updatedAt,
+                                                  String description);
+
+    /**
+     * Сохранить запись истории для очереди с правильным приведением JSONB полей.
+     * Использует кастомный SQL-запрос для корректной работы с JSONB полями при INSERT.
+     *
+     * @param userId идентификатор пользователя
+     * @param imageUrlsJson JSON строка с URL сгенерированных изображений (пустой массив для новой записи)
+     * @param prompt промпт
+     * @param createdAt время создания
+     * @param sessionId идентификатор сессии
+     * @param inputImageUrlsJson JSON строка с URL входных изображений (может быть null)
+     * @param styleId идентификатор стиля
+     * @param aspectRatio соотношение сторон
+     * @param falRequestId идентификатор запроса в очереди Fal.ai
+     * @param queueStatus статус очереди
+     * @param queuePosition позиция в очереди
+     * @param numImages количество запрошенных изображений
+     * @param updatedAt время обновления
+     * @return сохраненная запись
+     */
+    @Query("INSERT INTO troyka.image_generation_history " +
+           "(user_id, image_urls, prompt, created_at, session_id, input_image_urls, style_id, aspect_ratio, " +
+           "fal_request_id, queue_status, queue_position, num_images, updated_at) " +
+           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, " +
+           "CASE WHEN :inputImageUrlsJson IS NULL THEN NULL ELSE :inputImageUrlsJson::jsonb END, " +
+           ":styleId, :aspectRatio, :falRequestId, :queueStatus, :queuePosition, :numImages, :updatedAt) " +
+           "RETURNING *")
+    Mono<ImageGenerationHistory> saveQueueRequest(Long userId, String imageUrlsJson, String prompt,
+                                                   LocalDateTime createdAt, Long sessionId, String inputImageUrlsJson,
+                                                   Long styleId, String aspectRatio, String falRequestId,
+                                                   String queueStatus, Integer queuePosition, Integer numImages,
+                                                   LocalDateTime updatedAt);
 }
