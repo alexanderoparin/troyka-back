@@ -247,14 +247,6 @@ public class FileService {
                 Resource resource = new UrlResource(file.toUri());
 
                 if (resource.exists() && resource.isReadable()) {
-                    // Логируем размер файла для диагностики
-                    try {
-                        long fileSize = Files.size(file);
-                        log.debug("Размер файла {}: {} байт ({} МБ)", filename, fileSize, fileSize / (1024.0 * 1024.0));
-                    } catch (IOException e) {
-                        log.warn("Не удалось получить размер файла: {}", filename);
-                    }
-
                     String contentType;
                     try {
                         contentType = Files.probeContentType(file);
