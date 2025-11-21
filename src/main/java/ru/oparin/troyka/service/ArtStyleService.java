@@ -67,7 +67,6 @@ public class ArtStyleService {
         List<ArtStyle> cached = artStylesCache.getIfPresent(CACHE_KEY_ALL_STYLES);
 
         if (cached != null) {
-            log.debug("Возвращаем стили из кеша");
             return Flux.fromIterable(cached);
         }
 
