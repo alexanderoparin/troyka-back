@@ -123,13 +123,18 @@ public class JsonUtils {
     }
 
     /**
-     * Убираем blob из URL'ов.
+     * Фильтруем blob URL из списка входных изображений.
+     * Blob URL нельзя использовать на сервере, поэтому их нужно исключить.
      */
     public static List<String> removingBlob(List<String> inputImageUrls) {
         if (CollectionUtils.isEmpty(inputImageUrls)) {
             return null;
-        } else return inputImageUrls.stream()
-                .map(url -> url.startsWith("blob:") ? url.substring(5) : url)
+        }
+        // Фильтруем blob URL и возвращаем только валидные URL
+        List<String> filtered = inputImageUrls.stream()
+                .filter(url -> url != null && !url.startsWith("blob:"))
+                .filter(url -> !url.isEmpty())
                 .toList();
+        return filtered.isEmpty() ? null : filtered;
     }
 }
