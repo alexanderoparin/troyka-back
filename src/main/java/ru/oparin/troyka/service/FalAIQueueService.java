@@ -191,8 +191,6 @@ public class FalAIQueueService {
                     // Это избегает двойного сохранения и проблем с null значениями
                     if (queueStatus == QueueStatus.COMPLETED) {
                         String responseUrl = status.getResponseUrl();
-                        log.debug("COMPLETED статус для запроса {}: responseUrl={}, полный объект status={}", 
-                                falRequestId, responseUrl, status);
                         if (responseUrl == null) {
                             log.warn("Получен COMPLETED статус без responseUrl для запроса {}, пробуем получить результат напрямую по request_id", 
                                     falRequestId);
@@ -313,8 +311,6 @@ public class FalAIQueueService {
      * @return обновленная запись истории с заполненными imageUrls
      */
     public Mono<ImageGenerationHistory> processCompletedRequest(ImageGenerationHistory history, String responseUrl) {
-        log.info("Обработка завершенного запроса {}: получение результата из {}", history.getFalRequestId(), responseUrl);
-
         return queueWebClient.get()
                 .uri(responseUrl)
                 .retrieve()
