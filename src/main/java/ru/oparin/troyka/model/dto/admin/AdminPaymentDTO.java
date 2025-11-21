@@ -29,7 +29,6 @@ public class AdminPaymentDTO {
     private String telegramPhotoUrl;
     private BigDecimal amount;
     private String description;
-    private String status;
     private Integer creditsAmount;
     private LocalDateTime paidAt;
     private LocalDateTime createdAt;
@@ -48,7 +47,6 @@ public class AdminPaymentDTO {
                 .telegramPhotoUrl(user.getTelegramPhotoUrl())
                 .amount(payment.getAmount())
                 .description(payment.getDescription())
-                .status(payment.getStatus().name())
                 .creditsAmount(payment.getCreditsAmount())
                 .paidAt(payment.getPaidAt())
                 .createdAt(payment.getCreatedAt())

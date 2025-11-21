@@ -35,8 +35,8 @@ public class AdminController {
     private final UserService userService;
     private final SystemStatusService systemStatusService;
 
-    @Operation(summary = "Получить все платежи",
-            description = "Возвращает список всех платежей в системе. Требуется роль ADMIN.")
+    @Operation(summary = "Получить все оплаченные платежи",
+            description = "Возвращает список всех успешно оплаченных платежей в системе. Требуется роль ADMIN.")
     @GetMapping("/payments")
     public Mono<ResponseEntity<List<AdminPaymentDTO>>> getAllPayments() {
         return SecurityUtil.getCurrentAdmin(userService)

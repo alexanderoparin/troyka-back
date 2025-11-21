@@ -2,10 +2,12 @@ package ru.oparin.troyka.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.query.Query;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple8;
 import ru.oparin.troyka.model.dto.admin.AdminPaymentDTO;
 import ru.oparin.troyka.model.dto.admin.AdminStatsDTO;
@@ -35,12 +37,13 @@ public class AdminService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final UserPointsRepository userPointsRepository;
+    private final R2dbcEntityTemplate r2dbcEntityTemplate;
 
     /**
-     * Получить все платежи для админ-панели.
+     * Получить все успешно оплаченные платежи для админ-панели.
      */
     public Flux<AdminPaymentDTO> getAllPayments() {
-        return paymentRepository.findAll()
+        return paymentRepository.findByStatus(PaymentStatus.PAID)
                 .flatMap(payment -> {
                     Mono<User> userMono = withRetry(userRepository.findById(payment.getUserId()))
                             .switchIfEmpty(Mono.just(User.builder()
@@ -110,23 +113,25 @@ public class AdminService {
         
         Mono<BigDecimal> yearRevenueMono = calculateRevenueSince(yearStart);
         
-        Mono<Long> paidCountMono = paymentRepository.findByStatus(PaymentStatus.PAID).count();
+        Mono<Long> todayRegistrationsMono = countRegistrationsSince(todayStart);
         
-        Mono<Long> pendingCountMono = paymentRepository.findByStatus(PaymentStatus.PENDING).count();
+        Mono<Long> weekRegistrationsMono = countRegistrationsSince(weekStart);
         
-        Mono<Long> failedCountMono = paymentRepository.findByStatus(PaymentStatus.FAILED).count();
+        Mono<Long> monthRegistrationsMono = countRegistrationsSince(monthStart);
+        
+        Mono<Long> yearRegistrationsMono = countRegistrationsSince(yearStart);
 
         Mono<Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long>> firstZip = 
-                Mono.zip(totalUsersMono, totalPaymentsMono, totalRevenueMono, todayRevenueMono, 
-                        weekRevenueMono, monthRevenueMono, yearRevenueMono, paidCountMono);
+                Mono.zip(totalUsersMono, totalPaymentsMono, totalRevenueMono, todayRevenueMono,
+                        weekRevenueMono, monthRevenueMono, yearRevenueMono, todayRegistrationsMono);
         
-        Mono<Tuple2<Long, Long>> secondZip = 
-                Mono.zip(pendingCountMono, failedCountMono);
+        Mono<reactor.util.function.Tuple3<Long, Long, Long>> secondZip = 
+                Mono.zip(weekRegistrationsMono, monthRegistrationsMono, yearRegistrationsMono);
 
         return Mono.zip(firstZip, secondZip)
                 .map(tuple -> {
                     Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long> first = tuple.getT1();
-                    Tuple2<Long, Long> second = tuple.getT2();
+                    reactor.util.function.Tuple3<Long, Long, Long> second = tuple.getT2();
                     
                     return AdminStatsDTO.builder()
                             .totalUsers(first.getT1())
@@ -136,11 +141,19 @@ public class AdminService {
                             .weekRevenue(first.getT5())
                             .monthRevenue(first.getT6())
                             .yearRevenue(first.getT7())
-                            .paidPaymentsCount(first.getT8())
-                            .pendingPaymentsCount(second.getT1())
-                            .failedPaymentsCount(second.getT2())
+                            .todayRegistrations(first.getT8())
+                            .weekRegistrations(second.getT1())
+                            .monthRegistrations(second.getT2())
+                            .yearRegistrations(second.getT3())
                             .build();
                 });
+    }
+
+    private Mono<Long> countRegistrationsSince(LocalDateTime since) {
+        return r2dbcEntityTemplate.count(
+                Query.query(Criteria.where("created_at").greaterThanOrEquals(since)),
+                User.class
+        );
     }
 
     private Mono<BigDecimal> calculateTotalRevenue() {
