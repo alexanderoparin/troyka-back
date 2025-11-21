@@ -69,36 +69,34 @@ public class SystemStatusService {
      * Обновить статус системы.
      * Создает новую запись в истории с указанным статусом и сообщением.
      *
-     * @param status новый статус системы
-     * @param message сообщение для пользователей (может быть null для ACTIVE)
+     * @param status   новый статус системы
+     * @param message  сообщение для пользователей (может быть null для ACTIVE)
      * @param isSystem флаг автоматического изменения (true - системное, false - ручное)
      * @return созданная запись истории
      */
     public Mono<SystemStatusHistory> updateStatus(SystemStatus status, String message, boolean isSystem) {
         Mono<Long> userIdMono;
-        
+
         if (isSystem) {
-            // Для автоматических изменений userId всегда null
-            userIdMono = Mono.just((Long) null);
+            userIdMono = Mono.fromCallable(() -> null);
         } else {
-            // Для ручных изменений получаем ID текущего пользователя
             userIdMono = SecurityUtil.getCurrentUsername()
-                    .flatMap(username -> userRepository.findByUsername(username))
+                    .flatMap(userRepository::findByUsername)
                     .map(User::getId)
                     .onErrorResume(e -> {
                         log.warn("Не удалось получить ID пользователя для обновления статуса: {}", e.getMessage());
-                        return Mono.just((Long) null);
+                        return Mono.just(null);
                     });
         }
-        
+
         return userIdMono.flatMap(userId -> {
             // Если сообщение не указано и статус не ACTIVE, используем дефолтное сообщение
-            String finalMessage = status == SystemStatus.ACTIVE 
-                    ? null 
-                    : (message != null && !message.trim().isEmpty() 
-                            ? message.trim() 
-                            : status.getDefaultMessage());
-            
+            String finalMessage = status == SystemStatus.ACTIVE
+                    ? null
+                    : (message != null && !message.trim().isEmpty()
+                    ? message.trim()
+                    : status.getDefaultMessage());
+
             SystemStatusHistory history = SystemStatusHistory.builder()
                     .status(status)
                     .message(finalMessage)
@@ -121,7 +119,7 @@ public class SystemStatusService {
     /**
      * Обновить статус системы (ручное изменение администратором).
      *
-     * @param status новый статус системы
+     * @param status  новый статус системы
      * @param message сообщение для пользователей
      * @return созданная запись истории
      */
