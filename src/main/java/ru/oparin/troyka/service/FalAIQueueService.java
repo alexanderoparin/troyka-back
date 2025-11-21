@@ -45,6 +45,7 @@ public class FalAIQueueService {
     private final ArtStyleService artStyleService;
     private final FalAIQueueMapper mapper;
     private final ObjectMapper objectMapper;
+    private final AdminNotificationService adminNotificationService;
 
     public FalAIQueueService(WebClient.Builder webClientBuilder,
                              FalAiProperties falAiProperties,
@@ -53,13 +54,15 @@ public class FalAIQueueService {
                              UserPointsService userPointsService,
                              SessionService sessionService,
                              ArtStyleService artStyleService, FalAIQueueMapper mapper,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             AdminNotificationService adminNotificationService) {
         this.falAiProperties = falAiProperties;
         this.generationProperties = generationProperties;
         this.imageGenerationHistoryService = imageGenerationHistoryService;
         this.userPointsService = userPointsService;
         this.sessionService = sessionService;
         this.artStyleService = artStyleService;
+        this.adminNotificationService = adminNotificationService;
         this.mapper = mapper;
         this.objectMapper = objectMapper;
 
@@ -392,6 +395,8 @@ public class FalAIQueueService {
             String responseBody = webE.getResponseBodyAsString();
             log.warn("Ошибка от Fal.ai при отправке в очередь для userId={}. Статус: {}, тело: {}",
                     userId, webE.getStatusCode(), responseBody);
+
+            checkExhaustedBalance(webE, responseBody);
             return userPointsService.addPointsToUser(userId, pointsNeeded)
                     .then(Mono.error(new FalAIException(
                             "Ошибка при отправке запроса в очередь: " + webE.getStatusCode(),
@@ -402,6 +407,29 @@ public class FalAIQueueService {
                     .then(Mono.error(new FalAIException(
                             "Не удалось подключиться к сервису генерации. Попробуйте позже.",
                             HttpStatus.SERVICE_UNAVAILABLE)));
+        }
+    }
+
+    /**
+     * Проверяем, является ли это ошибкой исчерпанного баланса.
+     * Отправляет уведомление администраторам, если обнаружена проблема с балансом.
+     */
+    private void checkExhaustedBalance(WebClientResponseException webE, String responseBody) {
+        if (webE.getStatusCode().value() == 403) {
+            String lowerBody = responseBody != null ? responseBody.toLowerCase() : "";
+            // Проверяем различные варианты сообщений об исчерпанном балансе
+            if (lowerBody.contains("exhausted balance") || 
+                lowerBody.contains("user is locked") ||
+                lowerBody.contains("locked") && lowerBody.contains("balance") ||
+                lowerBody.contains("top up your balance")) {
+                log.error("Обнаружена критическая ошибка: исчерпан баланс Fal.ai. Отправляем уведомление администраторам.");
+                // Отправляем уведомление админам (не блокируем основной поток)
+                adminNotificationService.notifyAdminsAboutFalBalance(responseBody)
+                        .subscribe(
+                                null,
+                                error -> log.error("Ошибка при отправке уведомления администраторам о балансе Fal.ai", error)
+                        );
+            }
         }
     }
 
