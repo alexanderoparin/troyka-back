@@ -1,10 +1,10 @@
 package ru.oparin.troyka.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -44,6 +44,7 @@ public class FalAIQueueService {
     private final SessionService sessionService;
     private final ArtStyleService artStyleService;
     private final FalAIQueueMapper mapper;
+    private final ObjectMapper objectMapper;
 
     public FalAIQueueService(WebClient.Builder webClientBuilder,
                              FalAiProperties falAiProperties,
@@ -51,7 +52,8 @@ public class FalAIQueueService {
                              ImageGenerationHistoryService imageGenerationHistoryService,
                              UserPointsService userPointsService,
                              SessionService sessionService,
-                             ArtStyleService artStyleService, FalAIQueueMapper mapper) {
+                             ArtStyleService artStyleService, FalAIQueueMapper mapper,
+                             ObjectMapper objectMapper) {
         this.falAiProperties = falAiProperties;
         this.generationProperties = generationProperties;
         this.imageGenerationHistoryService = imageGenerationHistoryService;
@@ -59,6 +61,7 @@ public class FalAIQueueService {
         this.sessionService = sessionService;
         this.artStyleService = artStyleService;
         this.mapper = mapper;
+        this.objectMapper = objectMapper;
 
         this.queueWebClient = webClientBuilder
                 .baseUrl(QUEUE_BASE_URL)
@@ -143,9 +146,9 @@ public class FalAIQueueService {
 
         return queueWebClient.get()
                 .uri(statusPath)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, clientResponse ->
-                        clientResponse.bodyToMono(String.class)
+                .<FalAIQueueStatusDTO>exchangeToMono(clientResponse -> {
+                    if (clientResponse.statusCode().isError()) {
+                        return clientResponse.bodyToMono(String.class)
                                 .flatMap(errorBody -> {
                                     log.warn("Ошибка при опросе статуса запроса {}: статус {}, тело: {}",
                                             falRequestId, clientResponse.statusCode(), errorBody);
@@ -156,9 +159,25 @@ public class FalAIQueueService {
                                             errorBody.getBytes(),
                                             null
                                     ));
-                                })
-                )
-                .bodyToMono(FalAIQueueStatusDTO.class)
+                                });
+                    }
+                    return clientResponse.bodyToMono(String.class)
+                            .doOnNext(rawResponse -> {
+                                log.info("Сырой ответ от Fal.ai для запроса {}: {}", falRequestId, rawResponse);
+                            })
+                            .flatMap(rawResponse -> {
+                                try {
+                                    FalAIQueueStatusDTO status = objectMapper.readValue(rawResponse, FalAIQueueStatusDTO.class);
+                                    log.info("Распарсенный ответ от Fal.ai для запроса {}: status={}, responseUrl={}, queuePosition={}, полный объект: {}", 
+                                            falRequestId, status.getStatus(), status.getResponseUrl(), status.getQueuePosition(), status);
+                                    return Mono.just(status);
+                                } catch (Exception e) {
+                                    log.error("Ошибка при парсинге ответа от Fal.ai для запроса {}. Сырой ответ: {}", 
+                                            falRequestId, rawResponse, e);
+                                    return Mono.error(new RuntimeException("Failed to parse Fal.ai response", e));
+                                }
+                            });
+                })
                 .flatMap(status -> {
                     QueueStatus queueStatus = status.getStatus();
                     Integer queuePosition = status.getQueuePosition();
@@ -166,7 +185,7 @@ public class FalAIQueueService {
 
                     // Если статус null, не обновляем запись
                     if (queueStatus == null) {
-                        log.warn("Получен null статус для запроса {}, пропускаем обновление", falRequestId);
+                        log.warn("Получен null статус для запроса {}, пропускаем обновление. Полный ответ: {}", falRequestId, status);
                         return Mono.just(history);
                     }
 
@@ -174,9 +193,15 @@ public class FalAIQueueService {
                     // Это избегает двойного сохранения и проблем с null значениями
                     if (queueStatus == QueueStatus.COMPLETED) {
                         String responseUrl = status.getResponseUrl();
+                        log.debug("COMPLETED статус для запроса {}: responseUrl={}, полный объект status={}", 
+                                falRequestId, responseUrl, status);
                         if (responseUrl == null) {
-                            log.warn("Получен COMPLETED статус без responseUrl для запроса {}, обрабатываем как FAILED", falRequestId);
-                            return handleFailedRequest(history);
+                            log.warn("Получен COMPLETED статус без responseUrl для запроса {}, пробуем получить результат напрямую по request_id", 
+                                    falRequestId);
+                            // Пробуем получить результат напрямую по request_id (без /status в пути)
+                            String resultPath = PREFIX_PATH + baseModelId + "/requests/" + falRequestId;
+                            log.info("Попытка получить результат напрямую по пути: {}", resultPath);
+                            return processCompletedRequestDirectly(history, resultPath);
                         }
                         // Обновляем статус перед обработкой результата
                         history.setQueueStatus(queueStatus);
@@ -219,6 +244,67 @@ public class FalAIQueueService {
                     return Mono.just(history);
                 })
                 .map(mapper::toStatusDTO);
+    }
+
+    /**
+     * Обработать завершенный запрос: получить результат напрямую по request_id (когда responseUrl отсутствует).
+     *
+     * @param history запись истории генерации
+     * @param resultPath путь для получения результата (например, /fal-ai/{model}/requests/{request_id})
+     * @return обновленная запись истории с заполненными imageUrls
+     */
+    private Mono<ImageGenerationHistory> processCompletedRequestDirectly(ImageGenerationHistory history, String resultPath) {
+        log.info("Обработка завершенного запроса {}: получение результата напрямую по пути {}", history.getFalRequestId(), resultPath);
+
+        return queueWebClient.get()
+                .uri(resultPath)
+                .retrieve()
+                .onStatus(status -> status.value() == 422, clientResponse -> {
+                    return clientResponse.bodyToMono(String.class)
+                            .flatMap(errorBody -> {
+                                String errorMessage = "Запрос был отклонен системой безопасности. Возможно, контент нарушает политику использования.";
+                                log.warn("Запрос {} отклонен Fal.ai (422): {}. Тело ответа: {}", 
+                                        history.getFalRequestId(), errorMessage, errorBody);
+                                // Возвращаем ошибку, которая будет обработана в onErrorResume
+                                return Mono.error(new RuntimeException("CONTENT_POLICY_VIOLATION: " + errorMessage));
+                            });
+                })
+                .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {})
+                .flatMap(response -> {
+                    List<String> imageUrls = response.getImages().stream()
+                            .map(FalAIImageDTO::getUrl)
+                            .toList();
+
+                    history.setImageUrls(imageUrls);
+                    history.setDescription(response.getDescription());
+                    history.setQueueStatus(QueueStatus.COMPLETED);
+                    history.setQueuePosition(null);
+                    history.setUpdatedAt(LocalDateTime.now());
+
+                    log.info("Результат получен напрямую для запроса {}: {} изображений", history.getFalRequestId(), imageUrls.size());
+
+                    // Обновляем запись через сервис
+                    return imageGenerationHistoryService.updateQueueStatus(
+                            history.getId(),
+                            imageUrls,
+                            history.getInputImageUrls(),
+                            QueueStatus.COMPLETED,
+                            null,
+                            response.getDescription()
+                    )
+                            .flatMap(updatedHistory ->
+                                    sessionService.updateSessionTimestamp(history.getSessionId())
+                                    .then(Mono.just(updatedHistory)));
+                })
+                .onErrorResume(e -> {
+                    if (e.getMessage() != null && e.getMessage().contains("CONTENT_POLICY_VIOLATION")) {
+                        String errorMessage = e.getMessage().replace("CONTENT_POLICY_VIOLATION: ", "");
+                        log.error("Ошибка при получении результата для запроса {}: {}", history.getFalRequestId(), errorMessage);
+                        return handleFailedRequestWithMessage(history, errorMessage);
+                    }
+                    log.error("Ошибка при получении результата напрямую для запроса {} из {}", history.getFalRequestId(), resultPath, e);
+                    return handleFailedRequest(history);
+                });
     }
 
     /**
@@ -328,15 +414,28 @@ public class FalAIQueueService {
      * Обработать неудачный запрос: обновить статус и вернуть поинты.
      */
     private Mono<ImageGenerationHistory> handleFailedRequest(ImageGenerationHistory history) {
+        return handleFailedRequestWithMessage(history, "Не удалось получить результат генерации");
+    }
+
+    /**
+     * Обработать неудачный запрос с сообщением об ошибке: обновить статус и вернуть поинты.
+     */
+    private Mono<ImageGenerationHistory> handleFailedRequestWithMessage(ImageGenerationHistory history, String errorMessage) {
         Integer pointsNeeded = history.getNumImages() * generationProperties.getPointsPerImage();
 
-        history.setQueueStatus(QueueStatus.FAILED);
-        history.setUpdatedAt(LocalDateTime.now());
+        String description = errorMessage != null ? errorMessage : history.getDescription();
 
-        return imageGenerationHistoryService.save(history)
+        return imageGenerationHistoryService.updateQueueStatus(
+                        history.getId(),
+                        history.getImageUrls(),
+                        history.getInputImageUrls(),
+                        QueueStatus.FAILED,
+                        null,
+                        description
+                )
                 .flatMap(updatedHistory -> {
-                    log.warn("Запрос {} завершился с ошибкой, возвращаем {} поинтов пользователю {}",
-                            history.getFalRequestId(), pointsNeeded, history.getUserId());
+                    log.warn("Запрос {} завершился с ошибкой: {}. Возвращаем {} поинтов пользователю {}",
+                            history.getFalRequestId(), errorMessage, pointsNeeded, history.getUserId());
                     return userPointsService.addPointsToUser(history.getUserId(), pointsNeeded)
                             .then(Mono.just(updatedHistory));
                 });
