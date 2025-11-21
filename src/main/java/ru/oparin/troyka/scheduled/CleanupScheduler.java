@@ -4,10 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.FalAiProperties;
-import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.enums.PaymentStatus;
 import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.repository.EmailVerificationTokenRepository;
@@ -113,7 +111,7 @@ public class CleanupScheduler {
             log.debug("Проверка здоровья FAL AI отключена");
             return;
         }
-        
+
         try {
             falAIHealthCheckService.checkFalAIHealth();
         } catch (Exception e) {
@@ -125,30 +123,23 @@ public class CleanupScheduler {
      * Опрос статусов активных запросов в очереди Fal.ai.
      * Выполняется каждые 5 секунд (настраивается через fal.ai.queue.polling-interval-ms).
      */
-    @Scheduled(fixedRateString = "${fal.ai.queue.polling-interval-ms:5000}")
+    @Scheduled(fixedRateString = "${fal.ai.queue.polling-interval-ms}")
     public void pollFalAIQueueRequests() {
-        FalAiProperties.Queue queue = falAiProperties.getQueue();
-        if (!queue.isEnabled()) {
-            log.debug("Polling очереди Fal.ai отключен");
-            return;
-        }
-
-        try {
-            Flux<ImageGenerationHistory> activeRequests = imageGenerationHistoryRepository.findAll()
-                    .filter(history -> QueueStatus.isActive(history.getQueueStatus()))
-                    .flatMap(history -> {
-                        return falAIQueueService.pollStatus(history)
-                                .onErrorResume(e -> {
-                                    log.error("Ошибка при опросе статуса запроса {}", history.getId(), e);
-                                    return Mono.just(history);
-                                });
-                    });
-
-            activeRequests
-                    .doOnError(error -> log.error("Ошибка при опросе очереди Fal.ai", error))
-                    .subscribe();
-        } catch (Exception e) {
-            log.error("Ошибка при запуске опроса очереди Fal.ai", e);
+        if (falAiProperties.getQueue().isEnabled()) {
+            try {
+                imageGenerationHistoryRepository.findAll()
+                        .filter(history -> QueueStatus.isActive(history.getQueueStatus()))
+                        .flatMap(history ->
+                                falAIQueueService.pollStatus(history)
+                                        .onErrorResume(e -> {
+                                            log.error("Ошибка при опросе статуса запроса {}", history.getId(), e);
+                                            return Mono.just(history);
+                                        }))
+                        .doOnError(error -> log.error("Ошибка при опросе очереди Fal.ai", error))
+                        .subscribe();
+            } catch (Exception e) {
+                log.error("Ошибка при запуске опроса очереди Fal.ai", e);
+            }
         }
     }
 }

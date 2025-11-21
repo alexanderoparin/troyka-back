@@ -36,8 +36,6 @@ public class ImageProxyController {
     @GetMapping("/{version}/**")
     public Mono<ResponseEntity<byte[]>> proxyImage(@PathVariable String version,
                                                      ServerHttpRequest request) {
-        log.info("Запрос проксирования изображения: version={}", version);
-        
         return imageProxyService.proxyImage(version, request.getURI().getPath())
                 .map(fileData -> {
                     String contentType = determineContentTypeFromData(fileData);
