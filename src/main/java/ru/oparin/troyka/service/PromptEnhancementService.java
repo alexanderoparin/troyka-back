@@ -64,16 +64,20 @@ public class PromptEnhancementService {
      */
     public Mono<String> enhancePrompt(String userPrompt, List<String> imageUrls, ArtStyle userStyle) {
         String systemPrompt = buildSystemPrompt(userStyle);
+        String stylePrompt = userStyle.getPrompt() != null && !userStyle.getPrompt().trim().isEmpty()
+                ? userStyle.getPrompt()
+                : "";
         
         // Выбираем модель и параметры в зависимости от наличия изображений
         boolean hasImages = !CollectionUtils.isEmpty(imageUrls);
         
+        Mono<String> enhancedPromptMono;
         if (hasImages) {
             // Для промптов с изображениями: сначала Gemini, при ошибках - fallback на Qwen
             DeepInfraProperties.ModelConfig primaryModel = properties.getGemini();
             DeepInfraProperties.ModelConfig fallbackModel = properties.getQwen25Vl();
             
-            return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, primaryModel, false)
+            enhancedPromptMono = enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, primaryModel, false)
                     .onErrorResume(error -> {
                         log.warn("Ошибка при использовании модели {}: {}. Переключаемся на Qwen как fallback.", 
                                 primaryModel.getModel(), error.getMessage());
@@ -81,8 +85,11 @@ public class PromptEnhancementService {
                     });
         } else {
             // Для текстовых промптов используем Llama
-            return enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, properties.getLlama(), false);
+            enhancedPromptMono = enhancePromptWithModel(systemPrompt, userPrompt, imageUrls, properties.getLlama(), false);
         }
+        
+        // Очищаем промпт от стиля и лишних знаков препинания
+        return enhancedPromptMono.map(enhancedPrompt -> cleanEnhancedPrompt(enhancedPrompt, stylePrompt));
     }
     
     /**
@@ -311,6 +318,35 @@ public class PromptEnhancementService {
      */
     private boolean isPromptEmpty(String prompt) {
         return prompt == null || prompt.trim().isEmpty();
+    }
+
+    /**
+     * Очистить улучшенный промпт: убрать стиль и лишние знаки препинания в начале.
+     */
+    private String cleanEnhancedPrompt(String enhancedPrompt, String stylePrompt) {
+        if (enhancedPrompt == null || enhancedPrompt.trim().isEmpty()) {
+            return enhancedPrompt;
+        }
+        
+        String cleaned = enhancedPrompt;
+        
+        // Убираем стиль из промпта, если он есть
+        if (stylePrompt != null && !stylePrompt.trim().isEmpty()) {
+            // Убираем стиль с учетом регистра и возможных вариаций
+            String stylePattern = Pattern.quote(stylePrompt.trim());
+            // Убираем стиль в начале, в середине и в конце промпта
+            cleaned = cleaned.replaceAll("(?i)^\\s*" + stylePattern + "\\s*[,\\.]?\\s*", "");
+            cleaned = cleaned.replaceAll("(?i)\\s*,\\s*" + stylePattern + "\\s*[,\\.]?\\s*", " ");
+            cleaned = cleaned.replaceAll("(?i)\\s*,\\s*" + stylePattern + "\\s*$", "");
+        }
+        
+        // Убираем лишние знаки препинания и пробелы в начале
+        cleaned = cleaned.replaceAll("^[\\s,\\.;:]+", "");
+        
+        // Убираем множественные пробелы
+        cleaned = cleaned.replaceAll("\\s+", " ").trim();
+        
+        return cleaned;
     }
 
     /**
