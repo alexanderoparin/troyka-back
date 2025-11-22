@@ -255,52 +255,9 @@ public class FalAIQueueService {
         return queueWebClient.get()
                 .uri(resultPath)
                 .retrieve()
-                .onStatus(status -> status.value() == 422, clientResponse -> {
-                    return clientResponse.bodyToMono(String.class)
-                            .flatMap(errorBody -> {
-                                String errorMessage = "Запрос был отклонен системой безопасности. Возможно, контент нарушает политику использования.";
-                                log.warn("Запрос {} отклонен Fal.ai (422): {}. Тело ответа: {}", 
-                                        history.getFalRequestId(), errorMessage, errorBody);
-                                // Возвращаем ошибку, которая будет обработана в onErrorResume
-                                return Mono.error(new RuntimeException("CONTENT_POLICY_VIOLATION: " + errorMessage));
-                            });
-                })
                 .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {})
-                .flatMap(response -> {
-                    List<String> imageUrls = response.getImages().stream()
-                            .map(FalAIImageDTO::getUrl)
-                            .toList();
-
-                    history.setImageUrls(imageUrls);
-                    history.setDescription(response.getDescription());
-                    history.setQueueStatus(QueueStatus.COMPLETED);
-                    history.setQueuePosition(null);
-                    history.setUpdatedAt(LocalDateTime.now());
-
-                    log.info("Результат получен напрямую для запроса {}: {} изображений", history.getFalRequestId(), imageUrls.size());
-
-                    // Обновляем запись через сервис
-                    return imageGenerationHistoryService.updateQueueStatus(
-                            history.getId(),
-                            imageUrls,
-                            history.getInputImageUrls(),
-                            QueueStatus.COMPLETED,
-                            null,
-                            response.getDescription()
-                    )
-                            .flatMap(updatedHistory ->
-                                    sessionService.updateSessionTimestamp(history.getSessionId())
-                                    .then(Mono.just(updatedHistory)));
-                })
-                .onErrorResume(e -> {
-                    if (e.getMessage() != null && e.getMessage().contains("CONTENT_POLICY_VIOLATION")) {
-                        String errorMessage = e.getMessage().replace("CONTENT_POLICY_VIOLATION: ", "");
-                        log.error("Ошибка при получении результата для запроса {}: {}", history.getFalRequestId(), errorMessage);
-                        return handleFailedRequestWithMessage(history, errorMessage);
-                    }
-                    log.error("Ошибка при получении результата напрямую для запроса {} из {}", history.getFalRequestId(), resultPath, e);
-                    return handleFailedRequest(history);
-                });
+                .flatMap(response -> processSuccessfulResponse(history, response))
+                .onErrorResume(e -> handleRequestError(e, history, resultPath));
     }
 
     /**
@@ -315,36 +272,8 @@ public class FalAIQueueService {
                 .uri(responseUrl)
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {})
-                .flatMap(response -> {
-                    List<String> imageUrls = response.getImages().stream()
-                            .map(FalAIImageDTO::getUrl)
-                            .toList();
-
-                    history.setImageUrls(imageUrls);
-                    history.setDescription(response.getDescription());
-                    history.setQueueStatus(QueueStatus.COMPLETED);
-                    history.setQueuePosition(null);
-                    history.setUpdatedAt(LocalDateTime.now());
-
-                    log.info("Результат получен для запроса {}: {} изображений", history.getFalRequestId(), imageUrls.size());
-
-                    // Обновляем запись через сервис
-                    return imageGenerationHistoryService.updateQueueStatus(
-                            history.getId(),
-                            imageUrls,
-                            history.getInputImageUrls(),
-                            QueueStatus.COMPLETED,
-                            null,
-                            response.getDescription()
-                    )
-                            .flatMap(updatedHistory ->
-                                    sessionService.updateSessionTimestamp(history.getSessionId())
-                                    .then(Mono.just(updatedHistory)));
-                })
-                .onErrorResume(e -> {
-                    log.error("Ошибка при получении результата для запроса {} из {}", history.getFalRequestId(), responseUrl, e);
-                    return handleFailedRequest(history);
-                });
+                .flatMap(response -> processSuccessfulResponse(history, response))
+                .onErrorResume(e -> handleRequestError(e, history, responseUrl));
     }
 
     /**
@@ -427,6 +356,58 @@ public class FalAIQueueService {
                         );
             }
         }
+    }
+
+    /**
+     * Получить сообщение об ошибке политики контента.
+     */
+    private String getContentPolicyViolationMessage() {
+        return "Запрос был отклонен системой безопасности. Возможно, контент нарушает политику использования.";
+    }
+
+    /**
+     * Обработать успешный ответ от Fal.ai: сохранить изображения и обновить запись в БД.
+     */
+    private Mono<ImageGenerationHistory> processSuccessfulResponse(ImageGenerationHistory history, FalAIResponseDTO response) {
+        List<String> imageUrls = response.getImages().stream()
+                .map(FalAIImageDTO::getUrl)
+                .toList();
+
+        history.setImageUrls(imageUrls);
+        history.setDescription(response.getDescription());
+        history.setQueueStatus(QueueStatus.COMPLETED);
+        history.setQueuePosition(null);
+        history.setUpdatedAt(LocalDateTime.now());
+
+        log.info("Результат получен для запроса {}: {} изображений", history.getFalRequestId(), imageUrls.size());
+
+        // Обновляем запись через сервис
+        return imageGenerationHistoryService.updateQueueStatus(
+                        history.getId(),
+                        imageUrls,
+                        history.getInputImageUrls(),
+                        QueueStatus.COMPLETED,
+                        null,
+                        response.getDescription()
+                )
+                .flatMap(updatedHistory ->
+                        sessionService.updateSessionTimestamp(history.getSessionId())
+                                .then(Mono.just(updatedHistory)));
+    }
+
+    /**
+     * Обработать ошибку при получении результата запроса.
+     */
+    private Mono<ImageGenerationHistory> handleRequestError(Throwable e, ImageGenerationHistory history, String requestPath) {
+        // Проверяем, является ли это ошибкой 422 (UnprocessableEntity)
+        if (e instanceof WebClientResponseException webE && webE.getStatusCode().value() == 422) {
+            String errorMessage = getContentPolicyViolationMessage();
+            log.warn("Запрос {} отклонен Fal.ai (422): {}. Тело ответа: {}", 
+                    history.getFalRequestId(), errorMessage, webE.getResponseBodyAsString());
+            return handleFailedRequestWithMessage(history, errorMessage);
+        }
+        log.error("Ошибка при получении результата для запроса {} из {}", history.getFalRequestId(), requestPath, e);
+        return handleFailedRequest(history);
     }
 
     /**
