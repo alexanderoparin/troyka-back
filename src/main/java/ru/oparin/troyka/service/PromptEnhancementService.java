@@ -345,7 +345,8 @@ public class PromptEnhancementService {
         
         // Убираем множественные пробелы
         cleaned = cleaned.replaceAll("\\s+", " ").trim();
-        
+
+        log.debug("Отдаем промпт пользователю:\n{}", cleaned);
         return cleaned;
     }
 
