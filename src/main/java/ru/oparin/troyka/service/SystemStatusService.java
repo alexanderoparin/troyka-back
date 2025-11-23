@@ -36,7 +36,7 @@ public class SystemStatusService {
      * @return текущий статус системы или ACTIVE с null сообщением, если записей нет
      */
     public Mono<SystemStatusResponse> getCurrentStatus() {
-        return statusHistoryRepository.findLatest()
+        return getSystemStatusHistoryWithLog()
                 .map(history -> new SystemStatusResponse(
                         history.getStatus(),
                         history.getStatus() == SystemStatus.ACTIVE ? null : history.getMessage()
@@ -51,7 +51,7 @@ public class SystemStatusService {
      * @return текущий статус с флагом isSystem
      */
     public Mono<CurrentStatusWithMetadata> getCurrentStatusWithMetadata() {
-        return statusHistoryRepository.findLatest()
+        return getSystemStatusHistoryWithLog()
                 .map(history -> CurrentStatusWithMetadata.builder()
                         .status(history.getStatus())
                         .message(history.getMessage())
@@ -64,6 +64,23 @@ public class SystemStatusService {
                         .build());
     }
 
+    private Mono<SystemStatusHistory> getSystemStatusHistoryWithLog() {
+        return statusHistoryRepository.findLatest()
+                .doOnNext(systemStatusHistory ->
+                        log.debug("Текущий статус FAL AI API: {}", systemStatusHistory.getStatus().name()));
+    }
+
+
+    /**
+     * Обновить статус системы (ручное изменение администратором).
+     *
+     * @param status  новый статус системы
+     * @param message сообщение для пользователей
+     * @return созданная запись истории
+     */
+    public Mono<SystemStatusHistory> updateStatusManually(SystemStatus status, String message) {
+        return updateStatus(status, message, false);
+    }
 
     /**
      * Обновить статус системы.
@@ -114,17 +131,6 @@ public class SystemStatusService {
                         }
                     });
         });
-    }
-
-    /**
-     * Обновить статус системы (ручное изменение администратором).
-     *
-     * @param status  новый статус системы
-     * @param message сообщение для пользователей
-     * @return созданная запись истории
-     */
-    public Mono<SystemStatusHistory> updateStatusManually(SystemStatus status, String message) {
-        return updateStatus(status, message, false);
     }
 
     /**

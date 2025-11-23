@@ -1,5 +1,6 @@
 package ru.oparin.troyka.model.dto.system;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -12,6 +13,7 @@ import ru.oparin.troyka.model.enums.SystemStatus;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public class SystemStatusResponse {
     
     /**
