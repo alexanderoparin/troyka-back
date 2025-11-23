@@ -39,7 +39,7 @@ public class SystemStatusService {
         return getSystemStatusHistoryWithLog()
                 .map(history -> new SystemStatusResponse(
                         history.getStatus(),
-                        history.getStatus() == SystemStatus.ACTIVE ? null : history.getMessage()
+                        history.getMessage()
                 ))
                 .defaultIfEmpty(new SystemStatusResponse(SystemStatus.ACTIVE, null));
     }

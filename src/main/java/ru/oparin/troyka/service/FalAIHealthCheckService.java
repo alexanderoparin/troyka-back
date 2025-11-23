@@ -54,8 +54,6 @@ public class FalAIHealthCheckService {
                 .subscribe(
                         isHealthy -> {
                             if (isHealthy) {
-                                log.debug("Результат проверки по расписанию - FAL AI API доступен");
-                                // Если система была в проблемном состоянии, проверяем, нужно ли вернуть ACTIVE
                                 systemStatusService.getCurrentStatusWithMetadata()
                                         .flatMap(currentStatus -> {
                                             if (currentStatus.getStatus() != SystemStatus.ACTIVE && 
