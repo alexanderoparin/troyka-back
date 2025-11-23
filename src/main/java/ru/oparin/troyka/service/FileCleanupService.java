@@ -68,21 +68,41 @@ public class FileCleanupService {
                 .collectList()
                 .flatMap(usedFileNamesList -> {
                     Set<String> usedFileNames = new HashSet<>(usedFileNamesList);
-                    // Получаем файлы неактивных пользователей без платежей
                     return getInactiveUsersFiles()
                             .collectList()
                             .flatMap(inactiveUsersFiles -> {
-                                // Объединяем файлы неактивных пользователей с используемыми
-                                // Файлы неактивных пользователей будут удалены, даже если они в БД
-                                Set<String> filesToKeep = new HashSet<>(usedFileNames);
-                                filesToKeep.removeAll(inactiveUsersFiles);
-                                
-                                return Mono.fromCallable(() -> deleteUnusedFiles(filesToKeep, daysOld))
-                                        .onErrorResume(e -> {
-                                            log.error("Ошибка при очистке файлов", e);
-                                            return Mono.just(0);
-                                        });
+                                Set<String> filesToKeep = calculateFilesToKeep(usedFileNames, inactiveUsersFiles);
+                                return deleteUnusedFilesSafely(filesToKeep, daysOld);
                             });
+                });
+    }
+
+    /**
+     * Вычислить список файлов, которые нужно сохранить.
+     * Исключает файлы неактивных пользователей из списка используемых файлов.
+     *
+     * @param usedFileNames множество используемых файлов
+     * @param inactiveUsersFiles множество файлов неактивных пользователей
+     * @return множество файлов для сохранения
+     */
+    private Set<String> calculateFilesToKeep(Set<String> usedFileNames, List<String> inactiveUsersFiles) {
+        Set<String> filesToKeep = new HashSet<>(usedFileNames);
+        filesToKeep.removeAll(inactiveUsersFiles);
+        return filesToKeep;
+    }
+
+    /**
+     * Безопасно удалить неиспользуемые файлы с обработкой ошибок.
+     *
+     * @param filesToKeep множество файлов для сохранения
+     * @param daysOld минимальный возраст файла в днях
+     * @return Mono с количеством удаленных файлов
+     */
+    private Mono<Integer> deleteUnusedFilesSafely(Set<String> filesToKeep, int daysOld) {
+        return Mono.fromCallable(() -> deleteUnusedFiles(filesToKeep, daysOld))
+                .onErrorResume(e -> {
+                    log.error("Ошибка при очистке файлов", e);
+                    return Mono.just(0);
                 });
     }
 
@@ -95,47 +115,60 @@ public class FileCleanupService {
     private Flux<String> getInactiveUsersFiles() {
         LocalDateTime oneMonthAgo = LocalDateTime.now().minusMonths(1);
         
-        // Получаем всех пользователей, у которых есть генерации
         return imageGenerationHistoryRepository.findAll()
                 .map(ImageGenerationHistory::getUserId)
                 .distinct()
-                .flatMap(userId -> {
-                    // Проверяем, есть ли у пользователя успешные платежи
-                    return paymentRepository.findByUserId(userId)
-                            .filter(payment -> payment.getStatus() == PaymentStatus.PAID)
-                            .hasElements()
-                            .flatMapMany(hasPayments -> {
-                                if (hasPayments) {
-                                    // У пользователя есть платежи, пропускаем
-                                    return Flux.empty();
-                                }
-                                
-                                // У пользователя нет платежей, получаем все его генерации
-                                return imageGenerationHistoryRepository
-                                        .findByUserIdOrderByCreatedAtDesc(userId)
-                                        .collectList()
-                                        .flatMapMany(histories -> {
-                                            if (histories.isEmpty()) {
-                                                return Flux.empty();
-                                            }
-                                            
-                                            // Проверяем последнюю генерацию
-                                            ImageGenerationHistory lastHistory = histories.get(0);
-                                            if (lastHistory.getCreatedAt().isBefore(oneMonthAgo)) {
-                                                // Последняя генерация была больше месяца назад
-                                                log.info("Найден неактивный пользователь без платежей (ID: {}), последняя генерация: {}", 
-                                                        userId, lastHistory.getCreatedAt());
-                                                
-                                                return extractFilesFromHistories(histories)
-                                                        .doOnNext(file -> 
-                                                            log.debug("Файл неактивного пользователя без платежей для удаления: {}", file)
-                                                        );
-                                            }
-                                            return Flux.empty();
-                                        });
-                            });
-                })
+                .flatMap(userId -> processUserForInactiveFiles(userId, oneMonthAgo))
                 .distinct();
+    }
+
+    /**
+     * Обработать пользователя и вернуть его файлы, если он неактивен.
+     *
+     * @param userId ID пользователя
+     * @param oneMonthAgo дата, до которой считается неактивным
+     * @return поток файлов для удаления или пустой поток
+     */
+    private Flux<String> processUserForInactiveFiles(Long userId, LocalDateTime oneMonthAgo) {
+        return paymentRepository.findByUserId(userId)
+                .filter(payment -> payment.getStatus() == PaymentStatus.PAID)
+                .hasElements()
+                .flatMapMany(hasPayments -> {
+                    if (hasPayments) {
+                        return Flux.empty();
+                    }
+                    return getFilesForInactiveUser(userId, oneMonthAgo);
+                });
+    }
+
+    /**
+     * Получить файлы неактивного пользователя без платежей.
+     *
+     * @param userId ID пользователя
+     * @param oneMonthAgo дата, до которой считается неактивным
+     * @return поток файлов для удаления или пустой поток
+     */
+    private Flux<String> getFilesForInactiveUser(Long userId, LocalDateTime oneMonthAgo) {
+        return imageGenerationHistoryRepository
+                .findByUserIdOrderByCreatedAtDesc(userId)
+                .collectList()
+                .flatMapMany(histories -> {
+                    if (histories.isEmpty()) {
+                        return Flux.empty();
+                    }
+                    
+                    ImageGenerationHistory lastHistory = histories.get(0);
+                    if (lastHistory.getCreatedAt().isBefore(oneMonthAgo)) {
+                        log.info("Найден неактивный пользователь без платежей (ID: {}), последняя генерация: {}", 
+                                userId, lastHistory.getCreatedAt());
+                        
+                        return extractFilesFromHistories(histories)
+                                .doOnNext(file -> 
+                                    log.debug("Файл неактивного пользователя без платежей для удаления: {}", file)
+                                );
+                    }
+                    return Flux.empty();
+                });
     }
 
     /**
@@ -239,33 +272,230 @@ public class FileCleanupService {
      */
     private void processDirectory(Path rootPath, Path directory, Set<String> usedFileNames,
                                  long cutoffTime, AtomicInteger deletedCount) {
-        try (Stream<Path> paths = Files.list(directory)) {
-            paths.forEach(path -> {
-                try {
-                    if (Files.isRegularFile(path)) {
-                        Path relativePath = rootPath.relativize(path);
-                        String filePath = relativePath.toString().replace("\\", "/");
+        processDirectoryRecursive(rootPath, directory, path -> {
+            if (Files.isRegularFile(path)) {
+                processUnusedFile(rootPath, path, usedFileNames, cutoffTime, deletedCount);
+            }
+        });
+    }
 
-                        if (usedFileNames.contains(filePath)) {
-                            return;
-                        }
+    /**
+     * Обработать файл и удалить его, если он не используется и старше указанного времени.
+     *
+     * @param rootPath корневой путь
+     * @param filePath путь к файлу
+     * @param usedFileNames множество используемых файлов
+     * @param cutoffTime временная метка для проверки возраста
+     * @param deletedCount счетчик удаленных файлов
+     */
+    private void processUnusedFile(Path rootPath, Path filePath, Set<String> usedFileNames,
+                                   long cutoffTime, AtomicInteger deletedCount) {
+        String relativePath = getRelativePath(rootPath, filePath);
+        if (usedFileNames.contains(relativePath)) {
+            return;
+        }
 
-                        long lastModified = Files.getLastModifiedTime(path).toMillis();
+        try {
+            long lastModified = Files.getLastModifiedTime(filePath).toMillis();
+            if (lastModified < cutoffTime) {
+                deleteOldUnusedFile(rootPath, filePath, lastModified, deletedCount);
+            }
+        } catch (IOException e) {
+            log.warn("Не удалось обработать файл: {}", filePath, e);
+        }
+    }
 
-                        if (lastModified < cutoffTime) {
-                            long fileSize = Files.size(path);
-                            double fileSizeMB = fileSize / (1024.0 * 1024.0);
-                            long ageInDays = Duration.ofMillis(Instant.now().toEpochMilli() - lastModified).toDays();
-                            Files.delete(path);
+    /**
+     * Удалить старый неиспользуемый файл с логированием.
+     *
+     * @param rootPath корневой путь
+     * @param filePath путь к файлу
+     * @param lastModified время последнего изменения файла
+     * @param deletedCount счетчик удаленных файлов
+     */
+    private void deleteOldUnusedFile(Path rootPath, Path filePath, long lastModified, AtomicInteger deletedCount) {
+        try {
+            String relativePath = getRelativePath(rootPath, filePath);
+            long fileSize = Files.size(filePath);
+            double fileSizeMB = fileSize / (1024.0 * 1024.0);
+            long ageInDays = Duration.ofMillis(Instant.now().toEpochMilli() - lastModified).toDays();
+            
+            Files.delete(filePath);
+            deletedCount.incrementAndGet();
+            log.info("Удален старый неиспользуемый файл: {} (размер: {} МБ, возраст: {} дней)",
+                    relativePath, String.format("%.2f", fileSizeMB), ageInDays);
+        } catch (IOException e) {
+            log.warn("Не удалось удалить файл: {}", filePath, e);
+        }
+    }
+
+    /**
+     * Экстренная очистка зараженных файлов (ransomware).
+     * Удаляет файлы с подозрительными расширениями:
+     * - .want_to_cry (зашифрованные файлы)
+     * - .exe (подозрительные исполняемые файлы в директории загрузки)
+     *
+     * @return количество удаленных зараженных файлов
+     */
+    public Mono<Integer> cleanupInfectedFiles() {
+        return Mono.fromCallable(() -> {
+            AtomicInteger deletedCount = new AtomicInteger(0);
+            Path uploadPath = Paths.get(uploadDir);
+            
+            if (!Files.exists(uploadPath)) {
+                log.warn("Директория загрузки не существует: {}", uploadPath);
+                return 0;
+            }
+            
+            log.warn("Начата экстренная очистка зараженных файлов в директории: {}", uploadPath);
+            processInfectedFiles(uploadPath, uploadPath, deletedCount);
+            int count = deletedCount.get();
+            log.warn("Экстренная очистка завершена. Удалено зараженных файлов: {}", count);
+            return count;
+        }).onErrorResume(e -> {
+            log.error("Ошибка при экстренной очистке зараженных файлов", e);
+            return Mono.just(0);
+        });
+    }
+
+    /**
+     * Обработать директорию и удалить зараженные файлы.
+     * Удаляет:
+     * 1. Все файлы с подозрительными расширениями (.want_to_cry, .exe, .lnk, .dat)
+     * 2. Все поддиректории, кроме разрешенных (avatar, examples)
+     * Рекурсивно обрабатывает только разрешенные поддиректории.
+     *
+     * @param rootPath корневой путь для вычисления относительных путей файлов
+     * @param directory директория для обработки
+     * @param deletedCount счетчик удаленных файлов (обновляется в процессе обработки)
+     */
+    private void processInfectedFiles(Path rootPath, Path directory, AtomicInteger deletedCount) {
+        Set<String> allowedSubdirectories = Set.of("avatar", "examples");
+        
+        processDirectoryRecursive(rootPath, directory, path -> {
+            if (Files.isDirectory(path)) {
+                processInfectedDirectory(rootPath, path, allowedSubdirectories, deletedCount);
+            } else if (Files.isRegularFile(path)) {
+                processInfectedFile(rootPath, path, deletedCount);
+            }
+        });
+    }
+
+    /**
+     * Обработать директорию на наличие зараженных файлов.
+     *
+     * @param rootPath корневой путь
+     * @param directory директория для обработки
+     * @param allowedSubdirectories множество разрешенных поддиректорий
+     * @param deletedCount счетчик удаленных файлов
+     */
+    private void processInfectedDirectory(Path rootPath, Path directory, Set<String> allowedSubdirectories, 
+                                         AtomicInteger deletedCount) {
+        String dirName = directory.getFileName().toString();
+        
+        if (allowedSubdirectories.contains(dirName)) {
+            processInfectedFiles(rootPath, directory, deletedCount);
+        } else {
+            String dirPath = getRelativePath(rootPath, directory);
+            deleteDirectoryRecursively(directory, deletedCount);
+            log.warn("Удалена неразрешенная поддиректория: {}", dirPath);
+        }
+    }
+
+    /**
+     * Обработать файл на наличие заражения.
+     *
+     * @param rootPath корневой путь
+     * @param filePath путь к файлу
+     * @param deletedCount счетчик удаленных файлов
+     */
+    private void processInfectedFile(Path rootPath, Path filePath, AtomicInteger deletedCount) {
+        String fileName = filePath.getFileName().toString().toLowerCase();
+        
+        if (isInfectedFile(fileName)) {
+            deleteFileWithLogging(rootPath, filePath, deletedCount, "зараженный файл");
+        }
+    }
+
+    /**
+     * Проверить, является ли файл зараженным по его имени.
+     *
+     * @param fileName имя файла (в нижнем регистре)
+     * @return true, если файл имеет подозрительное расширение
+     */
+    private boolean isInfectedFile(String fileName) {
+        return fileName.endsWith(".want_to_cry") || 
+               fileName.endsWith(".exe") || 
+               fileName.endsWith(".lnk") || 
+               fileName.endsWith(".dat") ||
+               fileName.contains("want_to_cry");
+    }
+
+    /**
+     * Получить относительный путь файла от корневого пути.
+     *
+     * @param rootPath корневой путь
+     * @param filePath путь к файлу
+     * @return относительный путь в формате с "/"
+     */
+    private String getRelativePath(Path rootPath, Path filePath) {
+        return rootPath.relativize(filePath).toString().replace("\\", "/");
+    }
+
+    /**
+     * Удалить файл с логированием размера.
+     *
+     * @param rootPath корневой путь для вычисления относительного пути
+     * @param filePath путь к файлу для удаления
+     * @param deletedCount счетчик удаленных файлов
+     * @param fileType тип файла для логирования (например, "зараженный файл")
+     */
+    private void deleteFileWithLogging(Path rootPath, Path filePath, AtomicInteger deletedCount, String fileType) {
+        try {
+            String relativePath = getRelativePath(rootPath, filePath);
+            long fileSize = Files.size(filePath);
+            double fileSizeMB = fileSize / (1024.0 * 1024.0);
+            Files.delete(filePath);
+            deletedCount.incrementAndGet();
+            log.warn("Удален {}: {} (размер: {} МБ)", fileType, relativePath, String.format("%.2f", fileSizeMB));
+        } catch (IOException e) {
+            log.error("Не удалось удалить {}: {}", fileType, filePath, e);
+        }
+    }
+
+    /**
+     * Рекурсивно удалить директорию со всем содержимым.
+     *
+     * @param directory директория для удаления
+     * @param deletedCount счетчик удаленных файлов
+     */
+    private void deleteDirectoryRecursively(Path directory, AtomicInteger deletedCount) {
+        try {
+            Files.walk(directory)
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .forEach(file -> {
+                        try {
+                            Files.delete(file);
                             deletedCount.incrementAndGet();
-                            log.info("Удален старый неиспользуемый файл: {} (размер: {} МБ, возраст: {} дней)",
-                                    filePath, String.format("%.2f", fileSizeMB), ageInDays);
+                        } catch (IOException e) {
+                            log.error("Не удалось удалить файл/директорию: {}", file, e);
                         }
-                    }
-                } catch (IOException e) {
-                    log.warn("Не удалось обработать файл: {}", path, e);
-                }
-            });
+                    });
+        } catch (IOException e) {
+            log.error("Не удалось удалить директорию: {}", directory, e);
+        }
+    }
+
+    /**
+     * Рекурсивно обработать директорию с применением обработчика к каждому пути.
+     *
+     * @param rootPath корневой путь для вычисления относительных путей
+     * @param directory директория для обработки
+     * @param pathHandler обработчик для каждого пути
+     */
+    private void processDirectoryRecursive(Path rootPath, Path directory, java.util.function.Consumer<Path> pathHandler) {
+        try (Stream<Path> paths = Files.list(directory)) {
+            paths.forEach(pathHandler);
         } catch (IOException e) {
             log.error("Ошибка при чтении директории: {}", directory, e);
         }
@@ -286,33 +516,54 @@ public class FileCleanupService {
             }
 
             long fileSize = Files.size(file);
-            long lastModified = Files.getLastModifiedTime(file).toMillis();
-            LocalDateTime lastModifiedDateTime = LocalDateTime.ofInstant(
-                    Instant.ofEpochMilli(lastModified),
-                    ZoneId.systemDefault()
-            );
-
-            LocalDateTime createdDateTime = null;
-            try {
-                Object creationTime = Files.getAttribute(file, "creationTime");
-                if (creationTime != null) {
-                    long createdMillis = ((FileTime) creationTime).toMillis();
-                    createdDateTime = LocalDateTime.ofInstant(
-                            Instant.ofEpochMilli(createdMillis),
-                            ZoneId.systemDefault()
-                    );
-                }
-            } catch (Exception e) {
-                log.debug("Не удалось получить дату создания файла {}: {}", filename, e.getMessage());
-            }
+            LocalDateTime lastModifiedDateTime = getLastModifiedTime(file);
+            LocalDateTime createdDateTime = getCreationTime(file).orElse(lastModifiedDateTime);
 
             return FileInfo.builder()
                     .filename(filename)
                     .size(fileSize)
                     .lastModified(lastModifiedDateTime)
-                    .created(createdDateTime != null ? createdDateTime : lastModifiedDateTime)
+                    .created(createdDateTime)
                     .build();
         });
+    }
+
+    /**
+     * Получить время последнего изменения файла.
+     *
+     * @param file путь к файлу
+     * @return время последнего изменения
+     */
+    private LocalDateTime getLastModifiedTime(Path file) {
+        try {
+            long lastModified = Files.getLastModifiedTime(file).toMillis();
+            return LocalDateTime.ofInstant(Instant.ofEpochMilli(lastModified), ZoneId.systemDefault());
+        } catch (IOException e) {
+            log.warn("Не удалось получить время изменения файла: {}", file, e);
+            return LocalDateTime.now();
+        }
+    }
+
+    /**
+     * Получить время создания файла.
+     *
+     * @param file путь к файлу
+     * @return Optional с временем создания или пустой Optional, если не удалось получить
+     */
+    private Optional<LocalDateTime> getCreationTime(Path file) {
+        try {
+            Object creationTime = Files.getAttribute(file, "creationTime");
+            if (creationTime != null) {
+                long createdMillis = ((FileTime) creationTime).toMillis();
+                return Optional.of(LocalDateTime.ofInstant(
+                        Instant.ofEpochMilli(createdMillis),
+                        ZoneId.systemDefault()
+                ));
+            }
+        } catch (Exception e) {
+            log.debug("Не удалось получить дату создания файла {}: {}", file, e.getMessage());
+        }
+        return Optional.empty();
     }
 
     /**

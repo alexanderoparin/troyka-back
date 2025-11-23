@@ -18,6 +18,7 @@ import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -48,47 +49,41 @@ public class FileService {
         log.info("Пользователь {} загружает файл: оригинальное имя={}", username, filePart.filename());
 
         try {
-            // Создаем директорию для загрузки, если она не существует
-            Path uploadPath = Paths.get(uploadDir);
-            log.info("Проверяем существование директории для загрузки: {}", uploadPath.toAbsolutePath());
+            // Валидация файла
+            return validateFile(filePart, username, "файл")
+                    .flatMap(fileExtension -> {
+                        long maxFileSize = 10 * 1024 * 1024; // 10MB
 
-            if (!Files.exists(uploadPath)) {
-                log.info("Создаем директорию для загрузки: {}", uploadPath.toAbsolutePath());
-                Files.createDirectories(uploadPath);
-            }
+                        // Создаем директорию для загрузки, если она не существует
+                        Path uploadPath = Paths.get(uploadDir);
+                        log.info("Проверяем существование директории для загрузки: {}", uploadPath.toAbsolutePath());
 
-            // Проверяем права на запись
-            if (!Files.isWritable(uploadPath)) {
-                log.error("Директория {} недоступна для записи", uploadPath.toAbsolutePath());
-                return Mono.error(new RuntimeException("Директория загрузки недоступна для записи"));
-            }
+                        // Проверяем права на запись
+                        if (!Files.isWritable(uploadPath)) {
+                            log.error("Директория {} недоступна для записи", uploadPath.toAbsolutePath());
+                            return Mono.error(new RuntimeException("Директория загрузки недоступна для записи"));
+                        }
 
-            // Генерируем уникальное имя файла
-            String originalFilename = filePart.filename();
-            String fileExtension = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
-            }
-            String uniqueFilename = UUID.randomUUID().toString() + fileExtension;
+                        // Генерируем уникальное имя файла (используем только безопасное расширение)
+                        String uniqueFilename = UUID.randomUUID().toString() + fileExtension;
 
-            // Сохраняем файл
-            Path filePath = uploadPath.resolve(uniqueFilename);
-            log.info("Сохраняем файл по пути: {}", filePath.toAbsolutePath());
+                        // Сохраняем файл
+                        Path filePath = uploadPath.resolve(uniqueFilename);
+                        log.info("Сохраняем файл по пути: {}", filePath.toAbsolutePath());
 
-            return filePart.transferTo(filePath)
-                    .then(Mono.fromCallable(() -> {
-                        // Возвращаем URL файла, который может использовать FAL AI
-                        String fileUrl = "https://" + serverHost + "/files/" + uniqueFilename;
-                        log.info("Файл успешно загружен пользователем {}: {}", username, fileUrl);
-                        return fileUrl;
-                    }))
-                    .onErrorResume(AccessDeniedException.class, e -> {
-                        log.error("Ошибка доступа при сохранении файла пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
-                        return Mono.error(new RuntimeException("Нет правдоступа для сохранения файла. Проверьте права на директорию: " + uploadDir));
-                    })
-                    .onErrorResume(Exception.class, e -> {
-                        log.error("Ошибка при сохранении файла пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
-                        return Mono.error(new RuntimeException("Ошибкапри сохранении файла: " + e.getMessage()));
+                        return filePart.transferTo(filePath)
+                                .then(Mono.fromCallable(() -> {
+                                    return validateAndGetFileUrl(filePath, uniqueFilename, maxFileSize, username, 
+                                            "https://" + serverHost + "/files/", "файл");
+                                }))
+                                .onErrorResume(AccessDeniedException.class, e -> {
+                                    log.error("Ошибка доступа при сохранении файла пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                                    return Mono.error(new RuntimeException("Нет прав доступа для сохранения файла. Проверьте права на директорию: " + uploadDir));
+                                })
+                                .onErrorResume(Exception.class, e -> {
+                                    log.error("Ошибка при сохранении файла пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                                    return Mono.error(new RuntimeException("Ошибка при сохранении файла: " + e.getMessage()));
+                                });
                     });
 
         } catch (Exception e) {
@@ -101,47 +96,39 @@ public class FileService {
         log.info("Пользователь {} загружает аватар: оригинальное имя={}", username, filePart.filename());
 
         try {
-            // Создаем директорию для загрузки аватаров, если она не существует
-            Path uploadPath = Paths.get(uploadDir).resolve("avatar");
-            log.info("Проверяем существование директории для загрузки аватаров: {}", uploadPath.toAbsolutePath());
+            // Валидация файла
+            return validateFile(filePart, username, "аватар")
+                    .flatMap(fileExtension -> {
+                        long maxFileSize = 10 * 1024 * 1024; // 10MB
 
-            if (!Files.exists(uploadPath)) {
-                log.info("Создаем директорию для загрузки аватаров: {}", uploadPath.toAbsolutePath());
-                Files.createDirectories(uploadPath);
-            }
+                        Path uploadPath = Paths.get(uploadDir).resolve("avatar");
+                        log.info("Проверяем существование директории для загрузки аватаров: {}", uploadPath.toAbsolutePath());
 
-            // Проверяем права на запись
-            if (!Files.isWritable(uploadPath)) {
-                log.error("Директория {} недоступна для записи", uploadPath.toAbsolutePath());
-                return Mono.error(new RuntimeException("Директория загрузки аватаров недоступна для записи"));
-            }
+                        // Проверяем права на запись
+                        if (!Files.isWritable(uploadPath)) {
+                            log.error("Директория {} недоступна для записи", uploadPath.toAbsolutePath());
+                            return Mono.error(new RuntimeException("Директория загрузки аватаров недоступна для записи"));
+                        }
 
-            // Генерируем уникальное имя файла
-            String originalFilename = filePart.filename();
-            String fileExtension = "";
-            if (originalFilename != null && originalFilename.contains(".")) {
-                fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
-            }
-            String uniqueFilename = UUID.randomUUID().toString() + fileExtension;
+                        // Генерируем уникальное имя файла (используем только безопасное расширение)
+                        String uniqueFilename = UUID.randomUUID() + fileExtension;
 
-            // Сохраняем файл
-            Path filePath = uploadPath.resolve(uniqueFilename);
-            log.info("Сохраняем аватар по пути: {}", filePath.toAbsolutePath());
+                        // Сохраняем файл
+                        Path filePath = uploadPath.resolve(uniqueFilename);
+                        log.info("Сохраняем аватар по пути: {}", filePath.toAbsolutePath());
 
-            return filePart.transferTo(filePath)
-                    .then(Mono.fromCallable(() -> {
-                        // Возвращаем URL аватара
-                        String fileUrl = "https://" + serverHost + "/files/avatar/" + uniqueFilename;
-                        log.info("Аватар успешно загружен пользователем {}: {}", username, fileUrl);
-                        return fileUrl;
-                    }))
-                    .onErrorResume(AccessDeniedException.class, e -> {
-                        log.error("Ошибка доступа при сохранении аватара пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
-                        return Mono.error(new RuntimeException("Нет прав доступа для сохранения аватара. Проверьте права на директорию: " + uploadDir + "/avatar"));
-                    })
-                    .onErrorResume(Exception.class, e -> {
-                        log.error("Ошибка при сохранении аватара пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
-                        return Mono.error(new RuntimeException("Ошибка при сохранении аватара: " + e.getMessage()));
+                        return filePart.transferTo(filePath)
+                                .then(Mono.fromCallable(() ->
+                                        validateAndGetFileUrl(filePath, uniqueFilename, maxFileSize, username,
+                                        "https://" + serverHost + "/files/avatar/", "аватар")))
+                                .onErrorResume(AccessDeniedException.class, e -> {
+                                    log.error("Ошибка доступа при сохранении аватара пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                                    return Mono.error(new RuntimeException("Нет прав доступа для сохранения аватара. Проверьте права на директорию: " + uploadDir + "/avatar"));
+                                })
+                                .onErrorResume(Exception.class, e -> {
+                                    log.error("Ошибка при сохранении аватара пользователем {}. Путь: {}", username, filePath.toAbsolutePath(), e);
+                                    return Mono.error(new RuntimeException("Ошибка при сохранении аватара: " + e.getMessage()));
+                                });
                     });
 
         } catch (Exception e) {
@@ -326,5 +313,80 @@ public class FileService {
             contentType = "image/jpeg"; // По умолчанию для изображений
         }
         return contentType;
+    }
+
+    /**
+     * Валидация загружаемого файла.
+     * Проверяет имя файла, расширение и MIME-тип.
+     *
+     * @param filePart загружаемый файл
+     * @param username имя пользователя для логирования
+     * @param fileType тип файла для логирования (например, "файл" или "аватар")
+     * @return Mono с расширением файла, если валидация прошла успешно, или Mono.error в случае ошибки
+     */
+    private Mono<String> validateFile(FilePart filePart, String username, String fileType) {
+        String originalFilename = filePart.filename();
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Имя файла не может быть пустым"));
+        }
+
+        // Проверяем расширение файла
+        String fileExtension = "";
+        if (originalFilename.contains(".")) {
+            fileExtension = originalFilename.substring(originalFilename.lastIndexOf(".")).toLowerCase();
+        }
+
+        // Разрешенные расширения для изображений
+        Set<String> allowedExtensions = Set.of(".jpg", ".jpeg", ".png", ".gif", ".webp");
+        if (fileExtension.isEmpty() || !allowedExtensions.contains(fileExtension)) {
+            log.warn("Попытка загрузить {} с недопустимым расширением: {} от пользователя {}", fileType, originalFilename, username);
+            return Mono.error(new IllegalArgumentException("Разрешены только изображения: JPG, JPEG, PNG, GIF, WEBP"));
+        }
+
+        // Проверяем MIME-тип
+        String contentType = filePart.headers().getContentType() != null 
+                ? filePart.headers().getContentType().toString() 
+                : "";
+        if (!contentType.startsWith("image/")) {
+            log.warn("Попытка загрузить {} с недопустимым MIME-типом: {} от пользователя {}", fileType, contentType, username);
+            return Mono.error(new IllegalArgumentException("Разрешены только изображения"));
+        }
+
+        return Mono.just(fileExtension);
+    }
+
+    /**
+     * Валидация размера файла после сохранения и получение URL.
+     * Проверяет размер файла и возвращает URL, если валидация прошла успешно.
+     *
+     * @param filePath путь к сохраненному файлу
+     * @param uniqueFilename уникальное имя файла
+     * @param maxFileSize максимальный размер файла в байтах
+     * @param username имя пользователя для логирования
+     * @param baseUrl базовый URL для формирования полного URL файла
+     * @param fileType тип файла для логирования (например, "файл" или "аватар")
+     * @return URL файла
+     * @throws IllegalArgumentException если файл не прошел валидацию
+     */
+    private String validateAndGetFileUrl(Path filePath, String uniqueFilename, long maxFileSize, 
+                                       String username, String baseUrl, String fileType) throws IOException {
+        long fileSize = Files.size(filePath);
+        
+        if (fileSize > maxFileSize) {
+            Files.delete(filePath);
+            log.warn("{} {} слишком большой ({} байт), удален", fileType, uniqueFilename, fileSize);
+            throw new IllegalArgumentException("Файл слишком большой (максимум 10MB)");
+        }
+        
+        if (fileSize == 0) {
+            Files.delete(filePath);
+            log.warn("Пустой {} {} удален", fileType, uniqueFilename);
+            throw new IllegalArgumentException("Файл не может быть пустым");
+        }
+        
+        String fileUrl = baseUrl + uniqueFilename;
+        log.info("{} успешно загружен пользователем {}: {} (размер: {} байт)", 
+                fileType, username, fileUrl, fileSize);
+        return fileUrl;
     }
 }

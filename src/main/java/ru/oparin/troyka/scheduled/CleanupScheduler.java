@@ -103,6 +103,24 @@ public class CleanupScheduler {
     }
 
     /**
+     * Очистка зараженных файлов (ransomware, вирусы) каждый день в 03:30
+     * Удаляет файлы с расширениями: .want_to_cry, .exe, .lnk, .dat
+     * и подозрительные директории
+     */
+    @Scheduled(cron = "0 30 3 * * ?")
+    public void cleanupInfectedFiles() {
+        log.info("Очистка зараженных файлов...");
+        try {
+            fileCleanupService.cleanupInfectedFiles()
+                    .doOnNext(count -> log.info("Очистка зараженных файлов завершена. Удалено файлов и директорий: {}", count))
+                    .doOnError(error -> log.error("Ошибка при очистке зараженных файлов: {}", error.getMessage()))
+                    .subscribe();
+        } catch (Exception e) {
+            log.error("Ошибка при очистке зараженных файлов", e);
+        }
+    }
+
+    /**
      * Проверка доступности FAL AI API.
      * Выполняется по расписанию каждые 30 минут.
      */
