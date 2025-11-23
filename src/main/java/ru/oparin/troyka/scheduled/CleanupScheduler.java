@@ -102,9 +102,9 @@ public class CleanupScheduler {
 
     /**
      * Проверка доступности FAL AI API.
-     * Выполняется по расписанию каждые 5 минут.
+     * Выполняется по расписанию каждые 30 минут.
      */
-    @Scheduled(fixedRateString = "${fal.ai.health-check.interval-ms:300000}")
+    @Scheduled(fixedRateString = "${fal.ai.health-check.interval-ms}")
     public void checkFalAIHealth() {
         FalAiProperties.HealthCheck healthCheck = falAiProperties.getHealthCheck();
         if (healthCheck == null || !healthCheck.isEnabled()) {
