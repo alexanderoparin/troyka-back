@@ -66,8 +66,11 @@ public class SystemStatusService {
 
     private Mono<SystemStatusHistory> getSystemStatusHistoryWithLog() {
         return statusHistoryRepository.findLatest()
-                .doOnNext(systemStatusHistory ->
-                        log.debug("Текущий статус FAL AI API: {}", systemStatusHistory.getStatus().name()));
+                .doOnNext(systemStatusHistory -> {
+                            if (!systemStatusHistory.getStatus().isActive())
+                                log.debug("Текущий статус FAL AI API: {}", systemStatusHistory.getStatus().name());
+                        }
+                );
     }
 
 

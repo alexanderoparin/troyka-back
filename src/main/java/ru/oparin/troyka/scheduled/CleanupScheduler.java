@@ -107,7 +107,7 @@ public class CleanupScheduler {
     @Scheduled(fixedRateString = "${fal.ai.health-check.interval-ms}")
     public void checkFalAIHealth() {
         FalAiProperties.HealthCheck healthCheck = falAiProperties.getHealthCheck();
-        if (healthCheck == null || !healthCheck.isEnabled()) {
+        if (!healthCheck.isEnabled()) {
             log.debug("Проверка здоровья FAL AI отключена");
             return;
         }

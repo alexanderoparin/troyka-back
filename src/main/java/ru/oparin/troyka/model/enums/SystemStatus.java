@@ -25,5 +25,9 @@ public enum SystemStatus {
     MAINTENANCE("Серьезные проблемы с инфраструктурой, сервис может быть недоступен");
 
     private final String defaultMessage;
+
+    public boolean isActive() {
+        return this == ACTIVE;
+    }
 }
 
