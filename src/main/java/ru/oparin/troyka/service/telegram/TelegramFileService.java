@@ -33,8 +33,6 @@ public class TelegramFileService {
      * @return содержимое файла в виде байтов
      */
     public Mono<byte[]> downloadFile(String fileId) {
-        log.info("Скачивание файла с Telegram для file_id: {}", fileId);
-
         WebClient webClient = webClientBuilder
                 .baseUrl(TELEGRAM_API_URL + botToken)
                 .build();
@@ -47,12 +45,9 @@ public class TelegramFileService {
                 .flatMap(response -> {
                     if (response.isOk() && response.getResult() != null) {
                         String filePath = response.getResult().getFilePath();
-                        log.info("Получен filePath от Telegram: '{}'", filePath);
-                        
+
                         // Скачиваем файл - используем полный URL
                         String fullFileUrl = "https://api.telegram.org/file/bot" + botToken + "/" + filePath;
-                        log.info("Скачивание файла по URL: {}", fullFileUrl);
-                        
                         return webClient.get()
                                 .uri(fullFileUrl)
                                 .retrieve()
