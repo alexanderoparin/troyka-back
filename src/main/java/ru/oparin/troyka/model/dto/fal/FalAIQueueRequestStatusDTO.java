@@ -51,11 +51,6 @@ public class FalAIQueueRequestStatusDTO {
     private List<String> imageUrls;
 
     /**
-     * Описание изображения от ИИ (если доступно).
-     */
-    private String description;
-
-    /**
      * Идентификатор сессии.
      */
     private Long sessionId;

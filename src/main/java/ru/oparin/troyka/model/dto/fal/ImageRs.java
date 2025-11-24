@@ -12,9 +12,6 @@ import java.util.List;
 @AllArgsConstructor
 @Schema(description = "Ответ с изображением от FAL AI")
 public class ImageRs {
-    @Schema(description = "Описание изображения, сгенерированное ИИ", example = "Конечно, вот инопланетянин в таджикском стиле: ")
-    private String description;
-    
     @Schema(description = "URL сгенерированного изображения", example = "https://v3.fal.media/files/kangaroo/xMO087rdsATkwF1VR2bRV.jpeg")
     private List<String> imageUrls;
     

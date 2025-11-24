@@ -40,9 +40,6 @@ public class SessionMessageDTO {
     /** Формат выходных изображений (JPEG/PNG) */
     private String outputFormat;
 
-    /** Описание изображения, сгенерированное ИИ (если предоставлено FalAI) */
-    private String description;
-
     /** Идентификатор стиля изображения */
     private Long styleId;
 

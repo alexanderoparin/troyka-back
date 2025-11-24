@@ -214,8 +214,7 @@ public class FalAIQueueService {
                             history.getImageUrls(),
                             history.getInputImageUrls(),
                             queueStatus,
-                            status.getQueuePosition(),
-                            history.getDescription()
+                            status.getQueuePosition()
                     );
                 })
                 .onErrorResume(e -> {
@@ -374,7 +373,6 @@ public class FalAIQueueService {
                 .toList();
 
         history.setImageUrls(imageUrls);
-        history.setDescription(response.getDescription());
         history.setQueueStatus(QueueStatus.COMPLETED);
         history.setQueuePosition(null);
         history.setUpdatedAt(LocalDateTime.now());
@@ -387,8 +385,7 @@ public class FalAIQueueService {
                         imageUrls,
                         history.getInputImageUrls(),
                         QueueStatus.COMPLETED,
-                        null,
-                        response.getDescription()
+                        null
                 )
                 .flatMap(updatedHistory ->
                         sessionService.updateSessionTimestamp(history.getSessionId())
@@ -423,15 +420,12 @@ public class FalAIQueueService {
     private Mono<ImageGenerationHistory> handleFailedRequestWithMessage(ImageGenerationHistory history, String errorMessage) {
         Integer pointsNeeded = history.getNumImages() * generationProperties.getPointsPerImage();
 
-        String description = errorMessage != null ? errorMessage : history.getDescription();
-
         return imageGenerationHistoryService.updateQueueStatus(
                         history.getId(),
                         history.getImageUrls(),
                         history.getInputImageUrls(),
                         QueueStatus.FAILED,
-                        null,
-                        description
+                        null
                 )
                 .flatMap(updatedHistory -> {
                     log.warn("Запрос {} завершился с ошибкой: {}. Возвращаем {} поинтов пользователю {}",

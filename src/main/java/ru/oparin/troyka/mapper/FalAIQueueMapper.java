@@ -26,7 +26,6 @@ public class FalAIQueueMapper {
                 .queuePosition(history.getQueuePosition())
                 .prompt(history.getPrompt())
                 .imageUrls(history.getImageUrls())
-                .description(history.getDescription())
                 .sessionId(history.getSessionId())
                 .createdAt(history.getCreatedAt())
                 .updatedAt(history.getUpdatedAt())

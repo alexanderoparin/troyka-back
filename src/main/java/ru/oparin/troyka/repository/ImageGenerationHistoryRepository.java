@@ -84,16 +84,15 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
      * @param prompt промпт
      * @param sessionId идентификатор сессии
      * @param inputImageUrlsJson JSON строка с URL входных изображений
-     * @param description описание изображения от ИИ (может быть null)
      * @param styleId идентификатор стиля (по умолчанию 1 - Без стиля)
      * @return сохраненная запись
      */
-    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls, description, style_id, aspect_ratio) " +
-           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb, :description, :styleId, :aspectRatio) " +
+    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls, style_id, aspect_ratio) " +
+           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb, :styleId, :aspectRatio) " +
            "RETURNING *")
     Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrlsJson, String prompt, 
                                                LocalDateTime createdAt, Long sessionId, 
-                                               String inputImageUrlsJson, String description, Long styleId, String aspectRatio);
+                                               String inputImageUrlsJson, Long styleId, String aspectRatio);
 
     /**
      * Найти запись истории по идентификатору запроса Fal.ai.
@@ -138,13 +137,11 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
            "    input_image_urls = CASE WHEN :inputImageUrlsJson IS NULL THEN NULL ELSE :inputImageUrlsJson::jsonb END, " +
            "    queue_status = :queueStatus, " +
            "    queue_position = :queuePosition, " +
-           "    updated_at = :updatedAt, " +
-           "    description = :description " +
+           "    updated_at = :updatedAt " +
            "WHERE id = :id " +
            "RETURNING *")
     Mono<ImageGenerationHistory> updateWithJsonb(Long id, String imageUrlsJson, String inputImageUrlsJson,
-                                                  String queueStatus, Integer queuePosition, LocalDateTime updatedAt,
-                                                  String description);
+                                                  String queueStatus, Integer queuePosition, LocalDateTime updatedAt);
 
     /**
      * Сохранить запись истории для очереди с правильным приведением JSONB полей.

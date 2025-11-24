@@ -34,12 +34,11 @@ public class ImageGenerationHistoryService {
      * @param prompt         промпт пользователя
      * @param sessionId      идентификатор сессии
      * @param inputImageUrls список URL входных изображений (для отображения в истории)
-     * @param description    описание изображения от ИИ (может быть null)
      * @param styleId        идентификатор стиля (по умолчанию 1 - Без стиля)
      * @return сохраненные записи истории
      */
     public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId,
-                                                      List<String> inputImageUrls, String description, Long styleId, String aspectRatio) {
+                                                      List<String> inputImageUrls, Long styleId, String aspectRatio) {
         List<String> imageUrlsList = new ArrayList<>();
         imageUrls.forEach(imageUrlsList::add);
         String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
@@ -52,7 +51,6 @@ public class ImageGenerationHistoryService {
                         LocalDateTime.now(),
                         sessionId,
                         inputImageUrlsJson,
-                        description,
                         styleId,
                         aspectRatio != null ? aspectRatio : "1:1"
                 )
@@ -136,11 +134,10 @@ public class ImageGenerationHistoryService {
      * @param inputImageUrls список URL входных изображений (может быть null)
      * @param queueStatus    статус очереди
      * @param queuePosition  позиция в очереди
-     * @param description    описание изображения от ИИ (может быть null)
      * @return обновленная запись
      */
     public Mono<ImageGenerationHistory> updateQueueStatus(Long id, List<String> imageUrls, List<String> inputImageUrls,
-                                                          QueueStatus queueStatus, Integer queuePosition, String description) {
+                                                          QueueStatus queueStatus, Integer queuePosition) {
         String imageUrlsJsonStr = JsonUtils.convertListToJson(imageUrls != null ? imageUrls : List.of());
         String inputImageUrlsJson = inputImageUrls != null && !inputImageUrls.isEmpty()
                 ? JsonUtils.convertListToJson(inputImageUrls)
@@ -152,8 +149,7 @@ public class ImageGenerationHistoryService {
                 inputImageUrlsJson,
                 queueStatus.name(),
                 queuePosition,
-                LocalDateTime.now(),
-                description
+                LocalDateTime.now()
         ).doOnSuccess(imageGenerationHistory -> {
             if (QueueStatus.COMPLETED.equals(queueStatus)) {
                 log.info("Создана запись истории генерации изображений: {}", imageGenerationHistory);

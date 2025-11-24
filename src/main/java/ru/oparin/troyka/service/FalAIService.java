@@ -108,7 +108,7 @@ public class FalAIService {
                                                                         .map(response -> extractImageResponse(response, balance))
                                                                          .flatMap(response -> imageGenerationHistoryService.saveHistories(
                                                                                          userId, response.getImageUrls(), userPrompt,
-                                                                                         session.getId(), inputImageUrls, response.getDescription(), styleId, imageRq.getAspectRatio())
+                                                                                         session.getId(), inputImageUrls, styleId, imageRq.getAspectRatio())
                                                                                  .then(Mono.just(response)))
                                                                         .flatMap(response -> sessionService.updateSessionTimestamp(session.getId())
                                                                                 .then(Mono.just(response)))
@@ -183,12 +183,11 @@ public class FalAIService {
      */
     private ImageRs extractImageResponse(FalAIResponseDTO response, Integer balance) {
         log.info("Получен ответ: {}", response);
-        String description = response.getDescription();
 
         List<String> urls = response.getImages().stream()
                 .map(FalAIImageDTO::getUrl)
                 .toList();
 
-        return new ImageRs(description, urls, balance);
+        return new ImageRs(urls, balance);
     }
 }
