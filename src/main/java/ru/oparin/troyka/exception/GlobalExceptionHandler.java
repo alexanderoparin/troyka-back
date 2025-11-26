@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
 import reactor.core.publisher.Mono;
+import reactor.netty.channel.AbortedException;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -96,5 +97,11 @@ public class GlobalExceptionHandler {
                         "error", ex.getMessage(),
                         "status", ex.getStatus().value()
                 )));
+    }
+
+    @ExceptionHandler(AbortedException.class)
+    public Mono<ResponseEntity<Map<String, Object>>> handleClientDisconnectException(AbortedException ex) {
+        log.debug("Клиент закрыл соединение до завершения запроса. Полученное исключение: {}", ex.getClass().getSimpleName());
+        return Mono.empty();
     }
 }

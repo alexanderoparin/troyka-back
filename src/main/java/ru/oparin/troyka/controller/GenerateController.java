@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIQueueRequestStatusDTO;
@@ -14,6 +13,8 @@ import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.service.FalAIQueueService;
 import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.util.SecurityUtil;
+
+import java.util.List;
 
 /**
  * Контроллер для работы с очередями генерации изображений через Fal.ai.
@@ -82,12 +83,11 @@ public class GenerateController {
     @Operation(summary = "Получить активные запросы пользователя",
             description = "Возвращает все активные запросы генерации (в очереди или обрабатываются) текущего пользователя")
     @GetMapping("/user/active")
-    public Mono<ResponseEntity<Flux<FalAIQueueRequestStatusDTO>>> getUserActiveRequests() {
+    public Mono<ResponseEntity<List<FalAIQueueRequestStatusDTO>>> getUserActiveRequests() {
         return SecurityUtil.checkStudioAccess(userService)
-                .flatMap(userId -> {
-                    Flux<FalAIQueueRequestStatusDTO> activeRequests = falAIQueueService.getUserActiveRequests(userId);
-                    return Mono.just(ResponseEntity.ok(activeRequests));
-                })
+                .flatMap(userId -> falAIQueueService.getUserActiveRequests(userId)
+                        .collectList()
+                        .map(ResponseEntity::ok))
                 .doOnError(error -> {
                     if (error instanceof FalAIException falEx) {
                         log.warn("Ошибка при получении активных запросов пользователя: {}", falEx.getMessage());
