@@ -2,10 +2,13 @@ package ru.oparin.troyka.model.dto.fal;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import ru.oparin.troyka.model.enums.GenerationModelType;
+import ru.oparin.troyka.model.enums.Resolution;
 
 import java.util.List;
 
@@ -38,11 +41,6 @@ public class ImageRq {
     @Schema(description = "Количество изображений", example = "2")
     private Integer numImages = 1;
 
-    /** Формат выходных изображений */
-    @Builder.Default
-    @Schema(description = "Формат изображений", example = "JPEG")
-    private OutputFormatEnum outputFormat = OutputFormatEnum.JPEG;
-
     /** Идентификатор стиля изображения */
     @Builder.Default
     @Schema(description = "Идентификатор стиля изображения (ссылка на art_styles.id). По умолчанию 1 (Без стиля)", example = "1")
@@ -52,4 +50,13 @@ public class ImageRq {
     @Builder.Default
     @Schema(description = "Соотношение сторон изображения. Возможные значения: 21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16. По умолчанию: 1:1", example = "1:1")
     private String aspectRatio = "1:1";
+
+    /** Тип модели для генерации */
+    @NotNull(message = "Тип модели обязателен")
+    @Schema(description = "Тип модели для генерации. Возможные значения: NANO_BANANA, NANO_BANANA_PRO", example = "NANO_BANANA", required = true)
+    private GenerationModelType model;
+
+    /** Разрешение изображения */
+    @Schema(description = "Разрешение изображения. Возможные значения: RESOLUTION_1K, RESOLUTION_2K, RESOLUTION_4K", example = "RESOLUTION_1K")
+    private Resolution resolution;
 }

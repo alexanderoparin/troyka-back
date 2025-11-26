@@ -6,7 +6,9 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.QueueStatus;
+import ru.oparin.troyka.model.enums.Resolution;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.util.JsonUtils;
 
@@ -35,14 +37,21 @@ public class ImageGenerationHistoryService {
      * @param sessionId      идентификатор сессии
      * @param inputImageUrls список URL входных изображений (для отображения в истории)
      * @param styleId        идентификатор стиля (по умолчанию 1 - Без стиля)
+     * @param modelType      тип модели (сохраняется только для новых моделей)
+     * @param resolution     разрешение (сохраняется только для новых моделей)
      * @return сохраненные записи истории
      */
     public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId,
-                                                      List<String> inputImageUrls, Long styleId, String aspectRatio) {
+                                                      List<String> inputImageUrls, Long styleId, String aspectRatio,
+                                                      GenerationModelType modelType, Resolution resolution) {
         List<String> imageUrlsList = new ArrayList<>();
         imageUrls.forEach(imageUrlsList::add);
         String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
         String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
+        
+        String modelTypeToSave = modelType != null ? modelType.getName() : null;
+        String resolutionToSave = (modelType != null && modelType.supportsResolution() && resolution != null)
+                ? resolution.getValue() : null;
 
         return imageGenerationHistoryRepository.saveWithJsonb(
                         userId,
@@ -52,7 +61,9 @@ public class ImageGenerationHistoryService {
                         sessionId,
                         inputImageUrlsJson,
                         styleId,
-                        aspectRatio != null ? aspectRatio : "1:1"
+                        aspectRatio != null ? aspectRatio : "1:1",
+                        modelTypeToSave,
+                        resolutionToSave
                 )
                 .doOnNext(history -> log.info("Запись истории сохранена: {}", history))
                 .flux();
@@ -93,6 +104,8 @@ public class ImageGenerationHistoryService {
      * @param inputImageUrls список URL входных изображений (может быть null или пустым)
      * @param styleId        идентификатор стиля
      * @param aspectRatio    соотношение сторон
+     * @param modelType      тип модели (сохраняется только для новых моделей)
+     * @param resolution     разрешение (сохраняется только для новых моделей)
      * @param falRequestId   идентификатор запроса Fal.ai
      * @param queueStatus    статус очереди
      * @param numImages      количество запрошенных изображений
@@ -100,13 +113,17 @@ public class ImageGenerationHistoryService {
      */
     public Mono<ImageGenerationHistory> saveQueueRequest(Long userId, String prompt, Long sessionId,
                                                          List<String> inputImageUrls, Long styleId,
-                                                         String aspectRatio, String falRequestId,
-                                                         QueueStatus queueStatus, Integer numImages) {
+                                                         String aspectRatio, GenerationModelType modelType, Resolution resolution,
+                                                         String falRequestId, QueueStatus queueStatus, Integer numImages) {
         String imageUrlsJson = JsonUtils.convertListToJson(List.of()); // Пустой массив для imageUrls
         String inputImageUrlsJson = inputImageUrls != null && !inputImageUrls.isEmpty()
                 ? JsonUtils.convertListToJson(inputImageUrls)
                 : null;
         LocalDateTime now = LocalDateTime.now();
+        
+        String modelTypeToSave = modelType != null ? modelType.getName() : null;
+        String resolutionToSave = (modelType != null && modelType.supportsResolution() && resolution != null)
+                ? resolution.getValue() : null;
 
         return imageGenerationHistoryRepository.saveQueueRequest(
                 userId,
@@ -117,6 +134,8 @@ public class ImageGenerationHistoryService {
                 inputImageUrlsJson,
                 styleId,
                 aspectRatio != null ? aspectRatio : "1:1",
+                modelTypeToSave,
+                resolutionToSave,
                 falRequestId,
                 queueStatus.name(),
                 null,
@@ -178,13 +197,4 @@ public class ImageGenerationHistoryService {
         return imageGenerationHistoryRepository.findById(id);
     }
 
-    /**
-     * Сохранить запись истории (для обновления существующей записи).
-     *
-     * @param history запись истории
-     * @return сохраненная запись
-     */
-    public Mono<ImageGenerationHistory> save(ImageGenerationHistory history) {
-        return imageGenerationHistoryRepository.save(history);
-    }
 }

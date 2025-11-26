@@ -6,6 +6,7 @@ import ru.oparin.troyka.model.dto.fal.FalAIQueueRequestStatusDTO;
 import ru.oparin.troyka.model.dto.fal.FalAIRequestDTO;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
+import ru.oparin.troyka.model.enums.Resolution;
 
 import java.util.List;
 
@@ -35,13 +36,18 @@ public class FalAIQueueMapper {
     /**
      * Создать тело запроса для Fal.ai.
      */
-    public FalAIRequestDTO createRqBody(ImageRq rq, String prompt, Integer numImages, List<String> inputImageUrls) {
-        return FalAIRequestDTO.builder()
+    public FalAIRequestDTO createRqBody(ImageRq rq, String prompt, Integer numImages, List<String> inputImageUrls, Resolution resolution) {
+        FalAIRequestDTO.FalAIRequestDTOBuilder builder = FalAIRequestDTO.builder()
                 .prompt(prompt)
                 .numImages(numImages)
-                .outputFormat(rq.getOutputFormat().name().toLowerCase())
                 .imageUrls(removingBlob(inputImageUrls))
-                .aspectRatio(rq.getAspectRatio())
-                .build();
+                .aspectRatio(rq.getAspectRatio());
+        
+        // Добавляем resolution только для моделей, которые его поддерживают и если resolution указан
+        if (rq.getModel().supportsResolution() && resolution != null) {
+            builder.resolution(resolution.getValue());
+        }
+        
+        return builder.build();
     }
 }

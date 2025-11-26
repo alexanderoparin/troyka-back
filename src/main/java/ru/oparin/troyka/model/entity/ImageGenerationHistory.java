@@ -7,7 +7,9 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.QueueStatus;
+import ru.oparin.troyka.model.enums.Resolution;
 import ru.oparin.troyka.util.JsonUtils;
 
 import java.time.LocalDateTime;
@@ -91,6 +93,21 @@ public class ImageGenerationHistory {
      */
     @Column("aspect_ratio")
     private String aspectRatio;
+
+    /**
+     * Тип модели, использованной для генерации.
+     * По умолчанию NANO_BANANA.
+     */
+    @Column("model_type")
+    private String modelType = GenerationModelType.NANO_BANANA.getName();
+
+    /**
+     * Разрешение изображения.
+     * Задается только для моделей, которые поддерживают resolution параметр (например, NANO_BANANA_PRO).
+     * null для обычных моделей (NANO_BANANA).
+     */
+    @Column("resolution")
+    private String resolution;
 
     /**
      * Идентификатор запроса в очереди Fal.ai.
@@ -180,5 +197,13 @@ public class ImageGenerationHistory {
     @Transient
     public boolean isActive() {
         return QueueStatus.isActive(queueStatus);
+    }
+
+    public GenerationModelType getGenerationModelType() {
+        return GenerationModelType.fromName(modelType);
+    }
+
+    public Resolution getResolutionEnum() {
+        return Resolution.fromValue(resolution);
     }
 }

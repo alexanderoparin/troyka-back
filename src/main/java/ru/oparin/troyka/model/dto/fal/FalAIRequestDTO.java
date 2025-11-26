@@ -23,13 +23,13 @@ public class FalAIRequestDTO {
     @JsonProperty("num_images")
     private Integer numImages;
 
-    @JsonProperty("output_format")
-    private String outputFormat;
-
     @JsonProperty("aspect_ratio")
     private String aspectRatio;
 
     @JsonProperty("image_urls")
     private List<String> imageUrls;
+
+    @JsonProperty("resolution")
+    private String resolution;
 }
 

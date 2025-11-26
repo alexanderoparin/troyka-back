@@ -52,7 +52,6 @@ public class ImageProxyService {
                 .retrieve()
                 .bodyToMono(byte[].class)
                 .timeout(TIMEOUT)
-                .doOnSuccess(bytes -> log.info("Изображение успешно загружено: {} байт", bytes.length))
                 .doOnError(error -> log.error("Ошибка загрузки изображения с URL {}: {}", sourceUrl, error.getMessage()));
     }
 

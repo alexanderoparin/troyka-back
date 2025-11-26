@@ -18,7 +18,9 @@ import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.mapper.FalAIQueueMapper;
 import ru.oparin.troyka.model.dto.fal.*;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.QueueStatus;
+import ru.oparin.troyka.model.enums.Resolution;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -53,7 +55,8 @@ public class FalAIQueueService {
                              ImageGenerationHistoryService imageGenerationHistoryService,
                              UserPointsService userPointsService,
                              SessionService sessionService,
-                             ArtStyleService artStyleService, FalAIQueueMapper mapper,
+                             ArtStyleService artStyleService,
+                             FalAIQueueMapper mapper,
                              ObjectMapper objectMapper,
                              AdminNotificationService adminNotificationService) {
         this.falAiProperties = falAiProperties;
@@ -82,7 +85,9 @@ public class FalAIQueueService {
      */
     public Mono<FalAIQueueRequestStatusDTO> submitToQueue(ImageRq imageRq, Long userId) {
         Integer numImages = imageRq.getNumImages();
-        Integer pointsNeeded = numImages * generationProperties.getPointsPerImage();
+        GenerationModelType modelType = imageRq.getModel();
+        Resolution resolution = imageRq.getResolution();
+        Integer pointsNeeded = generationProperties.getPointsNeeded(modelType, resolution, numImages);
 
         return userPointsService.hasEnoughPoints(userId, pointsNeeded)
                 .flatMap(hasEnough -> {
@@ -101,11 +106,11 @@ public class FalAIQueueService {
                                             String finalPrompt = userPrompt + ", " + style.getPrompt();
                                             List<String> inputImageUrls = imageRq.getInputImageUrls();
 
-                                            FalAIRequestDTO requestBody = mapper.createRqBody(imageRq, finalPrompt, numImages, inputImageUrls);
+                                            FalAIRequestDTO requestBody = mapper.createRqBody(imageRq, finalPrompt, numImages, inputImageUrls, resolution);
 
                                             boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
-                                            String model = isNewImage ? falAiProperties.getModel().getCreate() : falAiProperties.getModel().getEdit();
-                                            String fullModelPath = PREFIX_PATH + model;
+                                            String modelEndpoint = modelType.getEndpoint(isNewImage);
+                                            String fullModelPath = PREFIX_PATH + modelEndpoint;
 
                                             log.info("Отправка запроса в очередь Fal.ai на {} изображений по адресу '{}'",
                                                     numImages, QUEUE_BASE_URL + fullModelPath);
@@ -121,6 +126,7 @@ public class FalAIQueueService {
 
                                                         return deductPointsAndCreateHistory(userId, pointsNeeded, session.getId(),
                                                                 userPrompt, inputImageUrls, styleId, imageRq.getAspectRatio(),
+                                                                modelType, resolution,
                                                                 queueResponse.getRequestId(), numImages);
                                                     })
                                                     .onErrorResume(e -> {
@@ -142,7 +148,11 @@ public class FalAIQueueService {
     public Mono<ImageGenerationHistory> pollStatus(ImageGenerationHistory history) {
         String falRequestId = history.getFalRequestId();
         boolean isNewImage = CollectionUtils.isEmpty(history.getInputImageUrls());
-        String model = isNewImage ? falAiProperties.getModel().getCreate() : falAiProperties.getModel().getEdit();
+        
+        // Используем модель из истории (дефолт установлен в сущности)
+        GenerationModelType modelType = history.getGenerationModelType();
+        String model = modelType.getEndpoint(isNewImage);
+        
         // Извлекаем базовый model_id (убираем подпуть после "/", если есть)
         String baseModelId = model.contains("/") ? model.substring(0, model.indexOf("/")) : model;
         String statusPath = PREFIX_PATH + baseModelId + "/requests/" + falRequestId + "/status";
@@ -294,7 +304,8 @@ public class FalAIQueueService {
      */
     private Mono<ImageGenerationHistory> deductPointsAndCreateHistory(Long userId, Integer pointsNeeded, Long sessionId,
                                                                       String prompt, List<String> inputImageUrls, Long styleId,
-                                                                      String aspectRatio, String falRequestId, Integer numImages) {
+                                                                      String aspectRatio, GenerationModelType modelType, Resolution resolution,
+                                                                      String falRequestId, Integer numImages) {
         return userPointsService.deductPointsFromUser(userId, pointsNeeded)
                 .flatMap(userPoints -> {
                     return imageGenerationHistoryService.saveQueueRequest(
@@ -304,6 +315,8 @@ public class FalAIQueueService {
                             inputImageUrls,
                             styleId,
                             aspectRatio != null ? aspectRatio : "1:1",
+                            modelType,
+                            resolution,
                             falRequestId,
                             QueueStatus.IN_QUEUE,
                             numImages
@@ -418,7 +431,9 @@ public class FalAIQueueService {
      * Обработать неудачный запрос с сообщением об ошибке: обновить статус и вернуть поинты.
      */
     private Mono<ImageGenerationHistory> handleFailedRequestWithMessage(ImageGenerationHistory history, String errorMessage) {
-        Integer pointsNeeded = history.getNumImages() * generationProperties.getPointsPerImage();
+        GenerationModelType modelType = history.getGenerationModelType();
+        Resolution resolution = history.getResolutionEnum();
+        Integer pointsNeeded = generationProperties.getPointsNeeded(modelType, resolution, history.getNumImages());
 
         return imageGenerationHistoryService.updateQueueStatus(
                         history.getId(),

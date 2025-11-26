@@ -14,13 +14,14 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.FalAiProperties;
 import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.exception.FalAIException;
+import ru.oparin.troyka.mapper.FalAIQueueMapper;
 import ru.oparin.troyka.model.dto.fal.*;
+import ru.oparin.troyka.model.enums.GenerationModelType;
+import ru.oparin.troyka.model.enums.Resolution;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
-
-import static ru.oparin.troyka.util.JsonUtils.removingBlob;
 
 /**
  * Сервис для работы с FAL AI API.
@@ -32,12 +33,12 @@ public class FalAIService {
     public static final String PREFIX_PATH = "/fal-ai/";
 
     private final WebClient webClient;
-    private final FalAiProperties prop;
     private final GenerationProperties generationProperties;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final UserPointsService userPointsService;
     private final SessionService sessionService;
     private final ArtStyleService artStyleService;
+    private final FalAIQueueMapper mapper;
 
     public FalAIService(WebClient.Builder webClientBuilder,
                         FalAiProperties falAiProperties,
@@ -45,18 +46,19 @@ public class FalAIService {
                         ImageGenerationHistoryService imageGenerationHistoryService,
                         UserPointsService userPointsService,
                         SessionService sessionService,
-                        ArtStyleService artStyleService) {
+                        ArtStyleService artStyleService,
+                        FalAIQueueMapper mapper) {
         this.webClient = webClientBuilder
                 .baseUrl(falAiProperties.getApi().getUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Key " + falAiProperties.getApi().getKey())
                 .build();
-        this.prop = falAiProperties;
         this.generationProperties = generationProperties;
         this.imageGenerationHistoryService = imageGenerationHistoryService;
         this.userPointsService = userPointsService;
         this.sessionService = sessionService;
         this.artStyleService = artStyleService;
+        this.mapper = mapper;
     }
 
     /**
@@ -69,7 +71,9 @@ public class FalAIService {
      */
     public Mono<ImageRs> getImageResponse(ImageRq imageRq, Long userId) {
         Integer numImages = imageRq.getNumImages();
-        Integer pointsNeeded = numImages * generationProperties.getPointsPerImage();
+        GenerationModelType modelType = imageRq.getModel();
+        Resolution resolution = imageRq.getResolution();
+        Integer pointsNeeded = generationProperties.getPointsNeeded(modelType, resolution, numImages);
 
         return userPointsService.hasEnoughPoints(userId, pointsNeeded)
                 .flatMap(hasEnough -> {
@@ -89,14 +93,13 @@ public class FalAIService {
                                                                 String finalPrompt = userPrompt + ", " + style.getPrompt();
                                                                 List<String> inputImageUrls = imageRq.getInputImageUrls();
 
-                                                                FalAIRequestDTO requestBody = createRqBody(imageRq, finalPrompt, numImages, inputImageUrls);
-
                                                                 boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
-                                                                String model = isNewImage ? prop.getModel().getCreate() : prop.getModel().getEdit();
-                                                                String fullModelPath = PREFIX_PATH + model;
-                                                                String fullUrl = prop.getApi().getUrl() + fullModelPath;
-                                                                String modelType = isNewImage ? "создание" : "редактирование";
-                                                                log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", modelType, fullUrl, requestBody);
+                                                                FalAIRequestDTO requestBody = mapper.createRqBody(imageRq, finalPrompt, numImages, inputImageUrls, resolution);
+
+                                                                String modelEndpoint = modelType.getEndpoint(isNewImage);
+                                                                String fullModelPath = PREFIX_PATH + modelEndpoint;
+                                                                String operationType = isNewImage ? "создание" : "редактирование";
+                                                                log.info("Будет отправлен запрос в fal.ai на {} изображений по адресу '{}' с телом '{}'", operationType, fullModelPath, requestBody);
 
                                                                 return webClient.post()
                                                                         .uri(fullModelPath)
@@ -108,28 +111,17 @@ public class FalAIService {
                                                                         .map(response -> extractImageResponse(response, balance))
                                                                          .flatMap(response -> imageGenerationHistoryService.saveHistories(
                                                                                          userId, response.getImageUrls(), userPrompt,
-                                                                                         session.getId(), inputImageUrls, styleId, imageRq.getAspectRatio())
+                                                                                         session.getId(), inputImageUrls, styleId, imageRq.getAspectRatio(),
+                                                                                         modelType, resolution)
                                                                                  .then(Mono.just(response)))
                                                                         .flatMap(response -> sessionService.updateSessionTimestamp(session.getId())
                                                                                 .then(Mono.just(response)))
                                                                         .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}", session.getId(), response))
                                                                         .onErrorResume(e -> exceptionHandling(userId, e, pointsNeeded));
                                                             })));
+                                                });
+                                    }
                                 });
-                    }
-                });
-    }
-
-    /**
-     * Тело сообщения, которое будет отправлено в fal.ai
-     */
-    private FalAIRequestDTO createRqBody(ImageRq rq, String prompt, Integer numImages, List<String> inputImageUrls) {
-        return FalAIRequestDTO.builder()
-                .prompt(prompt)
-                .numImages(numImages)
-                .outputFormat(rq.getOutputFormat().name().toLowerCase())
-                .imageUrls(removingBlob(inputImageUrls))
-                .aspectRatio(rq.getAspectRatio()).build();
     }
 
     /**

@@ -71,8 +71,8 @@ fal:
       key: ${fal_ai_api_key}
       url: https://fal.run
     model:
-      create: nano-banana
-      edit: nano-banana/edit
+      create: nano-banana  # Используется как fallback, основная логика в GenerationModelService
+      edit: nano-banana/edit  # Используется как fallback, основная логика в GenerationModelService
     health-check:
       enabled: ${FAL_HEALTH_CHECK_ENABLED:true}
       interval-ms: ${FAL_HEALTH_CHECK_INTERVAL_MS:3600000}  # 1 час
@@ -119,7 +119,7 @@ app:
     from: ${EMAIL_FROM:noreply@24reshai.ru}
     support: ${EMAIL_SUPPORT:support@24reshai.ru}
   generation:
-    points-per-image: ${GENERATION_POINTS_PER_IMAGE:2} # Количество поинтов за одно изображение
+    points-per-image: ${GENERATION_POINTS_PER_IMAGE:2} # Количество поинтов за одно изображение (для nano-banana)
     points-on-registration: ${REGISTRATION_POINTS:4} # Количество поинтов при регистрации
 
 # Robokassa

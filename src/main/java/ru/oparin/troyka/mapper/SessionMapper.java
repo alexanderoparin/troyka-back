@@ -6,6 +6,7 @@ import ru.oparin.troyka.model.dto.*;
 import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.entity.Session;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -88,12 +89,10 @@ public class SessionMapper {
         if (history == null) {
             return null;
         }
-        
-        // Получаем список сгенерированных изображений
+
         List<String> imageUrls = history.getImageUrls();
-        
-        // Получаем список входных изображений
         List<String> inputImageUrls = history.getInputImageUrls();
+        GenerationModelType modelType = history.getGenerationModelType();
         
         return SessionMessageDTO.builder()
                 .id(history.getId())
@@ -102,8 +101,8 @@ public class SessionMapper {
                 .inputImageUrls(inputImageUrls)
                 .createdAt(history.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant())
                 .imageCount(imageUrls.size())
-                .outputFormat("JPEG") // TODO: Получить из истории или добавить поле
                 .aspectRatio(history.getAspectRatio())
+                .modelType(modelType.getName())
                 .build();
     }
 

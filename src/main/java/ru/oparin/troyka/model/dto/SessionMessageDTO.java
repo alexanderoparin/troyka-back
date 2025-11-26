@@ -37,9 +37,6 @@ public class SessionMessageDTO {
     /** Количество сгенерированных изображений в этой итерации */
     private Integer imageCount;
 
-    /** Формат выходных изображений (JPEG/PNG) */
-    private String outputFormat;
-
     /** Идентификатор стиля изображения */
     private Long styleId;
 
@@ -48,4 +45,7 @@ public class SessionMessageDTO {
 
     /** Соотношение сторон изображения */
     private String aspectRatio;
+
+    /** Тип модели, использованной для генерации */
+    private String modelType;
 }
