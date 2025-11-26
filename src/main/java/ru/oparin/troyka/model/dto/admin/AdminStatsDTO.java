@@ -28,6 +28,11 @@ public class AdminStatsDTO {
     private Long totalPayments;
     
     /**
+     * Количество платежей за сегодня (с начала текущего дня).
+     */
+    private Long todayPayments;
+    
+    /**
      * Общая выручка от всех успешно оплаченных платежей.
      */
     private BigDecimal totalRevenue;

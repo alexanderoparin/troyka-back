@@ -8,6 +8,7 @@ import org.springframework.data.relational.core.query.Query;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple4;
 import reactor.util.function.Tuple8;
 import ru.oparin.troyka.model.dto.admin.AdminPaymentDTO;
 import ru.oparin.troyka.model.dto.admin.AdminStatsDTO;
@@ -103,6 +104,8 @@ public class AdminService {
         
         Mono<Long> totalPaymentsMono = withRetry(paymentRepository.count());
         
+        Mono<Long> todayPaymentsMono = countPaymentsSince(todayStart);
+        
         Mono<BigDecimal> totalRevenueMono = calculateTotalRevenue();
         
         Mono<BigDecimal> todayRevenueMono = calculateRevenueSince(todayStart);
@@ -121,30 +124,31 @@ public class AdminService {
         
         Mono<Long> yearRegistrationsMono = countRegistrationsSince(yearStart);
 
-        Mono<Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long>> firstZip = 
-                Mono.zip(totalUsersMono, totalPaymentsMono, totalRevenueMono, todayRevenueMono,
-                        weekRevenueMono, monthRevenueMono, yearRevenueMono, todayRegistrationsMono);
+        Mono<Tuple8<Long, Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal>> firstZip =
+                Mono.zip(totalUsersMono, totalPaymentsMono, todayPaymentsMono, totalRevenueMono, todayRevenueMono,
+                        weekRevenueMono, monthRevenueMono, yearRevenueMono);
         
-        Mono<reactor.util.function.Tuple3<Long, Long, Long>> secondZip = 
-                Mono.zip(weekRegistrationsMono, monthRegistrationsMono, yearRegistrationsMono);
+        Mono<Tuple4<Long, Long, Long, Long>> secondZip =
+                Mono.zip(todayRegistrationsMono, weekRegistrationsMono, monthRegistrationsMono, yearRegistrationsMono);
 
         return Mono.zip(firstZip, secondZip)
                 .map(tuple -> {
-                    Tuple8<Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal, Long> first = tuple.getT1();
-                    reactor.util.function.Tuple3<Long, Long, Long> second = tuple.getT2();
+                    Tuple8<Long, Long, Long, BigDecimal, BigDecimal, BigDecimal, BigDecimal, BigDecimal> first = tuple.getT1();
+                    Tuple4<Long, Long, Long, Long> second = tuple.getT2();
                     
                     return AdminStatsDTO.builder()
                             .totalUsers(first.getT1())
                             .totalPayments(first.getT2())
-                            .totalRevenue(first.getT3())
-                            .todayRevenue(first.getT4())
-                            .weekRevenue(first.getT5())
-                            .monthRevenue(first.getT6())
-                            .yearRevenue(first.getT7())
-                            .todayRegistrations(first.getT8())
-                            .weekRegistrations(second.getT1())
-                            .monthRegistrations(second.getT2())
-                            .yearRegistrations(second.getT3())
+                            .todayPayments(first.getT3())
+                            .totalRevenue(first.getT4())
+                            .todayRevenue(first.getT5())
+                            .weekRevenue(first.getT6())
+                            .monthRevenue(first.getT7())
+                            .yearRevenue(first.getT8())
+                            .todayRegistrations(second.getT1())
+                            .weekRegistrations(second.getT2())
+                            .monthRegistrations(second.getT3())
+                            .yearRegistrations(second.getT4())
                             .build();
                 });
     }
@@ -153,6 +157,13 @@ public class AdminService {
         return r2dbcEntityTemplate.count(
                 Query.query(Criteria.where("created_at").greaterThanOrEquals(since)),
                 User.class
+        );
+    }
+
+    private Mono<Long> countPaymentsSince(LocalDateTime since) {
+        return r2dbcEntityTemplate.count(
+                Query.query(Criteria.where("created_at").greaterThanOrEquals(since)),
+                Payment.class
         );
     }
 
