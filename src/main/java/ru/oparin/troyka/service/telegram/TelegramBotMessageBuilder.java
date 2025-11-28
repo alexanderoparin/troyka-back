@@ -1,0 +1,220 @@
+package ru.oparin.troyka.service.telegram;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import ru.oparin.troyka.config.properties.GenerationProperties;
+import ru.oparin.troyka.model.entity.ArtStyle;
+
+import java.util.List;
+
+/**
+ * Класс для построения текстовых сообщений для Telegram бота.
+ */
+@Component
+@RequiredArgsConstructor
+public class TelegramBotMessageBuilder {
+
+    private static final String PRICING_URL = "https://24reshai.ru/pricing";
+    private static final String SUPPORT_URL = "https://24reshai.ru/contacts";
+    private static final String SITE_URL = "https://24reshai.ru";
+    private static final String DEFAULT_STYLE_NAME = "none";
+
+    private final GenerationProperties generationProperties;
+
+    public String buildHelpMessage() {
+        return String.format("""
+                🤖 *Справка по боту 24reshai*
+                
+                📝 *Основные команды:*
+                • /start - Начать работу с ботом
+                • /help - Показать эту справку
+                • /balance - Проверить баланс поинтов
+                
+                🎨 *Генерация изображений:*
+                • Отправьте текстовое описание
+                • Или приложите фото с подписью
+                • Каждая генерация стоит %s поинтов
+                • Результат готов за 5-10 секунд
+                
+                💡 *Советы:*
+                • Чем подробнее описание, тем лучше результат
+                • Используйте качественные референсы
+                
+                🌐 *Сайт:* %s
+                """, generationProperties.getPointsPerImage(), SITE_URL);
+    }
+
+    public String buildWelcomeMessage(String username) {
+        return String.format("""
+                👋 *Добро пожаловать обратно, %s!*
+                
+                🎨 Ваш аккаунт уже привязан к Telegram.
+                Вы можете генерировать изображения прямо здесь!
+                
+                📝 *Как использовать:*
+                • Отправьте текстовое описание
+                • Приложите фото + описание
+                
+                💰 *Стоимость:* %s поинта за 1 изображение
+                • Используйте /help для справки
+                """, username, generationProperties.getPointsPerImage());
+    }
+
+    public String buildBalanceMessage(Integer points) {
+        return String.format("""
+                💰 *Ваш баланс поинтов*
+                
+                🔢 *Текущий баланс:* %d поинтов
+                🎨 *Доступно генераций:* %d
+                
+                💳 *Пополнить баланс:* %s
+                """, points, points / generationProperties.getPointsPerImage(), PRICING_URL);
+    }
+
+    public String buildInsufficientPointsMessage(Integer points) {
+        return String.format("""
+                ❌ *Недостаточно поинтов*
+                
+                💰 *Текущий баланс:* %s поинтов
+                🎨 *Требуется:* %s поинтов для генерации
+                
+                💳 *Пополнить баланс:* %s
+                """, points, generationProperties.getPointsPerImage(), PRICING_URL);
+    }
+
+    public String buildUserNotFoundMessage() {
+        return "❌ Пользователь не найден. Используйте /start для регистрации.";
+    }
+
+    public String buildPromptUpdatedMessage(String prompt) {
+        return String.format("""
+                ✅ *Промпт обновлен!*
+                
+                📝 *Новый промпт:* %s
+                """, prompt);
+    }
+
+    public String buildImageGeneratedCaption(String displayPrompt) {
+        return String.format("""
+                🎨 *Изображение сгенерировано!*
+                
+                📝 *Промпт:* %s
+                💰 *Стоимость:* %s поинта
+                
+                🔄 *Хотите еще?* Отправьте новое описание для генерации!
+                
+                ✏️ *Редактировать изображение?* Ответьте на это сообщение с новым промптом
+                """, displayPrompt, generationProperties.getPointsPerImage());
+    }
+
+    public String buildGenerationErrorMessage() {
+        return """
+                ❌ *Ошибка генерации*
+                Произошла ошибка при создании изображения. Попробуйте еще раз.""";
+    }
+
+    public String buildErrorMessage() {
+        return String.format("""
+                ❌ *Произошла ошибка*
+                
+                Попробуйте еще раз или обратитесь в поддержку: %s
+                """, SUPPORT_URL);
+    }
+
+    public String buildPhotoErrorMessage() {
+        return "❌ *Ошибка загрузки фото*\n\nНе удалось обработать изображение. Попробуйте еще раз.";
+    }
+
+    public String buildUnknownMessageTypeMessage() {
+        return """
+                🤔 *Не понимаю*
+                
+                Отправьте текстовое описание для генерации изображения или фото с подписью.
+                """;
+    }
+
+    public String buildOldMessageReplyMessage() {
+        return "❌ *Нельзя ответить на старое сообщение*\n\nОтвечайте только на последнее сгенерированное изображение.";
+    }
+
+    public String buildEmptyPromptMessage() {
+        return "❌ *Пустой запрос*\n\nОтправьте текстовое описание для изменения изображения.";
+    }
+
+    public String buildUnknownCommandMessage(String command) {
+        return String.format("""
+                ❓ *Неизвестная команда*
+                
+                🤖 *Команда:* %s
+                📋 *Доступные команды:*
+                • /start - Начать работу с ботом
+                • /balance - Баланс поинтов
+                • /help - Справка
+                
+                💡 *Или просто отправьте описание изображения для генерации!*
+                """, command);
+    }
+
+    public String buildStyleSelectionMessage(String styleName) {
+        return String.format("""
+                💡 *Текущий стиль:* %s
+                
+                🎨 *Выберите действие:*
+                """, styleName);
+    }
+
+    public String buildStyleSelectionKeyboard(Long sessionId, Long userId) {
+        return String.format("""
+                {
+                    "inline_keyboard": [
+                        [{"text": "💡 Улучшить промпт с помощью ИИ", "callback_data": "enhance_prompt:%d:%d"}],
+                        [{"text": "✏️ Редактировать промпт", "callback_data": "edit_prompt:%d:%d"}],
+                        [{"text": "🎨 Генерировать с текущим стилем", "callback_data": "generate_current:%d:%d:1"}],
+                        [{"text": "🔄 Сменить стиль", "callback_data": "change_style:%d:%d:1"}]
+                    ]
+                }
+                """, sessionId, userId, sessionId, userId, sessionId, userId, sessionId, userId);
+    }
+
+    public String buildStyleListMessage(String prompt, List<String> inputImageUrls, List<ArtStyle> allStyles) {
+        StringBuilder styleList = new StringBuilder();
+        styleList.append("🎨 *Выберите стиль для генерации:*\n\n");
+        styleList.append("📝 *Промпт:* ").append(prompt).append("\n\n");
+        if (!inputImageUrls.isEmpty()) {
+            styleList.append("🖼️ *Референс:* загружен\n\n");
+        }
+        styleList.append("💡 *Введите номер стиля:*\n\n");
+
+        int index = 1;
+        for (ArtStyle style : allStyles) {
+            String emoji = style.getName().equals(DEFAULT_STYLE_NAME) ? "⚪" : "🎨";
+            styleList.append(index).append(". ").append(emoji).append(" ").append(style.getName()).append("\n");
+            index++;
+        }
+        styleList.append("\nПример: отправьте *1* для выбора без стиля");
+        return styleList.toString();
+    }
+
+    public String buildGenerationStartMessage(String prompt, String styleDisplay) {
+        return String.format("""
+                🎨 *Генерация изображения*
+                
+                📝 *Промпт:* %s
+                
+                🎨 *Стиль:* %s
+                
+                ⏱️ *Ожидайте 5-10 секунд*
+                """, prompt, styleDisplay);
+    }
+
+    public String buildEditPromptMessage() {
+        return """
+                ✏️ *Редактирование промпта*
+                
+                📝 Отправьте новый текст промпта для замены текущего.
+                
+                💡 Вы можете скопировать и скорректировать улучшенный промпт или написать свой.
+                """;
+    }
+}
+
