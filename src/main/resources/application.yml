@@ -52,10 +52,6 @@ server:
 logging:
   file:
     name: ${log_file_name:/var/log/troyka-back/application.log}
-  logback:
-    rollingpolicy:
-      max-file-size: 10MB
-      max-history: 30
   level:
     ru.oparin.troyka: ${log_level:info}
     reactor.netty.http.server: ERROR  # Скрываем WARN о некорректных HTTP-запросах от ботов/сканеров

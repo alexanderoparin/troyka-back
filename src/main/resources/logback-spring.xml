@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Имя файла лога из переменной окружения или дефолтное значение -->
+    <property name="LOG_FILE" value="${log_file_name:-/var/log/troyka-back/application.log}"/>
+
+    <!-- Консольный аппендер -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN:-%d{yyyy-MM-dd HH:mm:ss.SSS} ${LOG_LEVEL_PATTERN:-%5p} ${PID:- } --- [%15.15t] %-40.40logger{39} : %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Файловый аппендер с ротацией по размеру и дате -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        
+        <!-- Комбинированная ротация: по размеру (10MB) И по дате -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- Паттерн для архивных файлов: application.log.2025-11-28.0.gz -->
+            <!-- %d{yyyy-MM-dd} - дата, %i - индекс (если несколько файлов за день) -->
+            <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
+            
+            <!-- Максимальный размер одного файла перед ротацией -->
+            <maxFileSize>10MB</maxFileSize>
+            
+            <!-- Хранить архивы за последние 10 дней -->
+            <maxHistory>10</maxHistory>
+            
+            <!-- Общий максимальный размер всех архивов (опционально) -->
+            <totalSizeCap>1GB</totalSizeCap>
+            
+            <!-- Не очищать старые файлы при старте приложения -->
+            <cleanHistoryOnStart>false</cleanHistoryOnStart>
+        </rollingPolicy>
+        
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%15.15t] %-40.40logger{39} : %m%n%wEx</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Уровни логирования -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+        <logger name="ru.oparin.troyka" level="${log_level:-INFO}"/>
+        <logger name="reactor.netty.http.server" level="ERROR"/>
+    </springProfile>
+
+    <springProfile name="dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+        <logger name="ru.oparin.troyka" level="DEBUG"/>
+    </springProfile>
+
+    <!-- Если профиль не указан, используем дефолтные настройки -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>
+
