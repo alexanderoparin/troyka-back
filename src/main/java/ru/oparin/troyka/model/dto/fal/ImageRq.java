@@ -2,7 +2,6 @@ package ru.oparin.troyka.model.dto.fal;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -52,9 +51,9 @@ public class ImageRq {
     private String aspectRatio = "1:1";
 
     /** Тип модели для генерации */
-    @NotNull(message = "Тип модели обязателен")
-    @Schema(description = "Тип модели для генерации. Возможные значения: NANO_BANANA, NANO_BANANA_PRO", example = "NANO_BANANA", required = true)
-    private GenerationModelType model;
+    @Builder.Default
+    @Schema(description = "Тип модели для генерации. Возможные значения: NANO_BANANA, NANO_BANANA_PRO. По умолчанию: NANO_BANANA", example = "NANO_BANANA")
+    private GenerationModelType model = GenerationModelType.NANO_BANANA;
 
     /** Разрешение изображения */
     @Schema(description = "Разрешение изображения. Возможные значения: RESOLUTION_1K, RESOLUTION_2K, RESOLUTION_4K", example = "RESOLUTION_1K")
