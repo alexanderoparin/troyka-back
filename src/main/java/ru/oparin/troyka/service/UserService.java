@@ -21,6 +21,13 @@ import static ru.oparin.troyka.config.DatabaseConfig.withRetry;
 @Slf4j
 public class UserService {
 
+    // Константы для сообщений об ошибках
+    private static final String USER_NOT_FOUND = "Пользователь не найден";
+    private static final String USERNAME_ALREADY_EXISTS = "Пользователь с таким именем уже существует";
+    private static final String EMAIL_ALREADY_EXISTS = "Пользователь с таким email уже существует";
+    private static final String USERNAME_SAME_AS_CURRENT = "Новое имя пользователя должно отличаться от текущего";
+    private static final String EMAIL_SAME_AS_CURRENT = "Новый email должен отличаться от текущего";
+
     private final UserRepository userRepository;
     private final ImageGenerationHistoryRepository imageGenerationHistoryRepository;
 
@@ -51,18 +58,12 @@ public class UserService {
 
     public Mono<User> findByUsernameOrThrow(String username) {
         return withRetry(userRepository.findByUsername(username))
-                .switchIfEmpty(Mono.error(new AuthException(
-                        HttpStatus.NOT_FOUND,
-                        "Пользователь не найден"
-                )));
+                .switchIfEmpty(Mono.error(createUserNotFoundError()));
     }
 
     public Mono<User> findByIdOrThrow(Long id) {
         return withRetry(userRepository.findById(id))
-                .switchIfEmpty(Mono.error(new AuthException(
-                        HttpStatus.NOT_FOUND,
-                        "Пользователь не найден"
-                )));
+                .switchIfEmpty(Mono.error(createUserNotFoundError()));
     }
 
     public Mono<User> findByEmail(String email) {
@@ -71,72 +72,24 @@ public class UserService {
 
     public Mono<Void> existsByUsernameOrEmail(String username, String email) {
         return withRetry(userRepository.existsByUsername(username))
-                .flatMap(usernameExists -> {
-                    if (usernameExists) {
-                        return Mono.error(new AuthException(
-                                HttpStatus.CONFLICT,
-                                "Пользователь с таким именем уже существует"
-                        ));
-                    } else return existsByEmail(email);
-                });
+                .flatMap(usernameExists -> usernameExists
+                        ? Mono.error(createUsernameConflictError())
+                        : existsByEmail(email));
     }
 
     public Mono<Boolean> existsByUsername(String username) {
         return withRetry(userRepository.existsByUsername(username));
     }
 
-    public Mono<Void> existsByEmail(String email) {
-        return withRetry(userRepository.existsByEmail(email))
-                .flatMap(emailExists -> {
-                    if (emailExists) {
-                        return Mono.error(new AuthException(
-                                HttpStatus.CONFLICT,
-                                "Пользователь с таким email уже существует"
-                        ));
-                    } else return Mono.empty();
-                });
-    }
-
     public Mono<User> findByTelegramId(Long telegramId) {
         return withRetry(userRepository.findByTelegramId(telegramId));
     }
 
-    public Mono<Boolean> existsByTelegramId(Long telegramId) {
-        return withRetry(userRepository.existsByTelegramId(telegramId));
-    }
-
-    public Mono<Void> existsByUsernameOrEmailOrTelegramId(String username, String email, Long telegramId) {
-        return withRetry(userRepository.existsByUsername(username))
-                .flatMap(usernameExists -> {
-                    if (usernameExists) {
-                        return Mono.error(new AuthException(
-                                HttpStatus.CONFLICT,
-                                "Пользователь с таким именем уже существует"
-                        ));
-                    } else {
-                        return withRetry(userRepository.existsByEmail(email))
-                                .flatMap(emailExists -> {
-                                    if (emailExists) {
-                                        return Mono.error(new AuthException(
-                                                HttpStatus.CONFLICT,
-                                                "Пользователь с таким email уже существует"
-                                        ));
-                                    } else {
-                                        return withRetry(userRepository.existsByTelegramId(telegramId))
-                                                .flatMap(telegramExists -> {
-                                                    if (telegramExists) {
-                                                        return Mono.error(new AuthException(
-                                                                HttpStatus.CONFLICT,
-                                                                "Пользователь с таким Telegram ID уже существует"
-                                                        ));
-                                                    } else {
-                                                        return Mono.empty();
-                                                    }
-                                                });
-                                    }
-                                });
-                    }
-                });
+    private Mono<Void> existsByEmail(String email) {
+        return withRetry(userRepository.existsByEmail(email))
+                .flatMap(emailExists -> emailExists
+                        ? Mono.error(createEmailConflictError())
+                        : Mono.empty());
     }
 
     /**
@@ -146,33 +99,24 @@ public class UserService {
         String trimmedUsername = newUsername.trim();
         
         return SecurityUtil.getCurrentUsername()
-                .flatMap(currentUsername -> {
-                    // Проверяем, что новое имя отличается от текущего
-                    if (currentUsername.equals(trimmedUsername)) {
-                        return Mono.error(new AuthException(
-                                HttpStatus.BAD_REQUEST,
-                                "Новое имя пользователя должно отличаться от текущего"
-                        ));
-                    }
-                    
-                    // Проверяем, что новое имя не занято
-                    return existsByUsername(trimmedUsername)
-                            .flatMap(exists -> {
-                                if (exists) {
-                                    return Mono.error(new AuthException(
-                                            HttpStatus.CONFLICT,
-                                            "Пользователь с таким именем уже существует"
-                                    ));
-                                }
-                                
-                                // Обновляем имя пользователя
-                                return findByUsernameOrThrow(currentUsername)
-                                        .flatMap(user -> {
-                                            user.setUsername(trimmedUsername);
-                                            return saveUser(user);
-                                        });
-                            });
-                });
+                .flatMap(currentUsername -> validateUsernameChange(currentUsername, trimmedUsername)
+                        .then(findByUsernameOrThrow(currentUsername))
+                        .flatMap(user -> updateUserUsername(user, trimmedUsername)));
+    }
+
+    private Mono<Void> validateUsernameChange(String currentUsername, String newUsername) {
+        if (currentUsername.equals(newUsername)) {
+            return Mono.error(createUsernameSameAsCurrentError());
+        }
+        return existsByUsername(newUsername)
+                .flatMap(exists -> exists
+                        ? Mono.error(createUsernameConflictError())
+                        : Mono.empty());
+    }
+
+    private Mono<User> updateUserUsername(User user, String newUsername) {
+        user.setUsername(newUsername);
+        return saveUser(user);
     }
 
     /**
@@ -182,34 +126,45 @@ public class UserService {
         String trimmedEmail = newEmail.trim();
         
         return SecurityUtil.getCurrentUsername()
-                .flatMap(currentUsername -> {
-                    // Получаем текущего пользователя
-                    return findByUsernameOrThrow(currentUsername)
-                            .flatMap(user -> {
-                                // Проверяем, что новый email отличается от текущего
-                                if (trimmedEmail.equals(user.getEmail())) {
-                                    return Mono.error(new AuthException(
-                                            HttpStatus.BAD_REQUEST,
-                                            "Новый email должен отличаться от текущего"
-                                    ));
-                                }
-                                
-                                // Проверяем, что новый email не занят
-                                return withRetry(userRepository.existsByEmail(trimmedEmail))
-                                        .flatMap(exists -> {
-                                            if (exists) {
-                                                return Mono.error(new AuthException(
-                                                        HttpStatus.CONFLICT,
-                                                        "Пользователь с таким email уже существует"
-                                                ));
-                                            }
-                                            
-                                            // Обновляем email и сбрасываем статус подтверждения
-                                            user.setEmail(trimmedEmail);
-                                            user.setEmailVerified(false);
-                                            return saveUser(user);
-                                        });
-                            });
-                });
+                .flatMap(this::findByUsernameOrThrow)
+                .flatMap(user -> validateEmailChange(user, trimmedEmail)
+                        .then(updateUserEmail(user, trimmedEmail)));
+    }
+
+    private Mono<Void> validateEmailChange(User user, String newEmail) {
+        if (newEmail.equals(user.getEmail())) {
+            return Mono.error(createEmailSameAsCurrentError());
+        }
+        return withRetry(userRepository.existsByEmail(newEmail))
+                .flatMap(exists -> exists
+                        ? Mono.error(createEmailConflictError())
+                        : Mono.empty());
+    }
+
+    private Mono<User> updateUserEmail(User user, String newEmail) {
+        user.setEmail(newEmail);
+        user.setEmailVerified(false);
+        return saveUser(user);
+    }
+
+    // Вспомогательные методы для создания ошибок
+    private AuthException createUserNotFoundError() {
+        return new AuthException(HttpStatus.NOT_FOUND, USER_NOT_FOUND);
+    }
+
+    private AuthException createUsernameConflictError() {
+        return new AuthException(HttpStatus.CONFLICT, USERNAME_ALREADY_EXISTS);
+    }
+
+    private AuthException createEmailConflictError() {
+        return new AuthException(HttpStatus.CONFLICT, EMAIL_ALREADY_EXISTS);
+    }
+
+    private AuthException createUsernameSameAsCurrentError() {
+        return new AuthException(HttpStatus.BAD_REQUEST, USERNAME_SAME_AS_CURRENT);
+    }
+
+    private AuthException createEmailSameAsCurrentError() {
+        return new AuthException(HttpStatus.BAD_REQUEST, EMAIL_SAME_AS_CURRENT);
     }
 }
