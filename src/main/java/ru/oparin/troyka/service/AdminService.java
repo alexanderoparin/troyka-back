@@ -102,7 +102,7 @@ public class AdminService {
 
         Mono<Long> totalUsersMono = withRetry(userRepository.count());
         
-        Mono<Long> totalPaymentsMono = withRetry(paymentRepository.count());
+        Mono<Long> totalPaymentsMono = countPaymentsSince(null);
         
         Mono<Long> todayPaymentsMono = countPaymentsSince(todayStart);
         
@@ -161,8 +161,11 @@ public class AdminService {
     }
 
     private Mono<Long> countPaymentsSince(LocalDateTime since) {
+        Query query = since == null
+                ? Query.query(Criteria.where("status").is(PaymentStatus.PAID.name()))
+                : Query.query(Criteria.where("created_at").greaterThanOrEquals(since).and("status").is(PaymentStatus.PAID.name()));
         return r2dbcEntityTemplate.count(
-                Query.query(Criteria.where("created_at").greaterThanOrEquals(since).and("status").is(PaymentStatus.PAID.name())),
+                query,
                 Payment.class
         );
     }
