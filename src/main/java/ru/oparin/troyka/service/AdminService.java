@@ -162,7 +162,7 @@ public class AdminService {
 
     private Mono<Long> countPaymentsSince(LocalDateTime since) {
         return r2dbcEntityTemplate.count(
-                Query.query(Criteria.where("created_at").greaterThanOrEquals(since)),
+                Query.query(Criteria.where("created_at").greaterThanOrEquals(since).and("status").is(PaymentStatus.PAID.name())),
                 Payment.class
         );
     }
