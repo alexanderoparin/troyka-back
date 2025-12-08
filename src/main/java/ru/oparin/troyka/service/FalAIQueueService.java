@@ -334,16 +334,14 @@ public class FalAIQueueService {
                     userId, webE.getStatusCode(), responseBody);
 
             checkExhaustedBalance(webE, responseBody);
-            return userPointsService.addPointsToUser(userId, pointsNeeded)
-                    .then(Mono.error(new FalAIException(
-                            "Ошибка при отправке запроса в очередь: " + webE.getStatusCode(),
-                            HttpStatus.UNPROCESSABLE_ENTITY)));
+            return Mono.error(new FalAIException(
+                    "Ошибка при отправке запроса в очередь: " + webE.getStatusCode(),
+                    HttpStatus.UNPROCESSABLE_ENTITY));
         } else {
             log.warn("Ошибка подключения к Fal.ai при отправке в очередь для userId={}", userId);
-            return userPointsService.addPointsToUser(userId, pointsNeeded)
-                    .then(Mono.error(new FalAIException(
-                            "Не удалось подключиться к сервису генерации. Попробуйте позже.",
-                            HttpStatus.SERVICE_UNAVAILABLE)));
+            return Mono.error(new FalAIException(
+                    "Не удалось подключиться к сервису генерации. Попробуйте позже.",
+                    HttpStatus.SERVICE_UNAVAILABLE));
         }
     }
 
