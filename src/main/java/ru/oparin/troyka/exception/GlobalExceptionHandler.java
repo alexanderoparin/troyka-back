@@ -113,17 +113,12 @@ public class GlobalExceptionHandler {
             MethodNotAllowedException ex, 
             ServerWebExchange exchange) {
         
-        // Получаем информацию о запросе
+        // Получаем минимальную информацию о запросе
         var request = exchange.getRequest();
-        String uri = request.getURI().toString();
+        String uri = request.getURI().getPath(); // Только путь, без полного URL
         HttpMethod method = request.getMethod();
-        String userAgent = request.getHeaders().getFirst("User-Agent");
-        String referer = request.getHeaders().getFirst("Referer");
-        String origin = request.getHeaders().getFirst("Origin");
-        String contentType = request.getHeaders().getFirst("Content-Type");
-        String accept = request.getHeaders().getFirst("Accept");
         
-        // Получаем IP адрес
+        // Получаем IP адрес (кратко)
         String clientIp = "unknown";
         try {
             String forwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
@@ -138,7 +133,7 @@ public class GlobalExceptionHandler {
                 }
             }
         } catch (Exception e) {
-            log.warn("Не удалось извлечь IP адрес: {}", e.getMessage());
+            // Игнорируем ошибки извлечения IP
         }
         
         // Формируем список поддерживаемых методов
@@ -148,20 +143,12 @@ public class GlobalExceptionHandler {
                     .collect(Collectors.joining(", "))
                 : "неизвестно";
         
-        // Детальное логирование
-        log.error("=== METHOD NOT ALLOWED (405) ===");
-        log.error("URL: {}", uri);
-        log.error("HTTP Method: {}", method != null ? method.name() : "null");
-        log.error("Поддерживаемые методы: {}", supportedMethods);
-        log.error("Client IP: {}", clientIp);
-        log.error("User-Agent: {}", userAgent != null ? userAgent : "не указан");
-        log.error("Referer: {}", referer != null ? referer : "не указан");
-        log.error("Origin: {}", origin != null ? origin : "не указан");
-        log.error("Content-Type: {}", contentType != null ? contentType : "не указан");
-        log.error("Accept: {}", accept != null ? accept : "не указан");
-        log.error("Все заголовки запроса: {}", request.getHeaders());
-        log.error("Сообщение об ошибке: {}", ex.getMessage());
-        log.error("=================================");
+        // Краткое логирование
+        log.warn("405 Method Not Allowed: {} {} from {} (supported: {})", 
+                method != null ? method.name() : "null", 
+                uri, 
+                clientIp, 
+                supportedMethods);
 
         return Mono.just(ResponseEntity.status(405)
                 .body(Map.of(
