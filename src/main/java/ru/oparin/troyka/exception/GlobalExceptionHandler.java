@@ -2,11 +2,14 @@ package ru.oparin.troyka.exception;
 
 import jakarta.validation.ValidationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.support.WebExchangeBindException;
+import org.springframework.web.server.MethodNotAllowedException;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 import reactor.netty.channel.AbortedException;
 
@@ -103,5 +106,72 @@ public class GlobalExceptionHandler {
     public Mono<ResponseEntity<Map<String, Object>>> handleClientDisconnectException(AbortedException ex) {
         log.debug("Клиент закрыл соединение до завершения запроса. Полученное исключение: {}", ex.getClass().getSimpleName());
         return Mono.empty();
+    }
+
+    @ExceptionHandler(MethodNotAllowedException.class)
+    public Mono<ResponseEntity<Map<String, Object>>> handleMethodNotAllowedException(
+            MethodNotAllowedException ex, 
+            ServerWebExchange exchange) {
+        
+        // Получаем информацию о запросе
+        var request = exchange.getRequest();
+        String uri = request.getURI().toString();
+        HttpMethod method = request.getMethod();
+        String userAgent = request.getHeaders().getFirst("User-Agent");
+        String referer = request.getHeaders().getFirst("Referer");
+        String origin = request.getHeaders().getFirst("Origin");
+        String contentType = request.getHeaders().getFirst("Content-Type");
+        String accept = request.getHeaders().getFirst("Accept");
+        
+        // Получаем IP адрес
+        String clientIp = "unknown";
+        try {
+            String forwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isEmpty()) {
+                clientIp = forwardedFor.split(",")[0].trim();
+            } else {
+                String realIp = request.getHeaders().getFirst("X-Real-IP");
+                if (realIp != null && !realIp.isEmpty()) {
+                    clientIp = realIp;
+                } else if (request.getRemoteAddress() != null) {
+                    clientIp = request.getRemoteAddress().getAddress().getHostAddress();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Не удалось извлечь IP адрес: {}", e.getMessage());
+        }
+        
+        // Формируем список поддерживаемых методов
+        String supportedMethods = ex.getSupportedMethods() != null 
+                ? ex.getSupportedMethods().stream()
+                    .map(HttpMethod::name)
+                    .collect(Collectors.joining(", "))
+                : "неизвестно";
+        
+        // Детальное логирование
+        log.error("=== METHOD NOT ALLOWED (405) ===");
+        log.error("URL: {}", uri);
+        log.error("HTTP Method: {}", method != null ? method.name() : "null");
+        log.error("Поддерживаемые методы: {}", supportedMethods);
+        log.error("Client IP: {}", clientIp);
+        log.error("User-Agent: {}", userAgent != null ? userAgent : "не указан");
+        log.error("Referer: {}", referer != null ? referer : "не указан");
+        log.error("Origin: {}", origin != null ? origin : "не указан");
+        log.error("Content-Type: {}", contentType != null ? contentType : "не указан");
+        log.error("Accept: {}", accept != null ? accept : "не указан");
+        log.error("Все заголовки запроса: {}", request.getHeaders());
+        log.error("Сообщение об ошибке: {}", ex.getMessage());
+        log.error("=================================");
+
+        return Mono.just(ResponseEntity.status(405)
+                .body(Map.of(
+                        "error", "Метод не разрешен",
+                        "status", 405,
+                        "message", String.format("Метод %s не поддерживается для данного эндпоинта. Поддерживаемые методы: %s", 
+                                method != null ? method.name() : "null", supportedMethods),
+                        "requestedMethod", method != null ? method.name() : "null",
+                        "supportedMethods", supportedMethods,
+                        "uri", uri
+                )));
     }
 }
