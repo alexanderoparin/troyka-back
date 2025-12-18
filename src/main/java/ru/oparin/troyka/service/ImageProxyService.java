@@ -22,7 +22,7 @@ import java.util.Map;
 public class ImageProxyService {
 
     private final WebClient.Builder webClientBuilder;
-    private static final Duration TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration TIMEOUT = Duration.ofSeconds(120); // Увеличен таймаут для больших изображений
     
     // Маппинг версий API на базовые URL провайдеров
     private static final Map<String, String> PROVIDER_URLS = Map.of(

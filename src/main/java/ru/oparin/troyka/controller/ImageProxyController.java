@@ -36,20 +36,30 @@ public class ImageProxyController {
     @GetMapping("/{version}/**")
     public Mono<ResponseEntity<byte[]>> proxyImage(@PathVariable String version,
                                                      ServerHttpRequest request) {
-        return imageProxyService.proxyImage(version, request.getURI().getPath())
+        String requestPath = request.getURI().getPath();
+        log.debug("Запрос проксирования изображения: version={}, path={}", version, requestPath);
+        
+        return imageProxyService.proxyImage(version, requestPath)
                 .map(fileData -> {
                     String contentType = determineContentTypeFromData(fileData);
+                    double sizeMB = fileData.length / (1024.0 * 1024.0);
+                    log.debug("Успешно проксировано изображение: size={} MB, contentType={}",
+                            String.format("%.2f", sizeMB), contentType);
                     
                     return ResponseEntity.ok()
                             .contentType(MediaType.parseMediaType(contentType))
-                            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400") // Кэшируем на сутки
+                            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600") // Кешируем на 1 час (HTTP кеш, не хранение на диске)
                             .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*") // CORS
                             .header(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET")
+                            .header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, "Accept, Accept-Language, Content-Language, Content-Type")
                             .body(fileData);
                 })
                 .onErrorResume(error -> {
-                    log.error("Ошибка проксирования изображения: {}", error.getMessage());
-                    return Mono.just(ResponseEntity.notFound().build());
+                    log.error("Ошибка проксирования изображения: version={}, path={}, error={}", 
+                            version, requestPath, error.getMessage(), error);
+                    return Mono.just(ResponseEntity.status(500)
+                            .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                            .build());
                 });
     }
 
