@@ -53,5 +53,14 @@ public class GenerationProperties {
         Integer pointsPerImage = getPointsPerImage(modelType, resolution);
         return pointsPerImage * numImages;
     }
+
+    /**
+     * Получить количество поинтов за одно изображение для обычной модели.
+     * 
+     * @return количество поинтов за одно изображение
+     */
+    public Integer getPointsPerImage() {
+        return pointsPerImage;
+    }
 }
 

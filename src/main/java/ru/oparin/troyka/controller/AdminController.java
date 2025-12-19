@@ -5,12 +5,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.admin.AdminPaymentDTO;
 import ru.oparin.troyka.model.dto.admin.AdminStatsDTO;
 import ru.oparin.troyka.model.dto.admin.AdminUserDTO;
+import ru.oparin.troyka.model.dto.admin.UserStatisticsDTO;
 import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.system.SystemStatusHistoryDTO;
 import ru.oparin.troyka.model.dto.system.SystemStatusRequest;
@@ -19,6 +21,7 @@ import ru.oparin.troyka.service.SystemStatusService;
 import ru.oparin.troyka.service.UserService;
 import ru.oparin.troyka.util.SecurityUtil;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -59,6 +62,23 @@ public class AdminController {
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка получения пользователей: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403).build());
+                });
+    }
+
+    @Operation(summary = "Поиск пользователей",
+            description = "Ищет пользователей по фильтру (ID, username, email, telegram). " +
+                    "Возвращает список пользователей, соответствующих критериям поиска. Требуется роль ADMIN.")
+    @GetMapping("/users/search")
+    public Mono<ResponseEntity<List<AdminUserDTO>>> searchUsers(
+            @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "20") int limit) {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMapMany(admin -> adminService.searchUsers(query, limit))
+                .collectList()
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Ошибка поиска пользователей: {}", e.getMessage());
                     return Mono.just(ResponseEntity.status(403).build());
                 });
     }
@@ -119,6 +139,27 @@ public class AdminController {
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка получения истории статуса системы: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403).build());
+                });
+    }
+
+    @Operation(summary = "Получить статистику генераций пользователя",
+            description = "Возвращает статистику генераций пользователя за указанный период. " +
+                    "Показывает количество генераций по обычной модели и ПРО модели, " +
+                    "разбитую по разрешениям. Требуется роль ADMIN.")
+    @GetMapping("/users/{userId}/statistics")
+    public Mono<ResponseEntity<UserStatisticsDTO>> getUserStatistics(
+            @PathVariable Long userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMap(admin -> adminService.getUserStatistics(userId, startDate, endDate))
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Ошибка получения статистики пользователя {}: {}", userId, e.getMessage());
+                    if (e instanceof IllegalArgumentException) {
+                        return Mono.just(ResponseEntity.status(404).build());
+                    }
                     return Mono.just(ResponseEntity.status(403).build());
                 });
     }
