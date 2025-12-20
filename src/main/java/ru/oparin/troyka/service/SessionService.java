@@ -75,8 +75,6 @@ public class SessionService {
      * @return список сессий с метаинформацией
      */
     public Mono<PageResponseDTO<SessionDTO>> getSessionsList(Long userId, int page, int size) {
-        log.info("Получение списка сессий для пользователя {}, страница {}, размер {}", userId, page, size);
-
         Pageable pageable = PageRequest.of(page, size);
 
         return sessionRepository.findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId, pageable)
@@ -181,8 +179,14 @@ public class SessionService {
                                         .flatMap(markedCount -> {
                                             // Помечаем сессию как удаленную (soft delete)
                                             return sessionRepository.markAsDeletedByIdAndUserId(sessionId, userId)
+                                                    .doOnNext(deletedSessions -> {
+                                                        if (deletedSessions == 0) {
+                                                            log.warn("Сессия {} не была помечена как удаленная (возможно, уже удалена или не найдена)", sessionId);
+                                                        } else {
+                                                            log.info("Сессия {} помечена как удаленная, {} записей истории помечено как удаленные", sessionId, markedCount);
+                                                        }
+                                                    })
                                                     .map(deletedSessions -> {
-                                                        log.info("Сессия {} помечена как удаленная, {} записей истории помечено как удаленные", sessionId, markedCount);
                                                         return sessionMapper.toDeleteSessionResponseDTO(sessionId, markedCount);
                                                     });
                                         });

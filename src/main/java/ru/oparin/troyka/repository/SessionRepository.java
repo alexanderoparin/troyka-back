@@ -116,7 +116,7 @@ public interface SessionRepository extends ReactiveCrudRepository<Session, Long>
      * @param userId идентификатор пользователя
      * @return количество помеченных записей (0 или 1)
      */
-    @Query("UPDATE sessions SET deleted = true WHERE id = :id AND user_id = :userId AND deleted = false")
+    @Query("UPDATE troyka.sessions SET deleted = true WHERE id = :id AND user_id = :userId AND deleted = false")
     Mono<Integer> markAsDeletedByIdAndUserId(Long id, Long userId);
 }
 
