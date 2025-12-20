@@ -26,6 +26,14 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
     Flux<ImageGenerationHistory> findByUserIdOrderByCreatedAtDesc(Long userId);
 
     /**
+     * Найти все не удаленные записи истории пользователя, отсортированные по дате создания (новые первые).
+     *
+     * @param userId идентификатор пользователя
+     * @return поток не удаленных записей истории пользователя
+     */
+    Flux<ImageGenerationHistory> findByUserIdAndDeletedFalseOrderByCreatedAtDesc(Long userId);
+
+    /**
      * Найти все записи истории пользователя из конкретной сессии, отсортированные по дате создания (новые первые).
      *
      * @param userId идентификатор пользователя
@@ -33,6 +41,15 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
      * @return поток записей истории пользователя из сессии
      */
     Flux<ImageGenerationHistory> findByUserIdAndSessionIdOrderByCreatedAtDesc(Long userId, Long sessionId);
+
+    /**
+     * Найти все не удаленные записи истории пользователя из конкретной сессии, отсортированные по дате создания (новые первые).
+     *
+     * @param userId идентификатор пользователя
+     * @param sessionId идентификатор сессии
+     * @return поток не удаленных записей истории пользователя из сессии
+     */
+    Flux<ImageGenerationHistory> findByUserIdAndSessionIdAndDeletedFalseOrderByCreatedAtDesc(Long userId, Long sessionId);
 
     /**
      * Найти все записи истории сессии, отсортированные по дате создания (по порядку диалога).
@@ -52,12 +69,28 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
     Flux<ImageGenerationHistory> findBySessionIdOrderByCreatedAtAsc(Long sessionId);
 
     /**
+     * Найти все не удаленные записи истории сессии, отсортированные по дате создания (по порядку диалога).
+     *
+     * @param sessionId идентификатор сессии
+     * @return поток всех не удаленных записей истории сессии
+     */
+    Flux<ImageGenerationHistory> findBySessionIdAndDeletedFalseOrderByCreatedAtAsc(Long sessionId);
+
+    /**
      * Найти последнюю запись истории сессии (с самой поздней датой создания).
      *
      * @param sessionId идентификатор сессии
      * @return последняя запись истории или пустой результат
      */
     Mono<ImageGenerationHistory> findFirstBySessionIdOrderByCreatedAtDesc(Long sessionId);
+
+    /**
+     * Найти последнюю не удаленную запись истории сессии (с самой поздней датой создания).
+     *
+     * @param sessionId идентификатор сессии
+     * @return последняя не удаленная запись истории или пустой результат
+     */
+    Mono<ImageGenerationHistory> findFirstBySessionIdAndDeletedFalseOrderByCreatedAtDesc(Long sessionId);
 
     /**
      * Подсчитать количество записей истории в сессии.
@@ -68,12 +101,29 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
     Mono<Long> countBySessionId(Long sessionId);
 
     /**
+     * Подсчитать количество не удаленных записей истории в сессии.
+     *
+     * @param sessionId идентификатор сессии
+     * @return количество не удаленных записей истории
+     */
+    Mono<Long> countBySessionIdAndDeletedFalse(Long sessionId);
+
+    /**
      * Удалить все записи истории сессии.
      *
      * @param sessionId идентификатор сессии
      * @return количество удаленных записей
      */
     Mono<Integer> deleteBySessionId(Long sessionId);
+
+    /**
+     * Пометить все не удаленные записи истории сессии как удаленные (soft delete).
+     *
+     * @param sessionId идентификатор сессии
+     * @return количество помеченных записей
+     */
+    @Query("UPDATE troyka.image_generation_history SET deleted = true WHERE session_id = :sessionId AND deleted = false")
+    Mono<Integer> markAsDeletedBySessionId(Long sessionId);
 
     /**
      * Сохранить запись истории с правильным приведением JSONB.

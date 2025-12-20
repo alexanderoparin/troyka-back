@@ -112,7 +112,7 @@ public class SessionService {
     public Mono<SessionDetailDTO> getSessionDetail(Long sessionId, Long userId, int page, int size) {
         return getSessionMonoOrThrow(sessionId, userId)
                 .flatMap(session ->
-                        imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
+                        imageHistoryRepository.findBySessionIdAndDeletedFalseOrderByCreatedAtAsc(sessionId)
                                 .collectList()
                                 .flatMap(histories -> {
                                     int totalCount = histories.size();
@@ -159,7 +159,7 @@ public class SessionService {
     }
 
     /**
-     * Удалить сессию и все связанные записи истории.
+     * Удалить сессию и пометить все связанные записи истории как удаленные (soft delete).
      *
      * @param sessionId идентификатор сессии
      * @param userId    идентификатор пользователя
@@ -170,17 +170,21 @@ public class SessionService {
 
         return getSessionMonoOrThrow(sessionId, userId)
                 .flatMap(session -> {
-                    // Получаем количество записей истории для удаления
+                    // Получаем количество записей истории для пометки как удаленных
                     return imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
                             .collectList()
                             .flatMap(histories -> {
                                 int historyCount = histories.size();
 
-                                // Удаляем сессию (каскадное удаление истории)
-                                return sessionRepository.deleteByIdAndUserId(sessionId, userId)
-                                        .map(deletedSessions -> {
-                                            log.info("Сессия {} удалена вместе с {} записями истории", sessionId, historyCount);
-                                            return sessionMapper.toDeleteSessionResponseDTO(sessionId, historyCount);
+                                // Помечаем все записи истории как удаленные (soft delete)
+                                return imageHistoryRepository.markAsDeletedBySessionId(sessionId)
+                                        .flatMap(markedCount -> {
+                                            // Удаляем сессию
+                                            return sessionRepository.deleteByIdAndUserId(sessionId, userId)
+                                                    .map(deletedSessions -> {
+                                                        log.info("Сессия {} удалена, {} записей истории помечено как удаленные", sessionId, markedCount);
+                                                        return sessionMapper.toDeleteSessionResponseDTO(sessionId, markedCount);
+                                                    });
                                         });
                             });
                 })
@@ -285,10 +289,10 @@ public class SessionService {
      */
     private Mono<SessionDTO> enrichSessionWithDetails(Session session) {
         return Mono.zip(
-                imageHistoryRepository.findFirstBySessionIdOrderByCreatedAtDesc(session.getId())
+                imageHistoryRepository.findFirstBySessionIdAndDeletedFalseOrderByCreatedAtDesc(session.getId())
                         .map(history -> history.getImageUrls().isEmpty() ? "" : history.getImageUrls().get(0))
                         .switchIfEmpty(Mono.just("")),
-                imageHistoryRepository.countBySessionId(session.getId())
+                imageHistoryRepository.countBySessionIdAndDeletedFalse(session.getId())
                         .map(Long::intValue)
         ).map(tuple -> sessionMapper.toSessionDTOWithDetails(session, tuple.getT1(), tuple.getT2()));
     }

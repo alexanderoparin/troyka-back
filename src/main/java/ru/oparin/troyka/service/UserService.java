@@ -44,7 +44,7 @@ public class UserService {
     public Flux<ImageGenerationHistoryDTO> getCurrentUserImageHistory() {
         return SecurityUtil.getCurrentUsername()
                 .flatMap(userRepository::findByUsername)
-                .flatMapMany(user -> imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(user.getId()))
+                .flatMapMany(user -> imageGenerationHistoryRepository.findByUserIdAndDeletedFalseOrderByCreatedAtDesc(user.getId()))
                 .map(ImageGenerationHistoryDTO::fromEntity);
     }
 

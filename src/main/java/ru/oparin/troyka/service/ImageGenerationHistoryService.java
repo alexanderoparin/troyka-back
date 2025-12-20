@@ -79,7 +79,7 @@ public class ImageGenerationHistoryService {
     public Mono<String> getLastGeneratedImageUrlFromSession(Long userId, Long sessionId) {
         log.info("Получение URL последнего сгенерированного изображения для пользователя {} из сессии {}", userId, sessionId);
 
-        return imageGenerationHistoryRepository.findByUserIdAndSessionIdOrderByCreatedAtDesc(userId, sessionId)
+        return imageGenerationHistoryRepository.findByUserIdAndSessionIdAndDeletedFalseOrderByCreatedAtDesc(userId, sessionId)
                 .next() // Берем только первую (последнюю) запись из сессии
                 .flatMap(history -> {
                     List<String> imageUrls = JsonUtils.parseJsonToList(history.getImageUrls());

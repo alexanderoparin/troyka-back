@@ -148,6 +148,15 @@ public class ImageGenerationHistory {
     private LocalDateTime updatedAt;
 
     /**
+     * Флаг удаления записи.
+     * true означает, что запись помечена как удаленная (soft delete).
+     * По умолчанию false.
+     */
+    @Column("deleted")
+    @Builder.Default
+    private Boolean deleted = false;
+
+    /**
      * Получить список URL сгенерированных изображений из JSON.
      * Вспомогательный метод для работы с JSONB полем.
      */
