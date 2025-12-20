@@ -42,10 +42,6 @@ public class Session {
     @Column("updated_at")
     private Instant updatedAt;
 
-    /** Флаг активности сессии (true - активна, false - удалена) */
-    @Column("is_active")
-    private Boolean isActive;
-
     /** Флаг удаления сессии (soft delete). true означает, что сессия помечена как удаленная. */
     @Column("deleted")
     @Builder.Default

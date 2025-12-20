@@ -271,7 +271,6 @@ public class SessionMapper {
                 .name(sessionDTO.getName())
                 .createdAt(sessionDTO.getCreatedAt())
                 .updatedAt(sessionDTO.getUpdatedAt())
-                .isActive(true)
                 .build();
     }
 
@@ -296,7 +295,6 @@ public class SessionMapper {
                 .name(name)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
-                .isActive(true)
                 .build();
     }
 }
