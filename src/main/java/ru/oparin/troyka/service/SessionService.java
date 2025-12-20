@@ -177,25 +177,20 @@ public class SessionService {
                                 int historyCount = histories.size();
                                 log.debug("Найдено {} записей истории для сессии {}", historyCount, sessionId);
 
-                                // Помечаем все записи истории как удаленные (soft delete)
+                                // 1. Помечаем все записи истории как удаленные (soft delete)
                                 return imageHistoryRepository.markAsDeletedBySessionId(sessionId)
-                                        .doOnNext(markedCount -> log.debug("Помечено {} записей истории как удаленные для сессии {}", markedCount, sessionId))
-                                        .flatMap(markedCount -> {
-                                            log.debug("Попытка пометить сессию {} как удаленную. userId={}, deleted={}", sessionId, userId, session.getDeleted());
-                                            
-                                            // Помечаем сессию как удаленную (soft delete) через сохранение сущности
-                                            // Это более надежный способ, чем update через R2dbcEntityTemplate
-                                            session.setDeleted(true);
-                                            return sessionRepository.save(session)
-                                                    .doOnNext(saved -> {
-                                                        log.info("Сессия {} помечена как удаленная, {} записей истории помечено как удаленные", sessionId, markedCount);
-                                                    })
-                                                    .doOnError(error -> {
-                                                        log.error("Ошибка при пометке сессии {} как удаленной", sessionId, error);
-                                                    })
-                                                    .map(saved -> {
-                                                        return sessionMapper.toDeleteSessionResponseDTO(sessionId, markedCount);
-                                                    });
+                                        .doOnNext(markedCount -> log.info("Помечено {} записей истории как удаленные для сессии {}", markedCount, sessionId))
+                                        // 2. Помечаем сессию как удаленную (soft delete)
+                                        .then(sessionRepository.markAsDeletedByIdAndUserId(sessionId, userId))
+                                        .doOnNext(updatedCount -> {
+                                            if (updatedCount == 0) {
+                                                log.warn("Сессия {} не была помечена как удаленная (updatedCount=0)", sessionId);
+                                            } else {
+                                                log.info("Сессия {} помечена как удаленная", sessionId);
+                                            }
+                                        })
+                                        .map(updatedCount -> {
+                                            return sessionMapper.toDeleteSessionResponseDTO(sessionId, historyCount);
                                         });
                             });
                 })
