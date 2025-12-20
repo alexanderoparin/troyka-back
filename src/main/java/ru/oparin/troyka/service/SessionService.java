@@ -79,7 +79,7 @@ public class SessionService {
 
         Pageable pageable = PageRequest.of(page, size);
 
-        return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId, pageable)
+        return sessionRepository.findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId, pageable)
                 .collectList()
                 .flatMap(sessions -> {
                     if (sessions.isEmpty()) {
@@ -91,8 +91,8 @@ public class SessionService {
                             .flatMap(this::enrichSessionWithDetails)
                             .collectList()
                             .flatMap(sessionDTOs -> {
-                                // Подсчитываем общее количество сессий
-                                return sessionRepository.countByUserId(userId)
+                                // Подсчитываем общее количество не удаленных сессий
+                                return sessionRepository.countByUserIdAndDeletedFalse(userId)
                                         .map(totalCount -> PageResponseDTO.<SessionDTO>of(sessionDTOs, page, size, totalCount));
                             });
                 })
@@ -179,10 +179,10 @@ public class SessionService {
                                 // Помечаем все записи истории как удаленные (soft delete)
                                 return imageHistoryRepository.markAsDeletedBySessionId(sessionId)
                                         .flatMap(markedCount -> {
-                                            // Удаляем сессию
-                                            return sessionRepository.deleteByIdAndUserId(sessionId, userId)
+                                            // Помечаем сессию как удаленную (soft delete)
+                                            return sessionRepository.markAsDeletedByIdAndUserId(sessionId, userId)
                                                     .map(deletedSessions -> {
-                                                        log.info("Сессия {} удалена, {} записей истории помечено как удаленные", sessionId, markedCount);
+                                                        log.info("Сессия {} помечена как удаленная, {} записей истории помечено как удаленные", sessionId, markedCount);
                                                         return sessionMapper.toDeleteSessionResponseDTO(sessionId, markedCount);
                                                     });
                                         });
@@ -192,10 +192,11 @@ public class SessionService {
     }
 
     /**
-     * Получаем сессию или выбрасываем исключение
+     * Получаем сессию или выбрасываем исключение.
+     * Проверяет только не удаленные сессии.
      */
     private Mono<Session> getSessionMonoOrThrow(Long sessionId, Long userId) {
-        return sessionRepository.findByIdAndUserId(sessionId, userId)
+        return sessionRepository.findByIdAndUserIdAndDeletedFalse(sessionId, userId)
                 .switchIfEmpty(Mono.error(new SessionNotFoundException("Сессия не найдена или не принадлежит пользователю")));
     }
 
@@ -207,7 +208,7 @@ public class SessionService {
      * @return дефолтная сессия в виде DTO
      */
     public Mono<SessionDTO> getOrCreateDefaultSession(Long userId) {
-        return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId)
+        return sessionRepository.findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId)
                 .collectList()
                 .flatMap(sessions -> {
                     if (sessions.isEmpty()) {
@@ -252,14 +253,14 @@ public class SessionService {
     public Mono<Session> getOrCreateSession(Long sessionId, Long userId) {
         if (sessionId != null) {
             log.info("Получение сессии {} для пользователя {}", sessionId, userId);
-            return sessionRepository.findByIdAndUserId(sessionId, userId)
+            return sessionRepository.findByIdAndUserIdAndDeletedFalse(sessionId, userId)
                     .switchIfEmpty(Mono.defer(() -> {
                         log.warn("Сессия {} не найдена для пользователя {}, создаем новую дефолтную сессию", sessionId, userId);
                         return createDefaultSession(userId);
                     }));
         } else {
             log.info("Получение дефолтной сессии для пользователя {}", userId);
-            return sessionRepository.findByUserIdOrderByUpdatedAtDesc(userId)
+            return sessionRepository.findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(userId)
                     .next()
                     .switchIfEmpty(Mono.defer(() -> {
                         log.info("У пользователя {} нет сессий, создаем дефолтную", userId);

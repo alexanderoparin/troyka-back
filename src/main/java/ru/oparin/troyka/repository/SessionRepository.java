@@ -27,6 +27,15 @@ public interface SessionRepository extends ReactiveCrudRepository<Session, Long>
     Flux<Session> findByUserIdOrderByUpdatedAtDesc(Long userId, Pageable pageable);
 
     /**
+     * Найти все не удаленные сессии пользователя с пагинацией, отсортированные по дате обновления (новые первые).
+     *
+     * @param userId идентификатор пользователя
+     * @param pageable параметры пагинации (номер страницы, размер страницы)
+     * @return поток не удаленных сессий пользователя
+     */
+    Flux<Session> findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(Long userId, Pageable pageable);
+
+    /**
      * Найти все сессии пользователя без пагинации, отсортированные по дате обновления (новые первые).
      * Используется для получения полного списка сессий пользователя.
      *
@@ -34,6 +43,14 @@ public interface SessionRepository extends ReactiveCrudRepository<Session, Long>
      * @return поток всех сессий пользователя
      */
     Flux<Session> findByUserIdOrderByUpdatedAtDesc(Long userId);
+
+    /**
+     * Найти все не удаленные сессии пользователя без пагинации, отсортированные по дате обновления (новые первые).
+     *
+     * @param userId идентификатор пользователя
+     * @return поток всех не удаленных сессий пользователя
+     */
+    Flux<Session> findByUserIdAndDeletedFalseOrderByUpdatedAtDesc(Long userId);
 
     /**
      * Найти сессию по ID и пользователю для проверки прав доступа.
@@ -46,6 +63,15 @@ public interface SessionRepository extends ReactiveCrudRepository<Session, Long>
     Mono<Session> findByIdAndUserId(Long id, Long userId);
 
     /**
+     * Найти не удаленную сессию по ID и пользователю для проверки прав доступа.
+     *
+     * @param id идентификатор сессии
+     * @param userId идентификатор пользователя
+     * @return не удаленная сессия или пустой результат
+     */
+    Mono<Session> findByIdAndUserIdAndDeletedFalse(Long id, Long userId);
+
+    /**
      * Подсчитать общее количество сессий у пользователя.
      * Используется для отображения статистики и проверки лимитов.
      *
@@ -53,6 +79,14 @@ public interface SessionRepository extends ReactiveCrudRepository<Session, Long>
      * @return количество сессий пользователя
      */
     Mono<Long> countByUserId(Long userId);
+
+    /**
+     * Подсчитать количество не удаленных сессий у пользователя.
+     *
+     * @param userId идентификатор пользователя
+     * @return количество не удаленных сессий пользователя
+     */
+    Mono<Long> countByUserIdAndDeletedFalse(Long userId);
 
     /**
      * Обновить время последнего обновления сессии.
@@ -74,5 +108,15 @@ public interface SessionRepository extends ReactiveCrudRepository<Session, Long>
      * @return количество удаленных записей (0 или 1)
      */
     Mono<Integer> deleteByIdAndUserId(Long id, Long userId);
+
+    /**
+     * Пометить сессию как удаленную (soft delete).
+     *
+     * @param id идентификатор сессии
+     * @param userId идентификатор пользователя
+     * @return количество помеченных записей (0 или 1)
+     */
+    @Query("UPDATE sessions SET deleted = true WHERE id = :id AND user_id = :userId AND deleted = false")
+    Mono<Integer> markAsDeletedByIdAndUserId(Long id, Long userId);
 }
 
