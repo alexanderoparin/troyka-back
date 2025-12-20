@@ -168,31 +168,42 @@ public class SessionService {
 
         return getSessionMonoOrThrow(sessionId, userId)
                 .flatMap(session -> {
+                    log.debug("Найдена сессия {} для удаления, userId={}, deleted={}", sessionId, userId, session.getDeleted());
+                    
                     // Получаем количество записей истории для пометки как удаленных
                     return imageHistoryRepository.findBySessionIdOrderByCreatedAtAsc(sessionId)
                             .collectList()
                             .flatMap(histories -> {
                                 int historyCount = histories.size();
+                                log.debug("Найдено {} записей истории для сессии {}", historyCount, sessionId);
 
                                 // Помечаем все записи истории как удаленные (soft delete)
                                 return imageHistoryRepository.markAsDeletedBySessionId(sessionId)
+                                        .doOnNext(markedCount -> log.debug("Помечено {} записей истории как удаленные для сессии {}", markedCount, sessionId))
                                         .flatMap(markedCount -> {
-                                            // Помечаем сессию как удаленную (soft delete)
-                                            return sessionRepository.markAsDeletedByIdAndUserId(sessionId, userId)
-                                                    .doOnNext(deletedSessions -> {
-                                                        if (deletedSessions == 0) {
-                                                            log.warn("Сессия {} не была помечена как удаленная (возможно, уже удалена или не найдена)", sessionId);
+                                            // Помечаем сессию как удаленную (soft delete) через R2dbcEntityTemplate
+                                            // Используем имена полей из сущности (Java), а не из базы данных
+                                            return r2dbcEntityTemplate.update(Session.class)
+                                                    .matching(Query.query(
+                                                            Criteria.where("id").is(sessionId)
+                                                                    .and("userId").is(userId)
+                                                                    .and("deleted").is(false)
+                                                    ))
+                                                    .apply(Update.update("deleted", true))
+                                                    .doOnNext(updatedCount -> {
+                                                        if (updatedCount == 0) {
+                                                            log.warn("Сессия {} не была помечена как удаленная (возможно, уже удалена или не найдена). Проверка: id={}, userId={}", sessionId, sessionId, userId);
                                                         } else {
                                                             log.info("Сессия {} помечена как удаленная, {} записей истории помечено как удаленные", sessionId, markedCount);
                                                         }
                                                     })
-                                                    .map(deletedSessions -> {
+                                                    .map(updatedCount -> {
                                                         return sessionMapper.toDeleteSessionResponseDTO(sessionId, markedCount);
                                                     });
                                         });
                             });
                 })
-                .doOnError(error -> log.error("Ошибка при удалении сессии {} для пользователя {}", sessionId, userId));
+                .doOnError(error -> log.error("Ошибка при удалении сессии {} для пользователя {}", sessionId, userId, error));
     }
 
     /**
