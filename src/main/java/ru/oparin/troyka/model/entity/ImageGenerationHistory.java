@@ -12,6 +12,7 @@ import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.model.enums.Resolution;
 import ru.oparin.troyka.util.JsonUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -147,6 +148,15 @@ public class ImageGenerationHistory {
      */
     @Column("points_cost")
     private Integer pointsCost;
+
+    /**
+     * Себестоимость генерации в долларах США.
+     * Рассчитывается как: cost_per_image_usd * num_images.
+     * Для обычной модели (NANO_BANANA): $0.039 * num_images.
+     * Для PRO модели (NANO_BANANA_PRO): зависит от разрешения ($0.15 для 1K/2K, $0.30 для 4K) * num_images.
+     */
+    @Column("cost_usd")
+    private BigDecimal costUsd;
 
     /**
      * Дата и время последнего обновления статуса запроса.

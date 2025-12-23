@@ -13,6 +13,7 @@ import ru.oparin.troyka.model.enums.Resolution;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
 import ru.oparin.troyka.util.JsonUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,6 +59,7 @@ public class ImageGenerationHistoryService {
         // Рассчитываем стоимость генерации
         Integer numImages = imageUrlsList.size();
         Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImages);
+        BigDecimal costUsd = generationProperties.getCostUsd(modelType, resolution, numImages);
 
         return imageGenerationHistoryRepository.saveWithJsonb(
                         userId,
@@ -70,9 +72,10 @@ public class ImageGenerationHistoryService {
                         aspectRatio != null ? aspectRatio : "1:1",
                         modelTypeToSave,
                         resolutionToSave,
-                        pointsCost
+                        pointsCost,
+                        costUsd
                 )
-                .doOnNext(history -> log.info("Запись истории сохранена: {}, стоимость: {} поинтов", history, pointsCost))
+                .doOnNext(history -> log.info("Запись истории сохранена: {}, стоимость: {} поинтов, себестоимость: ${}", history, pointsCost, costUsd))
                 .flux();
     }
 
@@ -135,6 +138,7 @@ public class ImageGenerationHistoryService {
         // Рассчитываем стоимость генерации
         Integer numImagesForCalculation = numImages != null ? numImages : 1;
         Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImagesForCalculation);
+        BigDecimal costUsd = generationProperties.getCostUsd(modelType, resolution, numImagesForCalculation);
 
         return imageGenerationHistoryRepository.saveQueueRequest(
                 userId,
@@ -152,9 +156,10 @@ public class ImageGenerationHistoryService {
                 null,
                 numImages,
                 pointsCost,
+                costUsd,
                 now
-        ).doOnSuccess(h -> log.info("Создана запись истории со статусом {}: id={}, falRequestId={}, numImages={}, pointsCost={}",
-                queueStatus, h.getId(), falRequestId, numImages, pointsCost));
+        ).doOnSuccess(h -> log.info("Создана запись истории со статусом {}: id={}, falRequestId={}, numImages={}, pointsCost={}, costUsd=${}",
+                queueStatus, h.getId(), falRequestId, numImages, pointsCost, costUsd));
     }
 
     /**

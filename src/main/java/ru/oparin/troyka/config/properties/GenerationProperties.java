@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Configuration;
 import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.Resolution;
 
+import java.math.BigDecimal;
+
 @Getter
 @Setter
 @Configuration
@@ -61,6 +63,36 @@ public class GenerationProperties {
      */
     public Integer getPointsPerImage() {
         return pointsPerImage;
+    }
+
+    /**
+     * Получить себестоимость генерации одного изображения в долларах США.
+     *
+     * @param modelType тип модели
+     * @param resolution разрешение (может быть null)
+     * @return себестоимость одного изображения в долларах США
+     */
+    private BigDecimal getCostPerImageUsd(GenerationModelType modelType, Resolution resolution) {
+        if (modelType == GenerationModelType.NANO_BANANA_PRO && resolution != null) {
+            return switch (resolution) {
+                case RESOLUTION_1K, RESOLUTION_2K -> new BigDecimal("0.15");
+                case RESOLUTION_4K -> new BigDecimal("0.30");
+            };
+        }
+        return new BigDecimal("0.039"); // Для nano-banana всегда $0.039
+    }
+
+    /**
+     * Получить общую себестоимость генерации для указанного количества изображений в долларах США.
+     *
+     * @param modelType тип модели
+     * @param resolution разрешение (может быть null)
+     * @param numImages количество изображений
+     * @return общая себестоимость генерации в долларах США
+     */
+    public BigDecimal getCostUsd(GenerationModelType modelType, Resolution resolution, Integer numImages) {
+        BigDecimal costPerImage = getCostPerImageUsd(modelType, resolution);
+        return costPerImage.multiply(new BigDecimal(numImages));
     }
 }
 
