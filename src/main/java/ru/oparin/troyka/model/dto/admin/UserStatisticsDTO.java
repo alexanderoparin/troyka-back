@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -79,5 +80,26 @@ public class UserStatisticsDTO {
      * Ключ - разрешение (1K, 2K, 4K), значение - количество поинтов.
      */
     private Map<String, Long> proModelPointsByResolution;
+    
+    /**
+     * Общая себестоимость генераций в долларах США за период.
+     */
+    private BigDecimal totalCostUsd;
+    
+    /**
+     * Себестоимость генераций по обычной модели (NANO_BANANA) в долларах США.
+     */
+    private BigDecimal regularModelCostUsd;
+    
+    /**
+     * Себестоимость генераций по ПРО модели (NANO_BANANA_PRO) в долларах США.
+     */
+    private BigDecimal proModelCostUsd;
+    
+    /**
+     * Себестоимость генераций по ПРО модели, разбитая по разрешениям, в долларах США.
+     * Ключ - разрешение (1K, 2K, 4K), значение - себестоимость в долларах США.
+     */
+    private Map<String, BigDecimal> proModelCostUsdByResolution;
 }
 

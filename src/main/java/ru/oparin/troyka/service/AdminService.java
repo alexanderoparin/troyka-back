@@ -252,6 +252,7 @@ public class AdminService {
         long totalCount = calculateTotalCount(histories);
         
         PointsStatistics pointsStats = calculatePointsStatistics(histories);
+        CostStatistics costStats = calculateCostStatistics(histories);
         
         return Mono.just(UserStatisticsDTO.builder()
                 .userId(user.getId())
@@ -266,6 +267,10 @@ public class AdminService {
                 .regularModelPointsSpent(pointsStats.regularModelPointsSpent())
                 .proModelPointsSpent(pointsStats.proModelPointsSpent())
                 .proModelPointsByResolution(pointsStats.proModelPointsByResolution())
+                .totalCostUsd(costStats.totalCostUsd())
+                .regularModelCostUsd(costStats.regularModelCostUsd())
+                .proModelCostUsd(costStats.proModelCostUsd())
+                .proModelCostUsdByResolution(costStats.proModelCostUsdByResolution())
                 .build());
     }
 
@@ -317,6 +322,7 @@ public class AdminService {
 
     /**
      * Подсчитать статистику по поинтам.
+     * Использует поле points_cost из записей вместо расчета.
      */
     private PointsStatistics calculatePointsStatistics(List<ImageGenerationHistory> histories) {
         long regularModelPointsSpent = 0L;
@@ -324,18 +330,12 @@ public class AdminService {
         Map<String, Long> proModelPointsByResolution = initializeResolutionMap();
 
         for (ImageGenerationHistory h : histories) {
-            Integer numImages = getNumImages(h);
+            Integer pointsForGeneration = h.getPointsCost();
             GenerationModelType modelType = h.getGenerationModelType();
-            Resolution resolution = h.getResolutionEnum();
-            
-            Integer pointsForGeneration = generationProperties.getPointsNeeded(
-                    modelType != null ? modelType : GenerationModelType.NANO_BANANA,
-                    resolution,
-                    numImages
-            );
             
             if (modelType == GenerationModelType.NANO_BANANA_PRO) {
                 proModelPointsSpent += pointsForGeneration;
+                Resolution resolution = h.getResolutionEnum();
                 String resolutionKey = getResolutionKey(resolution);
                 proModelPointsByResolution.put(resolutionKey, 
                         proModelPointsByResolution.get(resolutionKey) + pointsForGeneration);
@@ -352,6 +352,50 @@ public class AdminService {
                 proModelPointsSpent,
                 proModelPointsByResolution
         );
+    }
+
+    /**
+     * Подсчитать статистику по себестоимости в долларах США.
+     */
+    private CostStatistics calculateCostStatistics(List<ImageGenerationHistory> histories) {
+        BigDecimal regularModelCostUsd = BigDecimal.ZERO;
+        BigDecimal proModelCostUsd = BigDecimal.ZERO;
+        Map<String, BigDecimal> proModelCostUsdByResolution = initializeResolutionCostMap();
+
+        for (ImageGenerationHistory h : histories) {
+            BigDecimal costForGeneration = h.getCostUsd();
+            GenerationModelType modelType = h.getGenerationModelType();
+            
+            if (modelType == GenerationModelType.NANO_BANANA_PRO) {
+                proModelCostUsd = proModelCostUsd.add(costForGeneration);
+                Resolution resolution = h.getResolutionEnum();
+                String resolutionKey = getResolutionKey(resolution);
+                proModelCostUsdByResolution.put(resolutionKey, 
+                        proModelCostUsdByResolution.get(resolutionKey).add(costForGeneration));
+            } else {
+                regularModelCostUsd = regularModelCostUsd.add(costForGeneration);
+            }
+        }
+
+        BigDecimal totalCostUsd = regularModelCostUsd.add(proModelCostUsd);
+        
+        return new CostStatistics(
+                totalCostUsd,
+                regularModelCostUsd,
+                proModelCostUsd,
+                proModelCostUsdByResolution
+        );
+    }
+
+    /**
+     * Инициализировать карту себестоимости по разрешениям нулевыми значениями.
+     */
+    private Map<String, BigDecimal> initializeResolutionCostMap() {
+        Map<String, BigDecimal> map = new HashMap<>();
+        map.put(RESOLUTION_1K, BigDecimal.ZERO);
+        map.put(RESOLUTION_2K, BigDecimal.ZERO);
+        map.put(RESOLUTION_4K, BigDecimal.ZERO);
+        return map;
     }
 
     /**
@@ -539,6 +583,13 @@ public class AdminService {
             long regularModelPointsSpent,
             long proModelPointsSpent,
             Map<String, Long> proModelPointsByResolution
+    ) {}
+
+    private record CostStatistics(
+            BigDecimal totalCostUsd,
+            BigDecimal regularModelCostUsd,
+            BigDecimal proModelCostUsd,
+            Map<String, BigDecimal> proModelCostUsdByResolution
     ) {}
 
 }
