@@ -140,6 +140,15 @@ public class ImageGenerationHistory {
     private Integer numImages;
 
     /**
+     * Стоимость генерации в поинтах.
+     * Рассчитывается как: points_per_image * num_images.
+     * Для обычной модели (NANO_BANANA): 2 * num_images.
+     * Для PRO модели (NANO_BANANA_PRO): зависит от разрешения (8/9/15) * num_images.
+     */
+    @Column("points_cost")
+    private Integer pointsCost;
+
+    /**
      * Дата и время последнего обновления статуса запроса.
      * Автоматически обновляется при изменении статуса.
      */

@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.QueueStatus;
@@ -26,6 +27,7 @@ import java.util.List;
 public class ImageGenerationHistoryService {
 
     private final ImageGenerationHistoryRepository imageGenerationHistoryRepository;
+    private final GenerationProperties generationProperties;
 
     /**
      * Сохранить историю генерации изображений для конкретного пользователя.
@@ -49,9 +51,13 @@ public class ImageGenerationHistoryService {
         String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
         String inputImageUrlsJson = JsonUtils.convertListToJson(inputImageUrls);
         
-        String modelTypeToSave = modelType != null ? modelType.getName() : null;
-        String resolutionToSave = (modelType != null && modelType.supportsResolution() && resolution != null)
+        String modelTypeToSave = modelType.getName();
+        String resolutionToSave = (modelType.supportsResolution() && resolution != null)
                 ? resolution.getValue() : null;
+
+        // Рассчитываем стоимость генерации
+        Integer numImages = imageUrlsList.size();
+        Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImages);
 
         return imageGenerationHistoryRepository.saveWithJsonb(
                         userId,
@@ -63,9 +69,10 @@ public class ImageGenerationHistoryService {
                         styleId,
                         aspectRatio != null ? aspectRatio : "1:1",
                         modelTypeToSave,
-                        resolutionToSave
+                        resolutionToSave,
+                        pointsCost
                 )
-                .doOnNext(history -> log.info("Запись истории сохранена: {}", history))
+                .doOnNext(history -> log.info("Запись истории сохранена: {}, стоимость: {} поинтов", history, pointsCost))
                 .flux();
     }
 
@@ -121,9 +128,13 @@ public class ImageGenerationHistoryService {
                 : null;
         LocalDateTime now = LocalDateTime.now();
         
-        String modelTypeToSave = modelType != null ? modelType.getName() : null;
-        String resolutionToSave = (modelType != null && modelType.supportsResolution() && resolution != null)
+        String modelTypeToSave = modelType.getName();
+        String resolutionToSave = (modelType.supportsResolution() && resolution != null)
                 ? resolution.getValue() : null;
+
+        // Рассчитываем стоимость генерации
+        Integer numImagesForCalculation = numImages != null ? numImages : 1;
+        Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImagesForCalculation);
 
         return imageGenerationHistoryRepository.saveQueueRequest(
                 userId,
@@ -140,9 +151,10 @@ public class ImageGenerationHistoryService {
                 queueStatus.name(),
                 null,
                 numImages,
+                pointsCost,
                 now
-        ).doOnSuccess(h -> log.info("Создана запись истории со статусом {}: id={}, falRequestId={}, numImages={}",
-                queueStatus, h.getId(), falRequestId, numImages));
+        ).doOnSuccess(h -> log.info("Создана запись истории со статусом {}: id={}, falRequestId={}, numImages={}, pointsCost={}",
+                queueStatus, h.getId(), falRequestId, numImages, pointsCost));
     }
 
     /**
