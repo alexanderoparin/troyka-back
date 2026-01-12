@@ -10,24 +10,15 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * DTO для статистики генераций конкретного пользователя.
+ * DTO для статистики генераций пользователя(ей).
  * Содержит информацию о количестве генераций по моделям и разрешениям за период.
+ * Может содержать статистику по одному или нескольким пользователям.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class UserStatisticsDTO {
-    
-    /**
-     * ID пользователя.
-     */
-    private Long userId;
-    
-    /**
-     * Имя пользователя.
-     */
-    private String username;
     
     /**
      * Начало периода статистики.

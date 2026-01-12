@@ -28,5 +28,6 @@ public class AdminUserDTO {
     private Integer points;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Boolean hasSuccessfulPayment;
 }
 

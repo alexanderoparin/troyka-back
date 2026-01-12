@@ -143,20 +143,21 @@ public class AdminController {
                 });
     }
 
-    @Operation(summary = "Получить статистику генераций пользователя",
-            description = "Возвращает статистику генераций пользователя за указанный период. " +
+    @Operation(summary = "Получить статистику генераций пользователя(ей)",
+            description = "Возвращает статистику генераций пользователя(ей) за указанный период. " +
                     "Показывает количество генераций по обычной модели и ПРО модели, " +
-                    "разбитую по разрешениям. Требуется роль ADMIN.")
-    @GetMapping("/users/{userId}/statistics")
+                    "разбитую по разрешениям. Можно указать один или несколько userId через параметр userIds. " +
+                    "Если указано несколько userId, статистика будет агрегирована. Требуется роль ADMIN.")
+    @GetMapping("/users/statistics")
     public Mono<ResponseEntity<UserStatisticsDTO>> getUserStatistics(
-            @PathVariable Long userId,
+            @RequestParam(required = false) List<Long> userIds,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
         return SecurityUtil.getCurrentAdmin(userService)
-                .flatMap(admin -> adminService.getUserStatistics(userId, startDate, endDate))
+                .flatMap(admin -> adminService.getUserStatistics(userIds, startDate, endDate))
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
-                    log.error("Ошибка получения статистики пользователя {}: {}", userId, e.getMessage());
+                    log.error("Ошибка получения статистики пользователей {}: {}", userIds, e.getMessage());
                     if (e instanceof IllegalArgumentException) {
                         return Mono.just(ResponseEntity.status(404).build());
                     }

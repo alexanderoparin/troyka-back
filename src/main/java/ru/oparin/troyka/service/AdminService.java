@@ -31,6 +31,8 @@ import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static ru.oparin.troyka.config.DatabaseConfig.withRetry;
 
@@ -75,8 +77,14 @@ public class AdminService {
      * @return поток пользователей, отсортированных по дате создания (новые первыми)
      */
     public Flux<AdminUserDTO> getAllUsers() {
-        return userRepository.findAll()
-                .flatMap(this::mapUserToDTO)
+        Mono<Set<Long>> usersWithPaymentMono = paymentRepository.findByStatus(PaymentStatus.PAID)
+                .map(Payment::getUserId)
+                .collect(Collectors.toSet())
+                .defaultIfEmpty(Set.of());
+        
+        return usersWithPaymentMono
+                .flatMapMany(usersWithPayment -> userRepository.findAll()
+                        .flatMap(user -> mapUserToDTO(user, usersWithPayment)))
                 .sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
     }
 
@@ -89,10 +97,16 @@ public class AdminService {
      * @return поток найденных пользователей, отсортированных по дате создания (новые первыми)
      */
     public Flux<AdminUserDTO> searchUsers(String query, int limit) {
+        Mono<Set<Long>> usersWithPaymentMono = paymentRepository.findByStatus(PaymentStatus.PAID)
+                .map(Payment::getUserId)
+                .collect(Collectors.toSet())
+                .defaultIfEmpty(Set.of());
+        
         Flux<User> usersFlux = buildUserSearchQuery(query, limit);
         
-        return usersFlux
-                .flatMap(this::mapUserToDTO)
+        return usersWithPaymentMono
+                .flatMapMany(usersWithPayment -> usersFlux
+                        .flatMap(user -> mapUserToDTO(user, usersWithPayment)))
                 .sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .take(limit);
     }
@@ -134,28 +148,24 @@ public class AdminService {
     }
 
     /**
-     * Получить статистику генераций пользователя за период.
+     * Получить статистику генераций пользователя(ей) за период.
      *
-     * @param userId идентификатор пользователя
+     * @param userIds список идентификаторов пользователей (может быть null или пустым для всех пользователей)
      * @param startDate начало периода (может быть null для всех записей)
      * @param endDate конец периода (может быть null для всех записей)
-     * @return статистика генераций пользователя
-     * @throws IllegalArgumentException если пользователь не найден
+     * @return статистика генераций пользователя(ей)
+     * @throws IllegalArgumentException если указан несуществующий пользователь
      */
-    public Mono<UserStatisticsDTO> getUserStatistics(Long userId, LocalDateTime startDate, LocalDateTime endDate) {
-        return withRetry(userRepository.findById(userId))
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Пользователь с ID " + userId + " не найден")))
-                .flatMap(user -> {
-                    Criteria dateCriteria = buildDateCriteria(userId, startDate, endDate);
-                    Flux<ImageGenerationHistory> historyFlux = r2dbcEntityTemplate.select(
-                            Query.query(dateCriteria),
-                            ImageGenerationHistory.class
-                    );
+    public Mono<UserStatisticsDTO> getUserStatistics(List<Long> userIds, LocalDateTime startDate, LocalDateTime endDate) {
+        Criteria dateCriteria = buildDateCriteria(userIds, startDate, endDate);
+        Flux<ImageGenerationHistory> historyFlux = r2dbcEntityTemplate.select(
+                Query.query(dateCriteria),
+                ImageGenerationHistory.class
+        );
 
-                    return historyFlux
-                            .collectList()
-                            .flatMap(histories -> buildUserStatisticsDTO(user, histories, startDate, endDate));
-                });
+        return historyFlux
+                .collectList()
+                .flatMap(histories -> buildUserStatisticsDTO(userIds, histories, startDate, endDate));
     }
 
     // ==================== Приватные вспомогательные методы ====================
@@ -172,12 +182,18 @@ public class AdminService {
 
     /**
      * Преобразовать пользователя в DTO для админ-панели.
+     *
+     * @param user пользователь
+     * @param usersWithPayment множество ID пользователей, у которых есть успешные платежи
      */
-    private Mono<AdminUserDTO> mapUserToDTO(User user) {
+    private Mono<AdminUserDTO> mapUserToDTO(User user, Set<Long> usersWithPayment) {
         Mono<UserPoints> pointsMono = withRetry(userPointsRepository.findByUserId(user.getId()))
                 .switchIfEmpty(Mono.just(createEmptyUserPoints(user.getId())));
         
-        return pointsMono.map(points -> buildAdminUserDTO(user, points));
+        Boolean hasSuccessfulPayment = usersWithPayment.contains(user.getId());
+        
+        return pointsMono
+                .map(points -> buildAdminUserDTO(user, points, hasSuccessfulPayment));
     }
 
     /**
@@ -226,25 +242,41 @@ public class AdminService {
     }
 
     /**
-     * Построить критерии для фильтрации по датам.
+     * Построить критерии для фильтрации по пользователям и датам.
      */
-    private Criteria buildDateCriteria(Long userId, LocalDateTime startDate, LocalDateTime endDate) {
-        Criteria criteria = Criteria.where("user_id").is(userId);
+    private Criteria buildDateCriteria(List<Long> userIds, LocalDateTime startDate, LocalDateTime endDate) {
+        Criteria criteria;
+        
+        if (userIds != null && !userIds.isEmpty()) {
+            criteria = Criteria.where("user_id").in(userIds);
+        } else {
+            // Если userIds не указан, не фильтруем по пользователям (все пользователи)
+            criteria = Criteria.empty();
+        }
         
         if (startDate != null) {
-            criteria = criteria.and("created_at").greaterThanOrEquals(startDate);
+            criteria = criteria.isEmpty() 
+                    ? Criteria.where("created_at").greaterThanOrEquals(startDate)
+                    : criteria.and("created_at").greaterThanOrEquals(startDate);
         }
         if (endDate != null) {
-            criteria = criteria.and("created_at").lessThanOrEquals(endDate);
+            criteria = criteria.isEmpty()
+                    ? Criteria.where("created_at").lessThanOrEquals(endDate)
+                    : criteria.and("created_at").lessThanOrEquals(endDate);
         }
+        
+        // Всегда фильтруем по deleted = false
+        criteria = criteria.isEmpty()
+                ? Criteria.where("deleted").is(false)
+                : criteria.and("deleted").is(false);
         
         return criteria;
     }
 
     /**
-     * Построить DTO статистики пользователя.
+     * Построить DTO статистики пользователя(ей).
      */
-    private Mono<UserStatisticsDTO> buildUserStatisticsDTO(User user, List<ImageGenerationHistory> histories,
+    private Mono<UserStatisticsDTO> buildUserStatisticsDTO(List<Long> userIds, List<ImageGenerationHistory> histories,
                                                            LocalDateTime startDate, LocalDateTime endDate) {
         long regularCount = calculateRegularModelCount(histories);
         long proCount = calculateProModelCount(histories);
@@ -254,9 +286,7 @@ public class AdminService {
         PointsStatistics pointsStats = calculatePointsStatistics(histories);
         CostStatistics costStats = calculateCostStatistics(histories);
         
-        return Mono.just(UserStatisticsDTO.builder()
-                .userId(user.getId())
-                .username(user.getUsername())
+        UserStatisticsDTO dto = UserStatisticsDTO.builder()
                 .startDate(startDate)
                 .endDate(endDate)
                 .regularModelCount(regularCount)
@@ -271,7 +301,9 @@ public class AdminService {
                 .regularModelCostUsd(costStats.regularModelCostUsd())
                 .proModelCostUsd(costStats.proModelCostUsd())
                 .proModelCostUsdByResolution(costStats.proModelCostUsdByResolution())
-                .build());
+                .build();
+        
+        return Mono.just(dto);
     }
 
     /**
@@ -492,7 +524,7 @@ public class AdminService {
     /**
      * Построить DTO пользователя для админ-панели.
      */
-    private AdminUserDTO buildAdminUserDTO(User user, UserPoints points) {
+    private AdminUserDTO buildAdminUserDTO(User user, UserPoints points, Boolean hasSuccessfulPayment) {
         return AdminUserDTO.builder()
                 .id(user.getId())
                 .username(user.getUsername())
@@ -506,6 +538,7 @@ public class AdminService {
                 .points(points.getPoints())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
+                .hasSuccessfulPayment(hasSuccessfulPayment)
                 .build();
     }
 
