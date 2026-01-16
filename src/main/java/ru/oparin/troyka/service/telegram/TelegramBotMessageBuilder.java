@@ -3,6 +3,7 @@ package ru.oparin.troyka.service.telegram;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.oparin.troyka.config.properties.GenerationProperties;
+import ru.oparin.troyka.model.dto.pricing.PricingPlanResponse;
 import ru.oparin.troyka.model.entity.ArtStyle;
 
 import java.util.List;
@@ -29,6 +30,7 @@ public class TelegramBotMessageBuilder {
                 • /start - Начать работу с ботом
                 • /help - Показать эту справку
                 • /balance - Проверить баланс поинтов
+                • /buy - Пополнить баланс
                 
                 🎨 *Генерация изображений:*
                 • Отправьте текстовое описание
@@ -149,6 +151,7 @@ public class TelegramBotMessageBuilder {
                 📋 *Доступные команды:*
                 • /start - Начать работу с ботом
                 • /balance - Баланс поинтов
+                • /buy - Пополнить баланс
                 • /help - Справка
                 
                 💡 *Или просто отправьте описание изображения для генерации!*
@@ -215,6 +218,164 @@ public class TelegramBotMessageBuilder {
                 
                 💡 Вы можете скопировать и скорректировать улучшенный промпт или написать свой.
                 """;
+    }
+
+    /**
+     * Построить сообщение со списком тарифных планов для покупки.
+     */
+    public String buildPricingPlansMessage(List<PricingPlanResponse> plans) {
+        StringBuilder message = new StringBuilder();
+        message.append("💰 *Пополнить баланс*\n\n");
+        message.append("Выберите тарифный план:\n\n");
+
+        for (PricingPlanResponse plan : plans) {
+            String emoji = Boolean.TRUE.equals(plan.getIsPopular()) ? "🔥" : "💎";
+            double priceRub = plan.getPriceRub() != null ? plan.getPriceRub() / 100.0 : 0;
+            int credits = plan.getCredits() != null ? plan.getCredits() : 0;
+            int generations = credits / generationProperties.getPointsPerImage();
+            
+            message.append(emoji).append(" *").append(plan.getName()).append("*\n");
+            if (plan.getDescription() != null && !plan.getDescription().isEmpty()) {
+                message.append("   ").append(plan.getDescription()).append("\n");
+            }
+            message.append("   💰 ").append(String.format("%.2f", priceRub)).append(" ₽\n");
+            message.append("   🎨 ").append(credits).append(" поинтов (").append(generations).append(" генераций)\n\n");
+        }
+
+        message.append("🌐 *Или перейдите на сайт:* ").append(PRICING_URL);
+        return message.toString();
+    }
+
+    /**
+     * Построить JSON inline-клавиатуру для выбора тарифного плана.
+     */
+    public String buildPricingPlansKeyboard(List<PricingPlanResponse> plans) {
+        StringBuilder keyboard = new StringBuilder();
+        keyboard.append("{\n");
+        keyboard.append("    \"inline_keyboard\": [\n");
+
+        for (int i = 0; i < plans.size(); i++) {
+            PricingPlanResponse plan = plans.get(i);
+            String emoji = Boolean.TRUE.equals(plan.getIsPopular()) ? "🔥" : "💎";
+            double priceRub = plan.getPriceRub() != null ? plan.getPriceRub() / 100.0 : 0;
+            String buttonText = String.format("%s %s - %.0f₽", emoji, plan.getName(), priceRub);
+            
+            keyboard.append("        [{\"text\": \"").append(buttonText).append("\", \"callback_data\": \"buy_plan:").append(plan.getId()).append("\"}]");
+            
+            if (i < plans.size() - 1) {
+                keyboard.append(",");
+            }
+            keyboard.append("\n");
+        }
+
+        keyboard.append("    ]\n");
+        keyboard.append("}");
+        return keyboard.toString();
+    }
+
+    /**
+     * Построить сообщение с информацией об оплате (без URL, так как он в кнопке).
+     */
+    public String buildPaymentUrlMessage(String planName, Double amount, Integer credits) {
+        int generations = credits / generationProperties.getPointsPerImage();
+        return String.format("""
+                💳 *Оплата тарифа*
+                
+                📦 *Тариф:* %s
+                💰 *Сумма:* %.2f ₽
+                🎨 *Поинтов:* %d (%d генераций)
+                
+                👆 *Нажмите кнопку ниже для оплаты*
+                """, planName, amount, credits, generations);
+    }
+
+    /**
+     * Построить JSON inline-клавиатуру с кнопкой оплаты.
+     */
+    public String buildPaymentUrlKeyboard(String paymentUrl) {
+        return String.format("""
+                {
+                    "inline_keyboard": [
+                        [{"text": "💳 Оплатить", "url": "%s"}],
+                        [{"text": "🔙 Назад к тарифам", "callback_data": "back_to_pricing"}]
+                    ]
+                }
+                """, paymentUrl);
+    }
+
+    /**
+     * Построить сообщение о балансе с кнопкой пополнения (если баланс низкий).
+     */
+    public String buildBalanceMessageWithTopUp(Integer points) {
+        int availableGenerations = points / generationProperties.getPointsPerImage();
+        StringBuilder message = new StringBuilder();
+        message.append("💰 *Ваш баланс поинтов*\n\n");
+        message.append("🔢 *Текущий баланс:* ").append(points).append(" поинтов\n");
+        message.append("🎨 *Доступно генераций:* ").append(availableGenerations).append("\n");
+        
+        if (points < 10) {
+            message.append("\n⚠️ *Баланс низкий!* Пополните для продолжения работы.");
+        }
+        
+        return message.toString();
+    }
+
+    /**
+     * Построить JSON inline-клавиатуру для баланса с кнопкой пополнения (если баланс низкий).
+     */
+    public String buildBalanceKeyboard(Integer points) {
+        if (points < 10) {
+            return """
+                    {
+                        "inline_keyboard": [
+                            [{"text": "💳 Пополнить баланс", "callback_data": "show_pricing"}]
+                        ]
+                    }
+                    """;
+        }
+        return "{\"inline_keyboard\": []}";
+    }
+
+    /**
+     * Построить сообщение о недостатке поинтов с предложением пополнить.
+     */
+    public String buildInsufficientPointsMessageWithTopUp(Integer points) {
+        return String.format("""
+                ❌ *Недостаточно поинтов*
+                
+                💰 *Текущий баланс:* %d поинтов
+                🎨 *Требуется:* %d поинтов для генерации
+                
+                💳 *Пополните баланс для продолжения работы*
+                """, points, generationProperties.getPointsPerImage());
+    }
+
+    /**
+     * Построить JSON inline-клавиатуру для сообщения о недостатке поинтов.
+     */
+    public String buildInsufficientPointsKeyboard() {
+        return """
+                {
+                    "inline_keyboard": [
+                        [{"text": "💳 Пополнить баланс", "callback_data": "show_pricing"}]
+                    ]
+                }
+                """;
+    }
+
+    /**
+     * Построить сообщение об успешной оплате.
+     */
+    public String buildPaymentSuccessMessage(Integer credits, Integer newBalance) {
+        int generations = credits / generationProperties.getPointsPerImage();
+        return String.format("""
+                ✅ *Оплата успешна!*
+                
+                🎨 *Начислено:* %d поинтов (%d генераций)
+                💰 *Новый баланс:* %d поинтов
+                
+                🎉 *Можете продолжать генерацию изображений!*
+                """, credits, generations, newBalance);
     }
 }
 

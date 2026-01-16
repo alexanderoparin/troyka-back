@@ -4,11 +4,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.model.dto.payment.PaymentRequest;
 import ru.oparin.troyka.model.dto.telegram.TelegramCallbackQuery;
 import ru.oparin.troyka.model.entity.TelegramBotSession;
 import ru.oparin.troyka.model.entity.UserStyle;
-import ru.oparin.troyka.service.ArtStyleService;
-import ru.oparin.troyka.service.PromptEnhancementService;
+import ru.oparin.troyka.service.*;
 
 import java.util.List;
 
@@ -29,6 +29,10 @@ public class TelegramBotCallbackHandler {
     private final TelegramBotMessageBuilder messageBuilder;
     private final TelegramBotStyleHandler styleHandler;
     private final TelegramBotImageGenerator imageGenerator;
+    private final PricingService pricingService;
+    private final RobokassaService robokassaService;
+    private final UserService userService;
+    private final UserPointsService userPointsService;
 
     /**
      * Обработать callback query от inline-кнопок.
@@ -57,6 +61,15 @@ public class TelegramBotCallbackHandler {
         }
         if (data.startsWith("style:")) {
             return handleStyleCallback(data, chatId);
+        }
+        if (data.startsWith("buy_plan:")) {
+            return handleBuyPlanCallback(data, chatId, callbackQuery);
+        }
+        if (data.equals("show_pricing")) {
+            return handleShowPricingCallback(chatId, callbackQuery);
+        }
+        if (data.equals("back_to_pricing")) {
+            return handleBackToPricingCallback(chatId, callbackQuery);
         }
 
         return telegramMessageService.answerCallbackQuery(callbackQuery.getId()).then();
@@ -231,6 +244,98 @@ public class TelegramBotCallbackHandler {
                                         .then(imageGenerator.generateImage(userId, sessionId, prompt, prompt, inputUrls, style.getId()));
                             });
                 });
+    }
+
+    /**
+     * Обработать callback "buy_plan" - выбор тарифа для покупки.
+     */
+    private Mono<Void> handleBuyPlanCallback(String data, Long chatId, TelegramCallbackQuery callbackQuery) {
+        String[] parts = data.split(":", 2);
+        if (parts.length < 2) {
+            return telegramMessageService.answerCallbackQuery(callbackQuery.getId()).then();
+        }
+
+        String planId = parts[1];
+        Long telegramId = callbackQuery.getFrom().getId();
+
+        return userService.findByTelegramId(telegramId)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Пользователь с telegramId {} не найден", telegramId);
+                    return telegramMessageService.sendMessage(chatId, "❌ Пользователь не найден. Используйте /start для регистрации.")
+                            .then(Mono.empty());
+                }))
+                .flatMap(user -> pricingService.getActivePricingPlans()
+                        .filter(plan -> plan.getId().equals(planId))
+                        .next()
+                        .switchIfEmpty(Mono.defer(() -> {
+                            log.warn("Тарифный план с id {} не найден", planId);
+                            return telegramMessageService.sendMessage(chatId, "❌ Тарифный план не найден. Попробуйте выбрать другой.")
+                                    .then(Mono.empty());
+                        }))
+                        .flatMap(plan -> {
+                            // Создаем платеж
+                            PaymentRequest paymentRequest = new PaymentRequest();
+                            paymentRequest.setUserId(user.getId());
+                            paymentRequest.setAmount(plan.getPriceRub() / 100.0); // Конвертируем копейки в рубли
+                            paymentRequest.setDescription(plan.getName());
+                            paymentRequest.setCredits(plan.getCredits());
+
+                            return robokassaService.createPayment(paymentRequest)
+                                    .flatMap(paymentResponse -> {
+                                        String message = messageBuilder.buildPaymentUrlMessage(
+                                                plan.getName(),
+                                                paymentResponse.getAmount(),
+                                                plan.getCredits()
+                                        );
+                                        String keyboard = messageBuilder.buildPaymentUrlKeyboard(paymentResponse.getPaymentUrl());
+                                        return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboard);
+                                    })
+                                    .onErrorResume(error -> {
+                                        log.error("Ошибка создания платежа для пользователя {}: {}", user.getId(), error.getMessage());
+                                        return telegramMessageService.sendMessage(chatId, "❌ Ошибка создания платежа. Попробуйте позже.");
+                                    });
+                        }))
+                .then(telegramMessageService.answerCallbackQuery(callbackQuery.getId()))
+                .onErrorResume(error -> {
+                    log.error("Ошибка обработки buy_plan callback: {}", error.getMessage());
+                    return telegramMessageService.answerCallbackQuery(callbackQuery.getId());
+                });
+    }
+
+    /**
+     * Обработать callback "show_pricing" - показать тарифные планы.
+     */
+    private Mono<Void> handleShowPricingCallback(Long chatId, TelegramCallbackQuery callbackQuery) {
+        Long telegramId = callbackQuery.getFrom().getId();
+
+        return userService.findByTelegramId(telegramId)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Пользователь с telegramId {} не найден", telegramId);
+                    return telegramMessageService.sendMessage(chatId, "❌ Пользователь не найден. Используйте /start для регистрации.")
+                            .then(Mono.empty());
+                }))
+                .flatMap(user -> pricingService.getActivePricingPlans()
+                        .collectList()
+                        .flatMap(plans -> {
+                            if (plans.isEmpty()) {
+                                return telegramMessageService.sendMessage(chatId, "❌ Тарифные планы временно недоступны. Попробуйте позже.");
+                            }
+                            String message = messageBuilder.buildPricingPlansMessage(plans);
+                            String keyboard = messageBuilder.buildPricingPlansKeyboard(plans);
+                            return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboard);
+                        }))
+                .then(telegramMessageService.answerCallbackQuery(callbackQuery.getId()))
+                .onErrorResume(error -> {
+                    log.error("Ошибка обработки show_pricing callback: {}", error.getMessage());
+                    return telegramMessageService.answerCallbackQuery(callbackQuery.getId());
+                });
+    }
+
+    /**
+     * Обработать callback "back_to_pricing" - вернуться к тарифным планам.
+     */
+    private Mono<Void> handleBackToPricingCallback(Long chatId, TelegramCallbackQuery callbackQuery) {
+        return handleShowPricingCallback(chatId, callbackQuery);
     }
 }
 

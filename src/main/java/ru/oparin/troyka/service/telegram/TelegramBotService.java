@@ -11,6 +11,7 @@ import ru.oparin.troyka.model.dto.telegram.TelegramUpdate;
 import ru.oparin.troyka.model.dto.telegram.TelegramUser;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.service.ImageGenerationHistoryService;
+import ru.oparin.troyka.service.PricingService;
 import ru.oparin.troyka.service.UserPointsService;
 import ru.oparin.troyka.service.UserService;
 
@@ -40,6 +41,7 @@ public class TelegramBotService {
     private final TelegramBotCallbackHandler callbackHandler;
     private final TelegramBotStyleHandler styleHandler;
     private final TelegramBotImageGenerator imageGenerator;
+    private final PricingService pricingService;
 
     /**
      * Обработать команду /start.
@@ -72,10 +74,34 @@ public class TelegramBotService {
 
         return findUserByTelegramId(telegramId, chatId)
                 .flatMap(user -> userPointsService.getUserPoints(user.getId())
-                        .map(messageBuilder::buildBalanceMessage)
-                        .flatMap(message -> sendMessage(chatId, message)))
+                        .flatMap(points -> {
+                            String message = messageBuilder.buildBalanceMessageWithTopUp(points);
+                            String keyboard = messageBuilder.buildBalanceKeyboard(points);
+                            return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboard);
+                        }))
                 .doOnSuccess(v -> log.info("Команда /balance обработана для чата {}", chatId))
                 .doOnError(error -> log.error("Ошибка обработки команды /balance для чата {}", chatId, error));
+    }
+
+    /**
+     * Обработать команду /buy.
+     */
+    public Mono<Void> handleBuyCommand(Long chatId, Long telegramId) {
+        log.info("Обработка команды /buy для чата {} и пользователя {}", chatId, telegramId);
+
+        return findUserByTelegramId(telegramId, chatId)
+                .flatMap(user -> pricingService.getActivePricingPlans()
+                        .collectList()
+                        .flatMap(plans -> {
+                            if (plans.isEmpty()) {
+                                return sendMessage(chatId, "❌ Тарифные планы временно недоступны. Попробуйте позже.");
+                            }
+                            String message = messageBuilder.buildPricingPlansMessage(plans);
+                            String keyboard = messageBuilder.buildPricingPlansKeyboard(plans);
+                            return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboard);
+                        }))
+                .doOnSuccess(v -> log.info("Команда /buy обработана для чата {}", chatId))
+                .doOnError(error -> log.error("Ошибка обработки команды /buy для чата {}", chatId, error));
     }
 
     /**
@@ -179,7 +205,9 @@ public class TelegramBotService {
         return userPointsService.getUserPoints(user.getId())
                 .flatMap(points -> {
                     if (points < generationProperties.getPointsPerImage()) {
-                        return sendMessage(chatId, messageBuilder.buildInsufficientPointsMessage(points));
+                        String message = messageBuilder.buildInsufficientPointsMessageWithTopUp(points);
+                        String keyboard = messageBuilder.buildInsufficientPointsKeyboard();
+                        return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboard);
                     }
                     return processTextMessageWithBalance(user, chatId, prompt, inputImageUrls);
                 });
@@ -249,7 +277,9 @@ public class TelegramBotService {
         return userPointsService.getUserPoints(user.getId())
                 .flatMap(points -> {
                     if (points < generationProperties.getPointsPerImage()) {
-                        return sendMessage(chatId, messageBuilder.buildInsufficientPointsMessage(points));
+                        String message = messageBuilder.buildInsufficientPointsMessageWithTopUp(points);
+                        String keyboard = messageBuilder.buildInsufficientPointsKeyboard();
+                        return telegramMessageService.sendMessageWithKeyboard(chatId, message, keyboard);
                     }
                     return telegramBotSessionService.getOrCreateTelegramBotSession(user.getId(), chatId)
                             .flatMap(session -> styleHandler.showStyleSelection(chatId, user.getId(), session.getId(), prompt, inputImageUrls));
@@ -417,6 +447,7 @@ public class TelegramBotService {
             case "/start" -> handleStartCommand(chatId, userId, username, firstName, lastName);
             case "/help" -> handleHelpCommand(chatId);
             case "/balance" -> handleBalanceCommand(chatId, userId);
+            case "/buy" -> handleBuyCommand(chatId, userId);
             default -> handleUnknownCommand(chatId, command);
         };
     }
