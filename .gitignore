@@ -1,0 +1,11 @@
+/src/main/resources/application.properties
+/src/main/resources/application-dev.yml
+/.idea/compiler.xml
+/.idea/dataSources.xml
+/.idea/encodings.xml
+/.idea/jarRepositories.xml
+/.idea/misc.xml
+/.idea/sqldialects.xml
+/.idea/vcs.xml
+/.idea/.name
+/target/
