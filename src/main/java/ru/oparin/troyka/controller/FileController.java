@@ -29,11 +29,6 @@ public class FileController {
                 });
     }
 
-    @GetMapping("/{filename}")
-    public Mono<ResponseEntity<Resource>> serveFile(@PathVariable String filename) {
-        return fileService.getFile(filename);
-    }
-
     @GetMapping("/avatar/{filename}")
     public Mono<ResponseEntity<Resource>> serveAvatarFile(@PathVariable String filename) {
         return fileService.getFile("avatar/" + filename);
@@ -42,5 +37,17 @@ public class FileController {
     @GetMapping("/examples/{filename}")
     public Mono<ResponseEntity<Resource>> getExampleFile(@PathVariable String filename) {
         return fileService.getExampleFile(filename);
+    }
+
+    @GetMapping("/{subdirectory}/{filename:.+}")
+    public Mono<ResponseEntity<Resource>> serveFileInSubdirectory(
+            @PathVariable String subdirectory,
+            @PathVariable String filename) {
+        return fileService.getFile(subdirectory + "/" + filename);
+    }
+
+    @GetMapping("/{filename:.+}")
+    public Mono<ResponseEntity<Resource>> serveFile(@PathVariable String filename) {
+        return fileService.getFile(filename);
     }
 }
