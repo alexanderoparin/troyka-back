@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * DTO для запроса к LaoZhang AI API.
- * Использует формат OpenAI chat completions.
+ * Использует формат Google Gemini API.
  */
 @Data
 @Builder
@@ -19,85 +19,89 @@ import java.util.List;
 public class LaoZhangRequestDTO {
 
     /**
-     * Модель для генерации.
-     * gemini-2.5-flash-image-preview (Standard) или gemini-3-pro-image-preview (Pro)
+     * Содержимое запроса в формате Gemini API.
      */
-    private String model;
+    private List<Content> contents;
 
     /**
-     * Отключить streaming (всегда false для синхронных запросов).
+     * Конфигурация генерации.
      */
-    @Builder.Default
-    private Boolean stream = false;
+    @JsonProperty("generationConfig")
+    private GenerationConfig generationConfig;
 
     /**
-     * Массив сообщений в формате OpenAI.
-     */
-    private List<Message> messages;
-
-    /**
-     * Конфигурация изображения (для Pro версии).
-     */
-    @JsonProperty("image_config")
-    private ImageConfig imageConfig;
-
-    /**
-     * Сообщение в формате OpenAI.
+     * Содержимое запроса в формате Gemini API.
      */
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class Message {
+    public static class Content {
         /**
-         * Роль отправителя (user или system).
+         * Части содержимого (текст и/или изображения).
          */
-        private String role;
-
-        /**
-         * Содержимое сообщения.
-         * Может быть строкой или массивом ContentPart.
-         */
-        private Object content;
+        private List<Part> parts;
     }
 
     /**
-     * Часть содержимого сообщения.
+     * Часть содержимого (текст или изображение).
      */
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class ContentPart {
+    public static class Part {
         /**
-         * Тип части (text или image_url).
-         */
-        private String type;
-
-        /**
-         * Текст (для type="text").
+         * Текст (для текстовых частей).
          */
         private String text;
 
         /**
-         * URL изображения (для type="image_url").
+         * Встроенное изображение (для изображений в base64).
          */
-        @JsonProperty("image_url")
-        private ImageUrl imageUrl;
+        @JsonProperty("inlineData")
+        private InlineData inlineData;
     }
 
     /**
-     * URL изображения.
+     * Встроенные данные изображения в base64.
      */
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class ImageUrl {
+    public static class InlineData {
         /**
-         * URL изображения (может быть data URL с base64).
+         * MIME тип изображения.
          */
-        private String url;
+        @JsonProperty("mimeType")
+        private String mimeType;
+
+        /**
+         * Base64 данные изображения (без префикса data:image/...;base64,).
+         */
+        private String data;
+    }
+
+    /**
+     * Конфигурация генерации.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class GenerationConfig {
+        /**
+         * Модальности ответа (всегда ["IMAGE"] для генерации изображений).
+         */
+        @JsonProperty("responseModalities")
+        private List<String> responseModalities;
+
+        /**
+         * Конфигурация изображения (для Pro версии).
+         */
+        @JsonProperty("imageConfig")
+        private ImageConfig imageConfig;
     }
 
     /**
@@ -111,13 +115,13 @@ public class LaoZhangRequestDTO {
         /**
          * Размер изображения (1K, 2K, 4K).
          */
-        @JsonProperty("image_size")
+        @JsonProperty("imageSize")
         private String imageSize;
 
         /**
          * Соотношение сторон (1:1, 16:9, 9:16 и т.д.).
          */
-        @JsonProperty("aspect_ratio")
+        @JsonProperty("aspectRatio")
         private String aspectRatio;
     }
 }

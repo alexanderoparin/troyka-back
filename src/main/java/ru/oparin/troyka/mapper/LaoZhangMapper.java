@@ -2,7 +2,6 @@ package ru.oparin.troyka.mapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
@@ -42,7 +41,7 @@ public class LaoZhangMapper {
     }
 
     /**
-     * Создать запрос к LaoZhang API.
+     * Создать запрос к LaoZhang API в формате Google Gemini API.
      *
      * @param imageRq      запрос на генерацию
      * @param finalPrompt  финальный промпт (с учетом стиля)
@@ -54,62 +53,64 @@ public class LaoZhangMapper {
     public Mono<LaoZhangRequestDTO> createRequest(ImageRq imageRq, String finalPrompt, 
                                                    Integer numImages, List<String> inputImageUrls, 
                                                    Resolution resolution) {
-        String modelName = getLaoZhangModelName(imageRq.getModel());
         boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
-
-        // Создаем сообщения
-        List<LaoZhangRequestDTO.Message> messages = new ArrayList<>();
 
         if (isNewImage) {
             // Для создания нового изображения - просто текстовый промпт
-            messages.add(LaoZhangRequestDTO.Message.builder()
-                    .role("user")
-                    .content(finalPrompt)
+            List<LaoZhangRequestDTO.Part> parts = new ArrayList<>();
+            parts.add(LaoZhangRequestDTO.Part.builder()
+                    .text(finalPrompt)
                     .build());
-            return Mono.just(buildRequest(modelName, messages, imageRq, resolution));
+
+            List<LaoZhangRequestDTO.Content> contents = new ArrayList<>();
+            contents.add(LaoZhangRequestDTO.Content.builder()
+                    .parts(parts)
+                    .build());
+
+            return Mono.just(buildRequest(contents, imageRq, resolution));
         } else {
             // Для редактирования - нужно передать изображения и промпт
-            return convertImageUrlsToBase64(inputImageUrls)
-                    .map(base64Images -> {
-                        // Создаем массив content parts
-                        List<LaoZhangRequestDTO.ContentPart> contentParts = new ArrayList<>();
+            return convertImageUrlsToBase64ForGemini(inputImageUrls)
+                    .map(imageDataList -> {
+                        List<LaoZhangRequestDTO.Part> parts = new ArrayList<>();
 
                         // Добавляем изображения
-                        for (String base64Image : base64Images) {
-                            contentParts.add(LaoZhangRequestDTO.ContentPart.builder()
-                                    .type("image_url")
-                                    .imageUrl(LaoZhangRequestDTO.ImageUrl.builder()
-                                            .url(base64Image) // base64 в формате data:image/...;base64,...
+                        for (ImageData imageData : imageDataList) {
+                            parts.add(LaoZhangRequestDTO.Part.builder()
+                                    .inlineData(LaoZhangRequestDTO.InlineData.builder()
+                                            .mimeType(imageData.mimeType)
+                                            .data(imageData.base64Data)
                                             .build())
                                     .build());
                         }
 
                         // Добавляем текстовый промпт
-                        contentParts.add(LaoZhangRequestDTO.ContentPart.builder()
-                                .type("text")
+                        parts.add(LaoZhangRequestDTO.Part.builder()
                                 .text(finalPrompt)
                                 .build());
 
-                        LaoZhangRequestDTO.Message message = LaoZhangRequestDTO.Message.builder()
-                                .role("user")
-                                .content(contentParts)
-                                .build();
-                        
-                        messages.add(message);
-                        return buildRequest(modelName, messages, imageRq, resolution);
+                        List<LaoZhangRequestDTO.Content> contents = new ArrayList<>();
+                        contents.add(LaoZhangRequestDTO.Content.builder()
+                                .parts(parts)
+                                .build());
+
+                        return buildRequest(contents, imageRq, resolution);
                     });
         }
     }
 
     /**
-     * Построить запрос.
+     * Построить запрос в формате Gemini API.
      */
-    private LaoZhangRequestDTO buildRequest(String modelName, List<LaoZhangRequestDTO.Message> messages,
+    private LaoZhangRequestDTO buildRequest(List<LaoZhangRequestDTO.Content> contents,
                                             ImageRq imageRq, Resolution resolution) {
         LaoZhangRequestDTO.LaoZhangRequestDTOBuilder builder = LaoZhangRequestDTO.builder()
-                .model(modelName)
-                .stream(false)
-                .messages(messages);
+                .contents(contents);
+
+        // Создаем generationConfig
+        LaoZhangRequestDTO.GenerationConfig.GenerationConfigBuilder configBuilder = 
+                LaoZhangRequestDTO.GenerationConfig.builder()
+                        .responseModalities(List.of("IMAGE"));
 
         // Для Pro версии добавляем imageConfig с разрешением и aspect ratio
         if (imageRq.getModel() == GenerationModelType.NANO_BANANA_PRO) {
@@ -123,20 +124,34 @@ public class LaoZhangMapper {
                 imageConfig.setImageSize("1K"); // По умолчанию 1K
             }
 
-            builder.imageConfig(imageConfig);
+            configBuilder.imageConfig(imageConfig);
         }
 
+        builder.generationConfig(configBuilder.build());
         return builder.build();
     }
 
     /**
-     * Конвертировать URL изображений в base64.
-     * Загружает изображения по URL и конвертирует в base64.
+     * Вспомогательный класс для хранения данных изображения.
+     */
+    private static class ImageData {
+        String mimeType;
+        String base64Data; // Без префикса data:image/...;base64,
+
+        ImageData(String mimeType, String base64Data) {
+            this.mimeType = mimeType;
+            this.base64Data = base64Data;
+        }
+    }
+
+    /**
+     * Конвертировать URL изображений в base64 для формата Gemini API.
+     * Загружает изображения по URL и конвертирует в base64 без префикса data:.
      *
      * @param imageUrls список URL изображений
-     * @return список base64 строк в формате data:image/...;base64,...
+     * @return список ImageData с MIME типом и base64 данными
      */
-    private Mono<List<String>> convertImageUrlsToBase64(List<String> imageUrls) {
+    private Mono<List<ImageData>> convertImageUrlsToBase64ForGemini(List<String> imageUrls) {
         if (CollectionUtils.isEmpty(imageUrls)) {
             return Mono.just(List.of());
         }
@@ -154,8 +169,9 @@ public class LaoZhangMapper {
                             .map(imageBytes -> {
                                 // Определяем MIME тип по URL или по первым байтам
                                 String mimeType = detectMimeType(url, imageBytes);
+                                // Base64 без префикса data: для Gemini API
                                 String base64 = Base64.getEncoder().encodeToString(imageBytes);
-                                return "data:" + mimeType + ";base64," + base64;
+                                return new ImageData(mimeType, base64);
                             })
                             .onErrorResume(error -> {
                                 log.error("Ошибка при загрузке изображения {}: {}", url, error.getMessage());
@@ -163,7 +179,7 @@ public class LaoZhangMapper {
                             });
                 })
                 .collectList()
-                .doOnNext(base64Images -> log.debug("Конвертировано {} изображений в base64", base64Images.size()));
+                .doOnNext(imageDataList -> log.debug("Конвертировано {} изображений в base64", imageDataList.size()));
     }
 
     /**

@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * DTO для ответа от LaoZhang AI API.
- * Использует формат OpenAI chat completions.
+ * Использует формат Google Gemini API.
  */
 @Data
 @NoArgsConstructor
@@ -17,59 +17,77 @@ import java.util.List;
 public class LaoZhangResponseDTO {
 
     /**
-     * ID ответа.
+     * Кандидаты (candidates) с результатами генерации.
      */
-    private String id;
+    private List<Candidate> candidates;
 
     /**
-     * Модель, использованная для генерации.
-     */
-    private String model;
-
-    /**
-     * Массив выборок (choices).
-     */
-    private List<Choice> choices;
-
-    /**
-     * Выборка (choice).
+     * Кандидат с результатом генерации.
      */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class Choice {
+    public static class Candidate {
         /**
-         * Индекс выборки.
+         * Содержимое ответа.
          */
-        private Integer index;
-
-        /**
-         * Сообщение с результатом.
-         */
-        private Message message;
+        private Content content;
 
         /**
          * Причина завершения.
          */
-        @JsonProperty("finish_reason")
+        @JsonProperty("finishReason")
         private String finishReason;
     }
 
     /**
-     * Сообщение с результатом.
+     * Содержимое ответа.
      */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class Message {
+    public static class Content {
         /**
-         * Роль (обычно "assistant").
+         * Части содержимого (изображения и/или текст).
          */
-        private String role;
+        private List<Part> parts;
+    }
+
+    /**
+     * Часть содержимого.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Part {
+        /**
+         * Текст (если есть).
+         */
+        private String text;
 
         /**
-         * Содержимое сообщения (base64 изображение в формате data:image/...;base64,...).
+         * Встроенные данные изображения в base64.
          */
-        private String content;
+        @JsonProperty("inlineData")
+        private InlineData inlineData;
+    }
+
+    /**
+     * Встроенные данные изображения в base64.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class InlineData {
+        /**
+         * MIME тип изображения.
+         */
+        @JsonProperty("mimeType")
+        private String mimeType;
+
+        /**
+         * Base64 данные изображения (без префикса data:image/...;base64,).
+         */
+        private String data;
     }
 }

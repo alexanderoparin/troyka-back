@@ -29,7 +29,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -41,6 +40,8 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class LaoZhangProvider implements ImageGenerationProvider {
 
+    // Используем endpoint для Gemini API через LaoZhang
+    // Формат: /v1/models/{model}:generateContent или /v1/chat/completions (зависит от провайдера)
     private static final String ENDPOINT = "/v1/chat/completions";
     private static final Pattern BASE64_PATTERN = Pattern.compile("data:image/([^;]+);base64,([A-Za-z0-9+/=]+)");
 
@@ -150,36 +151,37 @@ public class LaoZhangProvider implements ImageGenerationProvider {
     }
 
     /**
-     * Извлечь base64 изображения из ответа LaoZhang API.
+     * Извлечь base64 изображения из ответа LaoZhang API (формат Gemini API).
      *
      * @param response ответ от LaoZhang API
-     * @return список base64 строк
+     * @return список base64 строк в формате data:image/...;base64,...
      */
     private Mono<List<String>> extractBase64Images(LaoZhangResponseDTO response) {
         log.debug("Извлечение base64 изображений из ответа LaoZhang API");
 
-        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
+        if (response == null || response.getCandidates() == null || response.getCandidates().isEmpty()) {
             return Mono.error(new FalAIException("Пустой ответ от LaoZhang API", HttpStatus.UNPROCESSABLE_ENTITY));
         }
 
         List<String> base64Images = new ArrayList<>();
 
-        for (LaoZhangResponseDTO.Choice choice : response.getChoices()) {
-            if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
-                String content = choice.getMessage().getContent();
-                // Извлекаем base64 из content (может быть в формате data:image/...;base64,...)
-                Matcher matcher = BASE64_PATTERN.matcher(content);
-                while (matcher.find()) {
-                    String base64Data = matcher.group(0); // Полная строка data:image/...;base64,...
-                    base64Images.add(base64Data);
+        for (LaoZhangResponseDTO.Candidate candidate : response.getCandidates()) {
+            if (candidate.getContent() != null && candidate.getContent().getParts() != null) {
+                for (LaoZhangResponseDTO.Part part : candidate.getContent().getParts()) {
+                    if (part.getInlineData() != null) {
+                        // Формируем data URL из inlineData
+                        String mimeType = part.getInlineData().getMimeType();
+                        String base64Data = part.getInlineData().getData();
+                        // Добавляем префикс data: для совместимости с Base64ImageService
+                        String dataUrl = "data:" + mimeType + ";base64," + base64Data;
+                        base64Images.add(dataUrl);
+                    }
                 }
             }
         }
 
         if (base64Images.isEmpty()) {
-            log.warn("Не найдено base64 изображений в ответе LaoZhang API. Content: {}", 
-                    response.getChoices().get(0).getMessage() != null ? 
-                            response.getChoices().get(0).getMessage().getContent() : "null");
+            log.warn("Не найдено base64 изображений в ответе LaoZhang API");
             return Mono.error(new FalAIException("Не найдено изображений в ответе от LaoZhang API", 
                     HttpStatus.UNPROCESSABLE_ENTITY));
         }
