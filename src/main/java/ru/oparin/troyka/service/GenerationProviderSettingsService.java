@@ -30,7 +30,12 @@ public class GenerationProviderSettingsService {
      */
     public Mono<GenerationProvider> getActiveProvider() {
         return repository.findById(DEFAULT_SETTINGS_ID)
-                .switchIfEmpty(createDefaultSettings())
+                .switchIfEmpty(createDefaultSettings().onErrorResume(error -> {
+                    // Если при создании дефолтных настроек произошла ошибка (например, запись уже создана другим потоком),
+                    // пытаемся получить существующую запись
+                    log.debug("Ошибка при создании дефолтных настроек (возможно, запись уже существует), пытаемся получить существующую: {}", error.getMessage());
+                    return repository.findById(DEFAULT_SETTINGS_ID);
+                }))
                 .map(GenerationProviderSettings::getActiveProviderEnum)
                 .doOnNext(provider -> log.debug("Активный провайдер: {}", provider));
     }
@@ -65,17 +70,39 @@ public class GenerationProviderSettingsService {
 
     /**
      * Создать дефолтные настройки.
+     * ВНИМАНИЕ: Этот метод может быть вызван параллельно из разных потоков.
+     * Если запись уже существует, операция save может завершиться успешно (upsert),
+     * но это не проблема, так как мы затем получим существующую запись.
      *
      * @return дефолтные настройки
      */
     private Mono<GenerationProviderSettings> createDefaultSettings() {
-        log.info("Создание дефолтных настроек провайдера (FAL_AI)");
-        GenerationProviderSettings defaultSettings = GenerationProviderSettings.builder()
-                .id(DEFAULT_SETTINGS_ID)
-                .activeProvider(GenerationProvider.FAL_AI.getCode())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        return repository.save(defaultSettings);
+        // Проверяем, существует ли запись перед созданием
+        return repository.findById(DEFAULT_SETTINGS_ID)
+                .hasElement()
+                .flatMap(exists -> {
+                    if (exists) {
+                        // Запись уже существует, просто возвращаем её
+                        log.debug("Настройки провайдера уже существуют, используем существующие");
+                        return repository.findById(DEFAULT_SETTINGS_ID);
+                    } else {
+                        // Записи нет, создаем дефолтные
+                        log.info("Создание дефолтных настроек провайдера (FAL_AI)");
+                        GenerationProviderSettings defaultSettings = GenerationProviderSettings.builder()
+                                .id(DEFAULT_SETTINGS_ID)
+                                .activeProvider(GenerationProvider.FAL_AI.getCode())
+                                .createdAt(LocalDateTime.now())
+                                .updatedAt(LocalDateTime.now())
+                                .build();
+                        return repository.save(defaultSettings)
+                                .doOnSuccess(settings -> log.info("Дефолтные настройки провайдера (FAL_AI) успешно созданы"))
+                                .onErrorResume(error -> {
+                                    // Если при сохранении произошла ошибка (например, запись создана другим потоком),
+                                    // пытаемся получить существующую запись
+                                    log.debug("Ошибка при создании дефолтных настроек (возможно, запись уже создана другим потоком), получаем существующую: {}", error.getMessage());
+                                    return repository.findById(DEFAULT_SETTINGS_ID);
+                                });
+                    }
+                });
     }
 }
