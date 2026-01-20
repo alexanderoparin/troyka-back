@@ -1,11 +1,13 @@
 package ru.oparin.troyka.service.provider;
 
+import io.netty.channel.ChannelOption;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -13,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
 import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.config.properties.LaoZhangProperties;
 import ru.oparin.troyka.exception.FalAIException;
@@ -58,6 +61,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
 
     /**
      * Инициализация WebClient для LaoZhang API.
+     * Настроен с увеличенными таймаутами для поддержки генерации 4K (до 10 минут).
      */
     private WebClient getWebClient() {
         if (webClient == null) {
@@ -68,8 +72,14 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 log.warn("LaoZhang API ключ не настроен");
             }
 
+            // Настраиваем HttpClient с увеличенными таймаутами для 4K генерации
+            HttpClient httpClient = HttpClient.create()
+                    .responseTimeout(Duration.ofMinutes(12)) // 12 минут для ответа
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000); // 30 секунд на подключение
+
             webClient = webClientBuilder
                     .baseUrl(baseUrl)
+                    .clientConnector(new ReactorClientHttpConnector(httpClient))
                     .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
                     .build();
@@ -125,7 +135,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                                                                                         .bodyValue(laoZhangRequest)
                                                                                         .retrieve()
                                                                                         .bodyToMono(new ParameterizedTypeReference<LaoZhangResponseDTO>() {})
-                                                                                        .timeout(Duration.ofMinutes(3))
+                                                                                        .timeout(Duration.ofMinutes(12)) // 12 минут для генерации 4K
                                                                                         .flatMap(response -> extractBase64Images(response))
                                                                                         .flatMap(base64Images -> {
                                                                                             // Сохраняем все изображения в поддиректорию lz
