@@ -130,12 +130,23 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                                                                                 log.info("Будет отправлен запрос в LaoZhang AI на {} изображений (операция: {}), endpoint: {}",
                                                                                         numImages, operationType, endpoint);
 
-                                                                                return getWebClient().post()
+                                                                                Mono<LaoZhangResponseDTO> apiRequest = getWebClient().post()
                                                                                         .uri(endpoint)
                                                                                         .bodyValue(laoZhangRequest)
                                                                                         .retrieve()
                                                                                         .bodyToMono(new ParameterizedTypeReference<LaoZhangResponseDTO>() {})
-                                                                                        .timeout(Duration.ofMinutes(12)) // 12 минут для генерации 4K
+                                                                                        .timeout(Duration.ofMinutes(12)); // 12 минут для генерации 4K
+
+                                                                                // Обрабатываем отмену запроса (например, при разрыве соединения с клиентом)
+                                                                                return apiRequest
+                                                                                        .doOnCancel(() -> {
+                                                                                            log.warn("Запрос к LaoZhang AI отменен для userId={}, возвращаем поинты: {}", userId, pointsNeeded);
+                                                                                            userPointsService.addPointsToUser(userId, pointsNeeded)
+                                                                                                    .subscribe(
+                                                                                                            updated -> log.info("Поинты возвращены пользователю {} после отмены запроса: {}", userId, pointsNeeded),
+                                                                                                            error -> log.error("Ошибка при возврате поинтов пользователю {}: {}", userId, error.getMessage())
+                                                                                                    );
+                                                                                        })
                                                                                         .flatMap(response -> extractBase64Images(response))
                                                                                         .flatMap(base64Images -> {
                                                                                             // Сохраняем все изображения в поддиректорию lz
