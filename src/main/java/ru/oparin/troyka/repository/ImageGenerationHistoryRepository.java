@@ -133,20 +133,29 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
      * @param userId идентификатор пользователя
      * @param imageUrlsJson JSON строка с URL сгенерированных изображений
      * @param prompt промпт
+     * @param createdAt время создания
      * @param sessionId идентификатор сессии
      * @param inputImageUrlsJson JSON строка с URL входных изображений
      * @param styleId идентификатор стиля (по умолчанию 1 - Без стиля)
+     * @param aspectRatio соотношение сторон
      * @param modelType тип модели (null для старых моделей)
      * @param resolution разрешение (null для старых моделей)
+     * @param numImages количество запрошенных изображений
+     * @param pointsCost стоимость генерации в поинтах
+     * @param costUsd себестоимость генерации в долларах США
+     * @param provider код провайдера генерации
      * @return сохраненная запись
      */
-    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls, style_id, aspect_ratio, model_type, resolution, points_cost, cost_usd, provider) " +
-           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, :inputImageUrlsJson::jsonb, :styleId, :aspectRatio, :modelType, :resolution, :pointsCost, :costUsd, :provider) " +
+    @Query("INSERT INTO troyka.image_generation_history (user_id, image_urls, prompt, created_at, session_id, input_image_urls, style_id, aspect_ratio, model_type, resolution, num_images, points_cost, cost_usd, provider) " +
+           "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, " +
+           "CASE WHEN :inputImageUrlsJson IS NULL THEN NULL ELSE :inputImageUrlsJson::jsonb END, " +
+           ":styleId, :aspectRatio, :modelType, :resolution, :numImages, :pointsCost, :costUsd, :provider) " +
            "RETURNING *")
     Mono<ImageGenerationHistory> saveWithJsonb(Long userId, String imageUrlsJson, String prompt, 
                                                LocalDateTime createdAt, Long sessionId, 
                                                String inputImageUrlsJson, Long styleId, String aspectRatio,
-                                               String modelType, String resolution, Integer pointsCost, BigDecimal costUsd, String provider);
+                                               String modelType, String resolution, Integer numImages,
+                                               Integer pointsCost, BigDecimal costUsd, String provider);
 
     /**
      * Найти запись истории по идентификатору запроса Fal.ai.

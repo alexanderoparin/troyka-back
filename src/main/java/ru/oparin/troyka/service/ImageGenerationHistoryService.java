@@ -75,6 +75,7 @@ public class ImageGenerationHistoryService {
                         aspectRatio != null ? aspectRatio : "1:1",
                         modelTypeToSave,
                         resolutionToSave,
+                        numImages,
                         pointsCost,
                         costUsd,
                         provider.getCode()
