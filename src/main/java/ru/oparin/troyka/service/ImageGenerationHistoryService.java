@@ -62,7 +62,7 @@ public class ImageGenerationHistoryService {
         // Рассчитываем стоимость генерации
         Integer numImages = imageUrlsList.size();
         Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImages);
-        BigDecimal costUsd = generationProperties.getCostUsd(modelType, resolution, numImages);
+        BigDecimal costUsd = generationProperties.getCostUsd(modelType, resolution, numImages, provider);
 
         return imageGenerationHistoryRepository.saveWithJsonb(
                         userId,
