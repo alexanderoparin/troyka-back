@@ -12,13 +12,19 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.admin.AdminPaymentDTO;
 import ru.oparin.troyka.model.dto.admin.AdminStatsDTO;
 import ru.oparin.troyka.model.dto.admin.AdminUserDTO;
+import ru.oparin.troyka.model.dto.admin.GenerationProviderDTO;
+import ru.oparin.troyka.model.dto.admin.SetActiveProviderRequest;
 import ru.oparin.troyka.model.dto.admin.UserStatisticsDTO;
 import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.system.SystemStatusHistoryDTO;
 import ru.oparin.troyka.model.dto.system.SystemStatusRequest;
+import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.service.AdminService;
+import ru.oparin.troyka.service.GenerationProviderSettingsService;
 import ru.oparin.troyka.service.SystemStatusService;
 import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.service.provider.GenerationProviderRouter;
+import ru.oparin.troyka.service.provider.ImageGenerationProvider;
 import ru.oparin.troyka.util.SecurityUtil;
 
 import java.time.LocalDateTime;
@@ -37,6 +43,8 @@ public class AdminController {
     private final AdminService adminService;
     private final UserService userService;
     private final SystemStatusService systemStatusService;
+    private final GenerationProviderSettingsService providerSettingsService;
+    private final GenerationProviderRouter providerRouter;
 
     @Operation(summary = "Получить все оплаченные платежи",
             description = "Возвращает список всех успешно оплаченных платежей в системе. Требуется роль ADMIN.")
@@ -162,6 +170,71 @@ public class AdminController {
                         return Mono.just(ResponseEntity.status(404).build());
                     }
                     return Mono.just(ResponseEntity.status(403).build());
+                });
+    }
+
+    @Operation(summary = "Получить список провайдеров генерации изображений",
+            description = "Возвращает список всех доступных провайдеров с их статусом и доступностью. Требуется роль ADMIN.")
+    @GetMapping("/generation-providers")
+    public Mono<ResponseEntity<List<GenerationProviderDTO>>> getGenerationProviders() {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMap(admin -> {
+                    return providerSettingsService.getActiveProvider()
+                            .flatMap(activeProvider -> {
+                                return Mono.zip(
+                                        providerRouter.getProvider(GenerationProvider.FAL_AI)
+                                                .isAvailable()
+                                                .defaultIfEmpty(false),
+                                        providerRouter.getProvider(GenerationProvider.LAOZHANG_AI)
+                                                .isAvailable()
+                                                .defaultIfEmpty(false)
+                                ).map(availability -> {
+                                    Boolean falAvailable = availability.getT1();
+                                    Boolean laoZhangAvailable = availability.getT2();
+
+                                    return List.of(
+                                            GenerationProviderDTO.fromProvider(
+                                                    GenerationProvider.FAL_AI,
+                                                    falAvailable,
+                                                    activeProvider == GenerationProvider.FAL_AI
+                                            ),
+                                            GenerationProviderDTO.fromProvider(
+                                                    GenerationProvider.LAOZHANG_AI,
+                                                    laoZhangAvailable,
+                                                    activeProvider == GenerationProvider.LAOZHANG_AI
+                                            )
+                                    );
+                                });
+                            });
+                })
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Ошибка получения списка провайдеров: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403).build());
+                });
+    }
+
+    @Operation(summary = "Установить активного провайдера генерации изображений",
+            description = "Переключает активного провайдера генерации изображений. Требуется роль ADMIN.")
+    @PutMapping("/generation-providers/active")
+    public Mono<ResponseEntity<MessageResponse>> setActiveProvider(@Valid @RequestBody SetActiveProviderRequest request) {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMap(admin -> {
+                    GenerationProvider provider = GenerationProvider.fromCode(request.getProvider());
+                    if (provider == null) {
+                        return Mono.just(ResponseEntity.badRequest()
+                                .body(new MessageResponse("Неизвестный провайдер: " + request.getProvider())));
+                    }
+
+                    return providerSettingsService.setActiveProvider(provider)
+                            .map(settings -> ResponseEntity.ok(
+                                    new MessageResponse("Активный провайдер установлен: " + provider.getDisplayName())
+                            ));
+                })
+                .onErrorResume(e -> {
+                    log.error("Ошибка установки активного провайдера: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403)
+                            .body(new MessageResponse("Ошибка установки провайдера: " + e.getMessage())));
                 });
     }
 }

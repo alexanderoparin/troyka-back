@@ -111,6 +111,15 @@ public class ImageGenerationHistory {
     private String resolution;
 
     /**
+     * Провайдер генерации изображений.
+     * FAL_AI или LAOZHANG_AI.
+     * По умолчанию FAL_AI для обратной совместимости.
+     */
+    @Column("provider")
+    @Builder.Default
+    private String provider = "FAL_AI";
+
+    /**
      * Идентификатор запроса в очереди Fal.ai.
      * Используется для отслеживания статуса запроса через API Fal.ai.
      */

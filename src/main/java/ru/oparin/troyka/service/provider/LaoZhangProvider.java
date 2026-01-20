@@ -1,0 +1,251 @@
+package ru.oparin.troyka.service.provider;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.GenerationProperties;
+import ru.oparin.troyka.config.properties.LaoZhangProperties;
+import ru.oparin.troyka.exception.FalAIException;
+import ru.oparin.troyka.mapper.LaoZhangMapper;
+import ru.oparin.troyka.model.dto.fal.ImageRq;
+import ru.oparin.troyka.model.dto.fal.ImageRs;
+import ru.oparin.troyka.model.dto.laozhang.LaoZhangResponseDTO;
+import ru.oparin.troyka.model.enums.GenerationModelType;
+import ru.oparin.troyka.model.enums.GenerationProvider;
+import ru.oparin.troyka.model.enums.Resolution;
+import ru.oparin.troyka.service.*;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Провайдер генерации изображений через LaoZhang AI.
+ * Использует OpenAI-compatible API формат.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class LaoZhangProvider implements ImageGenerationProvider {
+
+    private static final String ENDPOINT = "/v1/chat/completions";
+    private static final Pattern BASE64_PATTERN = Pattern.compile("data:image/([^;]+);base64,([A-Za-z0-9+/=]+)");
+
+    private final WebClient.Builder webClientBuilder;
+    private final LaoZhangProperties laoZhangProperties;
+    private final GenerationProperties generationProperties;
+    private final LaoZhangMapper laoZhangMapper;
+    private final Base64ImageService base64ImageService;
+    private final UserPointsService userPointsService;
+    private final SessionService sessionService;
+    private final ArtStyleService artStyleService;
+    private final ImageGenerationHistoryService imageGenerationHistoryService;
+    private final UserService userService;
+
+    private WebClient webClient;
+
+    /**
+     * Инициализация WebClient для LaoZhang API.
+     */
+    private WebClient getWebClient() {
+        if (webClient == null) {
+            String baseUrl = laoZhangProperties.getApi().getUrl();
+            String apiKey = laoZhangProperties.getApi().getKey();
+
+            if (apiKey == null || apiKey.isEmpty()) {
+                log.warn("LaoZhang API ключ не настроен");
+            }
+
+            webClient = webClientBuilder
+                    .baseUrl(baseUrl)
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                    .build();
+        }
+        return webClient;
+    }
+
+    @Override
+    public Mono<ImageRs> generateImage(ImageRq request, Long userId) {
+        log.debug("LaoZhangProvider: генерация изображения для пользователя {}", userId);
+
+        Integer numImages = request.getNumImages();
+        GenerationModelType modelType = request.getModel();
+        Resolution resolution = request.getResolution();
+        Integer pointsNeeded = generationProperties.getPointsNeeded(modelType, resolution, numImages);
+
+        return userPointsService.hasEnoughPoints(userId, pointsNeeded)
+                .flatMap(hasEnough -> {
+                    if (!hasEnough) {
+                        return Mono.error(new FalAIException(
+                                "Недостаточно поинтов для генерации изображений. Требуется: " + pointsNeeded,
+                                HttpStatus.PAYMENT_REQUIRED));
+                    } else {
+                        return sessionService.getOrCreateSession(request.getSessionId(), userId)
+                                .flatMap(session -> {
+                                    Long styleId = request.getStyleId();
+                                    return artStyleService.getStyleById(styleId)
+                                            .flatMap(style -> userService.findByIdOrThrow(userId)
+                                                    .flatMap(user -> {
+                                                        String username = user.getUsername();
+                                                        String userPrompt = request.getPrompt();
+                                                        String finalPrompt = userPrompt + ", " + style.getPrompt();
+                                                        List<String> inputImageUrls = request.getInputImageUrls();
+
+                                                        return userPointsService.deductPointsFromUser(userId, pointsNeeded)
+                                                                .flatMap(userPoints -> {
+                                                                    Integer balance = userPoints.getPoints();
+
+                                                                    return laoZhangMapper.createRequest(
+                                                                            request, finalPrompt, numImages, inputImageUrls, resolution)
+                                                                            .flatMap(laoZhangRequest -> {
+                                                                                boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
+                                                                                String operationType = isNewImage ? "создание" : "редактирование";
+                                                                                log.info("Будет отправлен запрос в LaoZhang AI на {} изображений (операция: {})",
+                                                                                        numImages, operationType);
+
+                                                                                return getWebClient().post()
+                                                                                        .uri(ENDPOINT)
+                                                                                        .bodyValue(laoZhangRequest)
+                                                                                        .retrieve()
+                                                                                        .bodyToMono(new ParameterizedTypeReference<LaoZhangResponseDTO>() {})
+                                                                                        .timeout(Duration.ofMinutes(3))
+                                                                                        .flatMap(response -> extractBase64Images(response))
+                                                                                        .flatMap(base64Images -> {
+                                                                                            // Сохраняем все изображения в поддиректорию lz
+                                                                                            return Flux.fromIterable(base64Images)
+                                                                                                    .flatMap(base64Image -> base64ImageService.saveBase64ImageAndGetUrl(base64Image, username, "lz"))
+                                                                                                    .collectList();
+                                                                                        })
+                                                                                        .map(imageUrls -> new ImageRs(imageUrls, balance))
+                                                                                        .flatMap(response -> imageGenerationHistoryService.saveHistories(
+                                                                                                userId, response.getImageUrls(), userPrompt,
+                                                                                                session.getId(), inputImageUrls, styleId, request.getAspectRatio(),
+                                                                                                modelType, resolution, GenerationProvider.LAOZHANG_AI)
+                                                                                                .then(Mono.just(response)))
+                                                                                        .flatMap(response -> sessionService.updateSessionTimestamp(session.getId())
+                                                                                                .then(Mono.just(response)))
+                                                                                        .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}",
+                                                                                                session.getId(), response))
+                                                                                        .onErrorResume(e -> exceptionHandling(userId, e, pointsNeeded));
+                                                                            });
+                                                                });
+                                                    }));
+                                    });
+                    }
+                });
+    }
+
+    /**
+     * Извлечь base64 изображения из ответа LaoZhang API.
+     *
+     * @param response ответ от LaoZhang API
+     * @return список base64 строк
+     */
+    private Mono<List<String>> extractBase64Images(LaoZhangResponseDTO response) {
+        log.debug("Извлечение base64 изображений из ответа LaoZhang API");
+
+        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
+            return Mono.error(new FalAIException("Пустой ответ от LaoZhang API", HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+
+        List<String> base64Images = new ArrayList<>();
+
+        for (LaoZhangResponseDTO.Choice choice : response.getChoices()) {
+            if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
+                String content = choice.getMessage().getContent();
+                // Извлекаем base64 из content (может быть в формате data:image/...;base64,...)
+                Matcher matcher = BASE64_PATTERN.matcher(content);
+                while (matcher.find()) {
+                    String base64Data = matcher.group(0); // Полная строка data:image/...;base64,...
+                    base64Images.add(base64Data);
+                }
+            }
+        }
+
+        if (base64Images.isEmpty()) {
+            log.warn("Не найдено base64 изображений в ответе LaoZhang API. Content: {}", 
+                    response.getChoices().get(0).getMessage() != null ? 
+                            response.getChoices().get(0).getMessage().getContent() : "null");
+            return Mono.error(new FalAIException("Не найдено изображений в ответе от LaoZhang API", 
+                    HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+
+        log.info("Извлечено {} base64 изображений из ответа LaoZhang API", base64Images.size());
+        return Mono.just(base64Images);
+    }
+
+    /**
+     * Обработка исключений.
+     */
+    private Mono<ImageRs> exceptionHandling(Long userId, Throwable e, Integer pointsNeeded) {
+        log.error("Ошибка при работе с LaoZhang AI для userId={}, pointsNeeded={}: {}", 
+                userId, pointsNeeded, e.getMessage(), e);
+
+        if (e instanceof FalAIException) {
+            // Уже наш кастомный эксепшн — возврат поинтов уже был
+            return Mono.error(e);
+        } else if (e instanceof TimeoutException ||
+                (e.getCause() != null && e.getCause() instanceof TimeoutException) ||
+                (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout"))) {
+            log.warn("Timeout при запросе к LaoZhang AI для userId={}. Возвращаем поинты.", userId);
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(
+                            "Превышено время ожидания ответа от сервиса генерации. Попробуйте позже.",
+                            HttpStatus.REQUEST_TIMEOUT)));
+        } else if (e instanceof WebClientRequestException) {
+            log.warn("Ошибка подключения к LaoZhang AI для userId={}. Возвращаем поинты.", userId);
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(
+                            "Не удалось подключиться к сервису генерации. Проверьте интернет или попробуйте позже.",
+                            HttpStatus.SERVICE_UNAVAILABLE)));
+        } else if (e instanceof WebClientResponseException webE) {
+            String responseBody = webE.getResponseBodyAsString();
+            log.warn("Ошибка от LaoZhang AI для userId={}. Статус: {}, тело: {}. Возвращаем поинты.",
+                    userId, webE.getStatusCode(), responseBody);
+            String message = "Сервис генерации вернул ошибку. Статус: " + webE.getStatusCode()
+                    + ", причина: " + webE.getStatusText();
+            if (responseBody != null && !responseBody.isEmpty()) {
+                message += ", тело ответа: " + responseBody;
+            }
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
+        } else {
+            log.warn("Неизвестная ошибка при работе с LaoZhang AI для userId={}. Возвращаем поинты.", userId);
+            return userPointsService.addPointsToUser(userId, pointsNeeded)
+                    .then(Mono.error(new FalAIException(
+                            "Произошла ошибка при работе с сервисом генерации: " + e.getMessage(),
+                            HttpStatus.INTERNAL_SERVER_ERROR)));
+        }
+    }
+
+    @Override
+    public GenerationProvider getProviderName() {
+        return GenerationProvider.LAOZHANG_AI;
+    }
+
+    @Override
+    public Mono<Boolean> isAvailable() {
+        // Простая проверка доступности - можно добавить health check если нужно
+        String apiKey = laoZhangProperties.getApi().getKey();
+        return Mono.just(apiKey != null && !apiKey.isEmpty());
+    }
+
+    @Override
+    public Integer getPricePerImage(GenerationModelType modelType, Resolution resolution) {
+        return generationProperties.getPointsNeeded(modelType, resolution, 1);
+    }
+}

@@ -8,6 +8,7 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.model.entity.ImageGenerationHistory;
 import ru.oparin.troyka.model.enums.GenerationModelType;
+import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.model.enums.Resolution;
 import ru.oparin.troyka.repository.ImageGenerationHistoryRepository;
@@ -40,13 +41,15 @@ public class ImageGenerationHistoryService {
      * @param sessionId      идентификатор сессии
      * @param inputImageUrls список URL входных изображений (для отображения в истории)
      * @param styleId        идентификатор стиля (по умолчанию 1 - Без стиля)
+     * @param aspectRatio    соотношение сторон
      * @param modelType      тип модели (сохраняется только для новых моделей)
      * @param resolution     разрешение (сохраняется только для новых моделей)
+     * @param provider       провайдер генерации (FAL_AI или LAOZHANG_AI)
      * @return сохраненные записи истории
      */
     public Flux<ImageGenerationHistory> saveHistories(Long userId, Iterable<String> imageUrls, String prompt, Long sessionId,
                                                       List<String> inputImageUrls, Long styleId, String aspectRatio,
-                                                      GenerationModelType modelType, Resolution resolution) {
+                                                      GenerationModelType modelType, Resolution resolution, GenerationProvider provider) {
         List<String> imageUrlsList = new ArrayList<>();
         imageUrls.forEach(imageUrlsList::add);
         String imageUrlsJson = JsonUtils.convertListToJson(imageUrlsList);
@@ -73,10 +76,25 @@ public class ImageGenerationHistoryService {
                         modelTypeToSave,
                         resolutionToSave,
                         pointsCost,
-                        costUsd
+                        costUsd,
+                        provider.getCode()
                 )
                 .doOnNext(history -> log.info("Запись истории сохранена: {}, стоимость: {} поинтов, себестоимость: ${}", history, pointsCost, costUsd))
                 .flux();
+    }
+
+    /**
+     * Получить последнюю запись истории для сессии и пользователя.
+     *
+     * @param sessionId идентификатор сессии
+     * @param userId    идентификатор пользователя
+     * @return последняя запись истории или пустой результат
+     */
+    public Mono<ImageGenerationHistory> getLastHistoryBySessionId(Long sessionId, Long userId) {
+        log.debug("Получение последней записи истории для сессии {} и пользователя {}", sessionId, userId);
+        return imageGenerationHistoryRepository.findByUserIdAndSessionIdAndDeletedFalseOrderByCreatedAtDesc(userId, sessionId)
+                .next() // Берем только первую (последнюю) запись
+                .doOnError(error -> log.error("Ошибка при получении последней записи истории для сессии {} и пользователя {}", sessionId, userId, error));
     }
 
     /**
@@ -157,7 +175,8 @@ public class ImageGenerationHistoryService {
                 numImages,
                 pointsCost,
                 costUsd,
-                now
+                now,
+                GenerationProvider.FAL_AI.getCode() // Очередь используется только для FAL AI
         ).doOnSuccess(h -> log.info("Создана запись истории со статусом {}: id={}, falRequestId={}, numImages={}, pointsCost={}, costUsd=${}",
                 queueStatus, h.getId(), falRequestId, numImages, pointsCost, costUsd));
     }

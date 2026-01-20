@@ -9,9 +9,9 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
-import ru.oparin.troyka.service.FalAIService;
 import ru.oparin.troyka.service.UserPointsService;
 import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.service.provider.GenerationProviderRouter;
 import ru.oparin.troyka.util.SecurityUtil;
 
 @Slf4j
@@ -20,7 +20,7 @@ import ru.oparin.troyka.util.SecurityUtil;
 @RequestMapping("/fal")
 public class FalAIController {
 
-    private final FalAIService falAIService;
+    private final GenerationProviderRouter providerRouter;
     private final UserPointsService userPointsService;
     private final UserService userService;
 
@@ -30,7 +30,7 @@ public class FalAIController {
     public Mono<ResponseEntity<ImageRs>> generateImage(@RequestBody ImageRq rq) {
         return SecurityUtil.checkStudioAccess(userService)
                 .doOnNext(userId -> log.info("Получен запрос на создание изображения от пользователя с ID: {}", userId))
-                .flatMap(userId -> falAIService.getImageResponse(rq, userId))
+                .flatMap(userId -> providerRouter.generateImage(rq, userId))
                 .map(ResponseEntity::ok)
                 .doOnError(error -> {
                     if (!(error instanceof AuthException)) {

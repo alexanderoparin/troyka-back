@@ -17,6 +17,7 @@ import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.mapper.FalAIQueueMapper;
 import ru.oparin.troyka.model.dto.fal.*;
 import ru.oparin.troyka.model.enums.GenerationModelType;
+import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.model.enums.Resolution;
 
 import java.time.Duration;
@@ -112,7 +113,7 @@ public class FalAIService {
                                                                          .flatMap(response -> imageGenerationHistoryService.saveHistories(
                                                                                          userId, response.getImageUrls(), userPrompt,
                                                                                          session.getId(), inputImageUrls, styleId, imageRq.getAspectRatio(),
-                                                                                         modelType, resolution)
+                                                                                         modelType, resolution, GenerationProvider.FAL_AI)
                                                                                  .then(Mono.just(response)))
                                                                         .flatMap(response -> sessionService.updateSessionTimestamp(session.getId())
                                                                                 .then(Mono.just(response)))
