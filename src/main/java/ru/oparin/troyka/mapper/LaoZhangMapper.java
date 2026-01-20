@@ -112,19 +112,32 @@ public class LaoZhangMapper {
                 LaoZhangRequestDTO.GenerationConfig.builder()
                         .responseModalities(List.of("IMAGE"));
 
-        // Для Pro версии добавляем imageConfig с разрешением и aspect ratio
+        // Добавляем imageConfig для Pro версии (поддерживает 4K и кастомные соотношения сторон)
+        // Для Standard версии тоже можно указать aspectRatio, но разрешение всегда 1K
         if (imageRq.getModel() == GenerationModelType.NANO_BANANA_PRO) {
+            // Pro версия: поддерживает 1K, 2K, 4K и любые соотношения сторон
             LaoZhangRequestDTO.ImageConfig imageConfig = LaoZhangRequestDTO.ImageConfig.builder()
-                    .aspectRatio(imageRq.getAspectRatio())
+                    .aspectRatio(imageRq.getAspectRatio() != null ? imageRq.getAspectRatio() : "1:1")
                     .build();
 
             if (resolution != null) {
-                imageConfig.setImageSize(resolution.getValue());
+                imageConfig.setImageSize(resolution.getValue()); // 1K, 2K, 4K
             } else {
                 imageConfig.setImageSize("1K"); // По умолчанию 1K
             }
 
             configBuilder.imageConfig(imageConfig);
+        } else if (imageRq.getModel() == GenerationModelType.NANO_BANANA) {
+            // Standard версия: только 1K, но можно указать aspectRatio
+            // Если aspectRatio не 1:1, добавляем imageConfig
+            String aspectRatio = imageRq.getAspectRatio() != null ? imageRq.getAspectRatio() : "1:1";
+            if (!"1:1".equals(aspectRatio)) {
+                LaoZhangRequestDTO.ImageConfig imageConfig = LaoZhangRequestDTO.ImageConfig.builder()
+                        .aspectRatio(aspectRatio)
+                        .imageSize("1K") // Standard всегда 1K
+                        .build();
+                configBuilder.imageConfig(imageConfig);
+            }
         }
 
         builder.generationConfig(configBuilder.build());

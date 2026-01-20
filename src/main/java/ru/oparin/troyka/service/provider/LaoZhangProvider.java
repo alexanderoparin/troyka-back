@@ -29,7 +29,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Pattern;
 
 /**
  * Провайдер генерации изображений через LaoZhang AI.
@@ -40,10 +39,9 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class LaoZhangProvider implements ImageGenerationProvider {
 
-    // Используем endpoint для Gemini API через LaoZhang
-    // Формат: /v1/models/{model}:generateContent или /v1/chat/completions (зависит от провайдера)
-    private static final String ENDPOINT = "/v1/chat/completions";
-    private static final Pattern BASE64_PATTERN = Pattern.compile("data:image/([^;]+);base64,([A-Za-z0-9+/=]+)");
+    // Используем Google Native Format endpoint для поддержки 4K и кастомных соотношений сторон
+    // Endpoint: /v1beta/models/{model}:generateContent
+    private static final String ENDPOINT_TEMPLATE = "/v1beta/models/%s:generateContent";
 
     private final WebClient.Builder webClientBuilder;
     private final LaoZhangProperties laoZhangProperties;
@@ -110,16 +108,20 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                                                                 .flatMap(userPoints -> {
                                                                     Integer balance = userPoints.getPoints();
 
+                                                                    // Получаем имя модели для формирования endpoint
+                                                                    String modelName = laoZhangMapper.getLaoZhangModelName(modelType);
+                                                                    String endpoint = String.format(ENDPOINT_TEMPLATE, modelName);
+                                                                    
                                                                     return laoZhangMapper.createRequest(
                                                                             request, finalPrompt, numImages, inputImageUrls, resolution)
                                                                             .flatMap(laoZhangRequest -> {
                                                                                 boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
                                                                                 String operationType = isNewImage ? "создание" : "редактирование";
-                                                                                log.info("Будет отправлен запрос в LaoZhang AI на {} изображений (операция: {})",
-                                                                                        numImages, operationType);
+                                                                                log.info("Будет отправлен запрос в LaoZhang AI на {} изображений (операция: {}), endpoint: {}",
+                                                                                        numImages, operationType, endpoint);
 
                                                                                 return getWebClient().post()
-                                                                                        .uri(ENDPOINT)
+                                                                                        .uri(endpoint)
                                                                                         .bodyValue(laoZhangRequest)
                                                                                         .retrieve()
                                                                                         .bodyToMono(new ParameterizedTypeReference<LaoZhangResponseDTO>() {})
