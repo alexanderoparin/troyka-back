@@ -27,14 +27,15 @@ public class ProviderErrorHandler {
     /**
      * Обработать ошибку и вернуть поинты пользователю при необходимости.
      *
-     * @param userId      идентификатор пользователя
-     * @param error       исключение
-     * @param pointsNeeded количество поинтов, которое нужно вернуть
+     * @param userId         идентификатор пользователя
+     * @param error          исключение
+     * @param pointsNeeded   количество поинтов, которое нужно вернуть
+     * @param pointsDeducted флаг, указывающий, были ли поинты списаны
      * @return Mono с ошибкой для дальнейшей обработки
      */
-    public Mono<ImageRs> handleError(Long userId, Throwable error, Integer pointsNeeded) {
-        log.error("Ошибка при работе с провайдером для userId={}, pointsNeeded={}: {}",
-                userId, pointsNeeded, error.getMessage(), error);
+    public Mono<ImageRs> handleError(Long userId, Throwable error, Integer pointsNeeded, boolean pointsDeducted) {
+        log.error("Ошибка при работе с провайдером для userId={}, pointsNeeded={}, pointsDeducted={}: {}",
+                userId, pointsNeeded, pointsDeducted, error.getMessage(), error);
 
         // Если это уже наш кастомный эксепшн, возвращаем его без изменений
         if (error instanceof FalAIException) {
@@ -43,21 +44,21 @@ public class ProviderErrorHandler {
 
         // Обрабатываем таймауты
         if (isTimeoutError(error)) {
-            return handleTimeout(userId, pointsNeeded);
+            return handleTimeout(userId, pointsNeeded, pointsDeducted);
         }
 
         // Обрабатываем ошибки подключения
         if (error instanceof WebClientRequestException) {
-            return handleConnectionError(userId, pointsNeeded);
+            return handleConnectionError(userId, pointsNeeded, pointsDeducted);
         }
 
         // Обрабатываем HTTP ошибки от провайдера
         if (error instanceof WebClientResponseException webError) {
-            return handleProviderError(userId, pointsNeeded, webError);
+            return handleProviderError(userId, pointsNeeded, pointsDeducted, webError);
         }
 
         // Обрабатываем неизвестные ошибки
-        return handleUnknownError(userId, pointsNeeded, error);
+        return handleUnknownError(userId, pointsNeeded, pointsDeducted, error);
     }
 
     /**
@@ -72,9 +73,9 @@ public class ProviderErrorHandler {
     /**
      * Обработать таймаут.
      */
-    private Mono<ImageRs> handleTimeout(Long userId, Integer pointsNeeded) {
-        log.warn("Timeout при запросе к провайдеру для userId={}. Возвращаем поинты.", userId);
-        return refundPoints(userId, pointsNeeded)
+    private Mono<ImageRs> handleTimeout(Long userId, Integer pointsNeeded, boolean pointsDeducted) {
+        log.warn("Timeout при запросе к провайдеру для userId={}.", userId);
+        return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
                 .then(Mono.error(new FalAIException(
                         ProviderConstants.ErrorMessages.TIMEOUT_MESSAGE,
                         HttpStatus.REQUEST_TIMEOUT)));
@@ -83,9 +84,9 @@ public class ProviderErrorHandler {
     /**
      * Обработать ошибку подключения.
      */
-    private Mono<ImageRs> handleConnectionError(Long userId, Integer pointsNeeded) {
-        log.warn("Ошибка подключения к провайдеру для userId={}. Возвращаем поинты.", userId);
-        return refundPoints(userId, pointsNeeded)
+    private Mono<ImageRs> handleConnectionError(Long userId, Integer pointsNeeded, boolean pointsDeducted) {
+        log.warn("Ошибка подключения к провайдеру для userId={}.", userId);
+        return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
                 .then(Mono.error(new FalAIException(
                         ProviderConstants.ErrorMessages.CONNECTION_ERROR,
                         HttpStatus.SERVICE_UNAVAILABLE)));
@@ -94,14 +95,14 @@ public class ProviderErrorHandler {
     /**
      * Обработать HTTP ошибку от провайдера.
      */
-    private Mono<ImageRs> handleProviderError(Long userId, Integer pointsNeeded,
+    private Mono<ImageRs> handleProviderError(Long userId, Integer pointsNeeded, boolean pointsDeducted,
                                               WebClientResponseException webError) {
         String responseBody = webError.getResponseBodyAsString();
-        log.warn("Ошибка от провайдера для userId={}. Статус: {}, тело: {}. Возвращаем поинты.",
+        log.warn("Ошибка от провайдера для userId={}. Статус: {}, тело: {}.",
                 userId, webError.getStatusCode(), responseBody);
 
         String message = buildProviderErrorMessage(webError, responseBody);
-        return refundPoints(userId, pointsNeeded)
+        return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
                 .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
     }
 
@@ -130,20 +131,32 @@ public class ProviderErrorHandler {
     /**
      * Обработать неизвестную ошибку.
      */
-    private Mono<ImageRs> handleUnknownError(Long userId, Integer pointsNeeded, Throwable error) {
-        log.warn("Неизвестная ошибка при работе с провайдером для userId={}. Возвращаем поинты.", userId);
+    private Mono<ImageRs> handleUnknownError(Long userId, Integer pointsNeeded, boolean pointsDeducted, Throwable error) {
+        log.warn("Неизвестная ошибка при работе с провайдером для userId={}.", userId);
         String message = String.format(
                 ProviderConstants.ErrorMessages.UNKNOWN_ERROR_TEMPLATE,
                 error.getMessage()
         );
-        return refundPoints(userId, pointsNeeded)
+        return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
                 .then(Mono.error(new FalAIException(message, HttpStatus.INTERNAL_SERVER_ERROR)));
+    }
+
+    /**
+     * Вернуть поинты пользователю, если они были списаны.
+     */
+    private Mono<Void> refundPointsIfNeeded(Long userId, Integer pointsNeeded, boolean pointsDeducted) {
+        if (!pointsDeducted) {
+            log.debug("Поинты не были списаны для userId={}, возврат не требуется", userId);
+            return Mono.empty();
+        }
+        return refundPoints(userId, pointsNeeded);
     }
 
     /**
      * Вернуть поинты пользователю.
      */
     private Mono<Void> refundPoints(Long userId, Integer pointsNeeded) {
+        log.info("Возвращаем поинты пользователю {}: {}", userId, pointsNeeded);
         return userPointsService.addPointsToUser(userId, pointsNeeded)
                 .doOnSuccess(updated -> log.info("Поинты возвращены пользователю {}: {}", userId, pointsNeeded))
                 .doOnError(error -> log.error("Ошибка при возврате поинтов пользователю {}: {}",

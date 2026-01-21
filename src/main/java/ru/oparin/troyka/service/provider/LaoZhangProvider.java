@@ -1,5 +1,6 @@
 package ru.oparin.troyka.service.provider;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.ChannelOption;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +63,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final UserService userService;
     private final ProviderErrorHandler errorHandler;
+    private final ObjectMapper objectMapper;
 
     private WebClient webClient;
 
@@ -80,9 +82,12 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 .flatMap(this::saveHistory)
                 .flatMap(this::updateSession)
                 .map(this::createResponse)
-                .doOnSuccess(response -> log.info("Успешно получен ответ с изображением для сессии {}: {}",
-                        context.session.getId(), response))
-                .onErrorResume(error -> errorHandler.handleError(userId, error, context.pointsNeeded));
+                .doOnSuccess(response -> {
+                    Long sessionId = context.session != null ? context.session.getId() : null;
+                    log.info("Успешно получен ответ с изображением для сессии {}: {}",
+                            sessionId != null ? sessionId : "unknown", response);
+                })
+                .onErrorResume(error -> errorHandler.handleError(userId, error, context.pointsNeeded, context.pointsDeducted));
     }
 
     /**
@@ -136,6 +141,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         return userPointsService.deductPointsFromUser(context.userId, context.pointsNeeded)
                 .map(userPoints -> {
                     context.userPoints = userPoints;
+                    context.pointsDeducted = true; // Отмечаем, что поинты были списаны
                     return context;
                 });
     }
@@ -192,16 +198,86 @@ public class LaoZhangProvider implements ImageGenerationProvider {
      */
     private Mono<LaoZhangResponseDTO> sendApiRequest(String endpoint, LaoZhangRequestDTO request,
                                                       GenerationContext context) {
+        // Логируем запрос перед отправкой
+        try {
+            String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
+                    .writeValueAsString(request);
+            log.debug("Отправка запроса в LaoZhang API для userId={}, endpoint={}:\n{}",
+                    context.userId, endpoint, requestJson);
+        } catch (Exception e) {
+            log.warn("Не удалось сериализовать запрос к LaoZhang API для логирования: {}", e.getMessage());
+        }
+
         Mono<LaoZhangResponseDTO> apiRequest = getWebClient().post()
                 .uri(endpoint)
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<LaoZhangResponseDTO>() {})
-                .timeout(ProviderConstants.LaoZhang.REQUEST_TIMEOUT);
+                .timeout(ProviderConstants.LaoZhang.REQUEST_TIMEOUT)
+                .doOnNext(response -> {
+                    // Логируем структуру ответа без base64 данных (они очень большие)
+                    logResponseStructure(response, context.userId, endpoint);
+                })
+                .doOnError(error -> {
+                    log.error("Ошибка при получении ответа от LaoZhang API для userId={}, endpoint={}: {}",
+                            context.userId, endpoint, error.getMessage(), error);
+                });
 
         return apiRequest.doOnCancel(() ->
                 errorHandler.handleCancellation(context.userId, context.pointsNeeded)
         );
+    }
+
+    /**
+     * Логировать структуру ответа без base64 данных (для отладки).
+     */
+    private void logResponseStructure(LaoZhangResponseDTO response, Long userId, String endpoint) {
+        try {
+            if (response == null) {
+                log.warn("Получен null ответ от LaoZhang API для userId={}, endpoint={}", userId, endpoint);
+                return;
+            }
+
+            if (response.getCandidates() == null || response.getCandidates().isEmpty()) {
+                log.warn("Получен ответ без candidates от LaoZhang API для userId={}, endpoint={}", userId, endpoint);
+                return;
+            }
+
+            StringBuilder structure = new StringBuilder("Структура ответа от LaoZhang API для userId=")
+                    .append(userId).append(", endpoint=").append(endpoint).append(":\n");
+            structure.append("  Количество candidates: ").append(response.getCandidates().size()).append("\n");
+
+            for (int i = 0; i < response.getCandidates().size(); i++) {
+                LaoZhangResponseDTO.Candidate candidate = response.getCandidates().get(i);
+                structure.append("  Candidate[").append(i).append("]:\n");
+                structure.append("    finishReason: ").append(candidate.getFinishReason()).append("\n");
+
+                if (candidate.getContent() != null && candidate.getContent().getParts() != null) {
+                    structure.append("    Количество parts: ").append(candidate.getContent().getParts().size()).append("\n");
+                    for (int j = 0; j < candidate.getContent().getParts().size(); j++) {
+                        LaoZhangResponseDTO.Part part = candidate.getContent().getParts().get(j);
+                        structure.append("    Part[").append(j).append("]:\n");
+                        if (part.getText() != null) {
+                            structure.append("      text: ").append(part.getText().substring(0, Math.min(100, part.getText().length())))
+                                    .append(part.getText().length() > 100 ? "..." : "").append("\n");
+                        }
+                        if (part.getInlineData() != null) {
+                            structure.append("      inlineData:\n");
+                            structure.append("        mimeType: ").append(part.getInlineData().getMimeType()).append("\n");
+                            structure.append("        data length: ").append(
+                                    part.getInlineData().getData() != null ? part.getInlineData().getData().length() : 0
+                            ).append(" символов\n");
+                        }
+                    }
+                } else {
+                    structure.append("    content или parts == null\n");
+                }
+            }
+
+            log.debug(structure.toString());
+        } catch (Exception e) {
+            log.warn("Не удалось залогировать структуру ответа от LaoZhang API: {}", e.getMessage());
+        }
     }
 
     /**
@@ -263,6 +339,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         log.debug("Извлечение base64 изображений из ответа LaoZhang API");
 
         if (response == null || response.getCandidates() == null || response.getCandidates().isEmpty()) {
+            logFullResponse(response, "Пустой ответ от LaoZhang API (response или candidates == null)");
             return Mono.error(new FalAIException(
                     ProviderConstants.ErrorMessages.EMPTY_RESPONSE,
                     HttpStatus.UNPROCESSABLE_ENTITY));
@@ -271,7 +348,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         List<String> base64Images = getImagesFromResponse(response);
 
         if (base64Images.isEmpty()) {
-            log.warn("Не найдено base64 изображений в ответе LaoZhang API");
+            logFullResponse(response, "Не найдено base64 изображений в ответе LaoZhang API");
             return Mono.error(new FalAIException(
                     ProviderConstants.ErrorMessages.NO_IMAGES_IN_RESPONSE,
                     HttpStatus.UNPROCESSABLE_ENTITY));
@@ -279,6 +356,27 @@ public class LaoZhangProvider implements ImageGenerationProvider {
 
         log.info("Извлечено {} base64 изображений из ответа LaoZhang API", base64Images.size());
         return Mono.just(base64Images);
+    }
+
+    /**
+     * Логировать полный ответ от провайдера в случае ошибки.
+     * Включает полный JSON, даже если он содержит большие base64 данные.
+     */
+    private void logFullResponse(LaoZhangResponseDTO response, String reason) {
+        try {
+            if (response == null) {
+                log.error("{} Response == null", reason);
+                return;
+            }
+
+            String responseJson = objectMapper.writerWithDefaultPrettyPrinter()
+                    .writeValueAsString(response);
+            log.error("{} Полный ответ от LaoZhang API (JSON, {} символов):\n{}",
+                    reason, responseJson.length(), responseJson);
+        } catch (Exception e) {
+            log.error("{} Не удалось сериализовать ответ для логирования: {}. Response toString: {}",
+                    reason, e.getMessage(), response);
+        }
     }
 
     private List<String> getImagesFromResponse(LaoZhangResponseDTO response) {
@@ -371,6 +469,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         final ImageRq request;
         final Long userId;
         Integer pointsNeeded;
+        boolean pointsDeducted = false; // Флаг, указывающий, были ли списаны поинты
         Session session;
         ArtStyle style;
         User user;
