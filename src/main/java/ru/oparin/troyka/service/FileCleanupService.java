@@ -407,7 +407,7 @@ public class FileCleanupService {
         String fileName = filePath.getFileName().toString().toLowerCase();
         
         if (isInfectedFile(fileName)) {
-            deleteFileWithLogging(rootPath, filePath, deletedCount, "зараженный файл");
+            deleteFileWithLogging(rootPath, filePath, deletedCount);
         }
     }
 
@@ -439,21 +439,20 @@ public class FileCleanupService {
     /**
      * Удалить файл с логированием размера.
      *
-     * @param rootPath корневой путь для вычисления относительного пути
-     * @param filePath путь к файлу для удаления
+     * @param rootPath     корневой путь для вычисления относительного пути
+     * @param filePath     путь к файлу для удаления
      * @param deletedCount счетчик удаленных файлов
-     * @param fileType тип файла для логирования (например, "зараженный файл")
      */
-    private void deleteFileWithLogging(Path rootPath, Path filePath, AtomicInteger deletedCount, String fileType) {
+    private void deleteFileWithLogging(Path rootPath, Path filePath, AtomicInteger deletedCount) {
         try {
             String relativePath = getRelativePath(rootPath, filePath);
             long fileSize = Files.size(filePath);
             double fileSizeMB = fileSize / (1024.0 * 1024.0);
             Files.delete(filePath);
             deletedCount.incrementAndGet();
-            log.warn("Удален {}: {} (размер: {} МБ)", fileType, relativePath, String.format("%.2f", fileSizeMB));
+            log.warn("Удален зараженный файл: {} (размер: {} МБ)", relativePath, String.format("%.2f", fileSizeMB));
         } catch (IOException e) {
-            log.error("Не удалось удалить {}: {}", fileType, filePath, e);
+            log.error("Не удалось удалить зараженный файл: {}", filePath, e);
         }
     }
 
