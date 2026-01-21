@@ -75,18 +75,22 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         context.pointsNeeded = calculatePointsNeeded(request);
 
         return validatePoints(context)
-                .doOnSuccess(ignored -> log.debug("Валидация поинтов пройдена для userId={}", context.userId))
+                .doOnSuccess(ignored -> log.debug("Валидация поинтов пройдена для userId={}", userId))
+                .doOnError(error -> log.error("Ошибка при валидации поинтов для userId={}: {}", 
+                        userId, error.getMessage(), error))
                 .flatMap(ignored -> prepareContext(context))
                 .doOnSuccess(ctx -> log.debug("Контекст подготовлен для userId={}, sessionId={}", 
                         ctx.userId, ctx.session != null ? ctx.session.getId() : null))
+                .doOnError(error -> log.error("Ошибка при подготовке контекста для userId={}: {}", 
+                        userId, error.getMessage(), error))
                 .flatMap(this::deductPoints)
                 .doOnSuccess(ctx -> log.debug("Поинты списаны для userId={}, pointsDeducted={}", 
                         ctx.userId, ctx.pointsDeducted))
                 .doOnError(error -> log.error("Ошибка при списании поинтов для userId={}: {}", 
-                        context.userId, error.getMessage(), error))
+                        userId, error.getMessage(), error))
                 .flatMap(this::executeGeneration)
                 .doOnError(error -> log.error("Ошибка в executeGeneration для userId={}: {}", 
-                        context.userId, error.getMessage(), error))
+                        userId, error.getMessage(), error))
                 .doOnSuccess(ctx -> log.debug("Генерация выполнена для userId={}, base64Images count={}", 
                         ctx.userId, ctx.base64Images != null ? ctx.base64Images.size() : 0))
                 .flatMap(this::saveImages)
@@ -104,11 +108,11 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                                 sessionId != null ? sessionId : "unknown", response.getImageUrls().size());
                     } else {
                         log.error("Получен null или пустой response после генерации для userId={}. Response: {}", 
-                                context.userId, response);
+                                userId, response);
                     }
                 })
                 .doOnError(error -> log.error("Ошибка в цепочке генерации для userId={}: {}", 
-                        context.userId, error.getMessage(), error))
+                        userId, error.getMessage(), error))
                 .onErrorResume(error -> errorHandler.handleError(userId, error, context.pointsNeeded, context.pointsDeducted));
     }
 
