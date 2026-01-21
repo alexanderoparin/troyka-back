@@ -75,12 +75,27 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         context.pointsNeeded = calculatePointsNeeded(request);
 
         return validatePoints(context)
+                .doOnSuccess(ignored -> log.debug("Валидация поинтов пройдена для userId={}", context.userId))
                 .flatMap(ignored -> prepareContext(context))
+                .doOnSuccess(ctx -> log.debug("Контекст подготовлен для userId={}, sessionId={}", 
+                        ctx.userId, ctx.session != null ? ctx.session.getId() : null))
                 .flatMap(this::deductPoints)
+                .doOnSuccess(ctx -> log.debug("Поинты списаны для userId={}, pointsDeducted={}", 
+                        ctx.userId, ctx.pointsDeducted))
+                .doOnError(error -> log.error("Ошибка при списании поинтов для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
                 .flatMap(this::executeGeneration)
+                .doOnError(error -> log.error("Ошибка в executeGeneration для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
+                .doOnSuccess(ctx -> log.debug("Генерация выполнена для userId={}, base64Images count={}", 
+                        ctx.userId, ctx.base64Images != null ? ctx.base64Images.size() : 0))
                 .flatMap(this::saveImages)
+                .doOnSuccess(ctx -> log.debug("Изображения сохранены для userId={}, imageUrls count={}", 
+                        ctx.userId, ctx.imageUrls != null ? ctx.imageUrls.size() : 0))
                 .flatMap(this::saveHistory)
+                .doOnSuccess(ctx -> log.debug("История сохранена для userId={}", ctx.userId))
                 .flatMap(this::updateSession)
+                .doOnSuccess(ctx -> log.debug("Сессия обновлена для userId={}", ctx.userId))
                 .map(this::createResponse)
                 .doOnSuccess(response -> {
                     if (response != null && response.getImageUrls() != null && !response.getImageUrls().isEmpty()) {
@@ -88,9 +103,12 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                         log.info("Успешно получен ответ с изображением для сессии {}: {} изображений",
                                 sessionId != null ? sessionId : "unknown", response.getImageUrls().size());
                     } else {
-                        log.warn("Получен null или пустой response после генерации для userId={}", context.userId);
+                        log.error("Получен null или пустой response после генерации для userId={}. Response: {}", 
+                                context.userId, response);
                     }
                 })
+                .doOnError(error -> log.error("Ошибка в цепочке генерации для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
                 .onErrorResume(error -> errorHandler.handleError(userId, error, context.pointsNeeded, context.pointsDeducted));
     }
 
@@ -154,14 +172,30 @@ public class LaoZhangProvider implements ImageGenerationProvider {
      * Выполнить генерацию изображений через LaoZhang API.
      */
     private Mono<GenerationContext> executeGeneration(GenerationContext context) {
+        log.debug("Начало executeGeneration для userId={}", context.userId);
         String endpoint = buildEndpoint(context.request.getModel());
         logGenerationRequest(context, endpoint);
 
         return createLaoZhangRequest(context)
-                .flatMap(laoZhangRequest -> sendApiRequest(endpoint, laoZhangRequest, context))
+                .doOnNext(request -> log.debug("LaoZhangRequest создан для userId={}, endpoint={}", context.userId, endpoint))
+                .doOnError(error -> log.error("Ошибка при создании LaoZhangRequest для userId={}: {}", context.userId, error.getMessage(), error))
+                .flatMap(laoZhangRequest -> {
+                    log.debug("Отправка запроса в LaoZhang API для userId={}, endpoint={}", context.userId, endpoint);
+                    return sendApiRequest(endpoint, laoZhangRequest, context);
+                })
+                .doOnNext(response -> log.debug("Получен ответ от LaoZhang API для userId={}, response null={}", 
+                        context.userId, response == null))
+                .doOnError(error -> log.error("Ошибка при отправке запроса в LaoZhang API для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
                 .flatMap(this::extractBase64Images)
+                .doOnNext(base64Images -> log.debug("Извлечено {} base64 изображений для userId={}", 
+                        base64Images.size(), context.userId))
+                .doOnError(error -> log.error("Ошибка при извлечении base64 изображений для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
                 .map(base64Images -> {
                     context.base64Images = base64Images;
+                    log.debug("base64Images установлены в контекст для userId={}, count={}", 
+                            context.userId, base64Images.size());
                     return context;
                 });
     }
@@ -206,7 +240,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         try {
             String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
                     .writeValueAsString(request);
-            log.debug("Отправка запроса в LaoZhang API для userId={}, endpoint={}:\n{}",
+            log.info("Отправка запроса в LaoZhang API для userId={}, endpoint={}:\n{}",
                     context.userId, endpoint, requestJson);
         } catch (Exception e) {
             log.warn("Не удалось сериализовать запрос к LaoZhang API для логирования: {}", e.getMessage());
@@ -278,7 +312,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 }
             }
 
-            log.debug(structure.toString());
+            log.info(structure.toString());
         } catch (Exception e) {
             log.warn("Не удалось залогировать структуру ответа от LaoZhang API: {}", e.getMessage());
         }
@@ -288,13 +322,28 @@ public class LaoZhangProvider implements ImageGenerationProvider {
      * Сохранить изображения и получить их URL.
      */
     private Mono<GenerationContext> saveImages(GenerationContext context) {
+        if (context.base64Images == null || context.base64Images.isEmpty()) {
+            log.error("base64Images == null или пустой в saveImages для userId={}", context.userId);
+            return Mono.error(new IllegalStateException("base64Images не может быть null или пустым"));
+        }
+        if (context.user == null) {
+            log.error("user == null в saveImages для userId={}", context.userId);
+            return Mono.error(new IllegalStateException("user не может быть null"));
+        }
         String username = context.user.getUsername();
+        log.debug("Сохранение {} изображений для userId={}, username={}", 
+                context.base64Images.size(), context.userId, username);
         return Flux.fromIterable(context.base64Images)
                 .flatMap(base64Image -> base64ImageService.saveBase64ImageAndGetUrl(
                         base64Image, username, ProviderConstants.LaoZhang.IMAGE_SUBDIRECTORY))
                 .collectList()
                 .map(imageUrls -> {
+                    if (imageUrls == null || imageUrls.isEmpty()) {
+                        log.error("Сохранение изображений вернуло null или пустой список для userId={}", context.userId);
+                        throw new IllegalStateException("Не удалось сохранить изображения");
+                    }
                     context.imageUrls = imageUrls;
+                    log.debug("Успешно сохранено {} изображений для userId={}", imageUrls.size(), context.userId);
                     return context;
                 });
     }
@@ -329,7 +378,17 @@ public class LaoZhangProvider implements ImageGenerationProvider {
      * Создать ответ с изображениями.
      */
     private ImageRs createResponse(GenerationContext context) {
+        if (context.userPoints == null) {
+            log.error("userPoints == null в createResponse для userId={}", context.userId);
+            throw new IllegalStateException("userPoints не может быть null");
+        }
+        if (context.imageUrls == null || context.imageUrls.isEmpty()) {
+            log.error("imageUrls == null или пустой в createResponse для userId={}", context.userId);
+            throw new IllegalStateException("imageUrls не может быть null или пустым");
+        }
         Integer balance = context.userPoints.getPoints();
+        log.debug("Создание ImageRs для userId={}, imageUrls count={}, balance={}", 
+                context.userId, context.imageUrls.size(), balance);
         return new ImageRs(context.imageUrls, balance);
     }
 

@@ -56,10 +56,22 @@ public class GenerateController {
                                 // Для других провайдеров (например, LaoZhang AI) используем синхронную генерацию
                                 log.debug("Использование синхронной генерации через провайдер {} для пользователя {}", activeProvider, userId);
                                 return providerRouter.generateImage(imageRq, userId)
+                                        .doOnNext(imageRs -> {
+                                            log.info("Получен ImageRs от провайдера {} для userId={}: {} изображений", 
+                                                    activeProvider, userId, 
+                                                    imageRs != null && imageRs.getImageUrls() != null ? imageRs.getImageUrls().size() : 0);
+                                        })
                                         .flatMap(imageRs -> {
+                                            if (imageRs == null || imageRs.getImageUrls() == null || imageRs.getImageUrls().isEmpty()) {
+                                                log.error("ImageRs null или пустой для userId={}, sessionId={}", userId, imageRq.getSessionId());
+                                                return Mono.error(new FalAIException("Не удалось сгенерировать изображения", org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR));
+                                            }
+                                            
                                             // Находим последнюю сохраненную запись истории для получения реального ID
                                             return imageGenerationHistoryService.getLastHistoryBySessionId(imageRq.getSessionId(), userId)
                                                     .map(history -> {
+                                                        log.debug("Найдена история для синхронной генерации: historyId={}, userId={}, sessionId={}", 
+                                                                history.getId(), userId, imageRq.getSessionId());
                                                         // Преобразуем ImageRs в FalAIQueueRequestStatusDTO для совместимости
                                                         FalAIQueueRequestStatusDTO dto = new FalAIQueueRequestStatusDTO();
                                                         dto.setId(history.getId());
@@ -68,11 +80,14 @@ public class GenerateController {
                                                         dto.setImageUrls(imageRs.getImageUrls());
                                                         dto.setPrompt(imageRq.getPrompt());
                                                         dto.setSessionId(imageRq.getSessionId());
+                                                        log.info("Возвращаем DTO для синхронной генерации: id={}, imageUrls count={}", 
+                                                                dto.getId(), dto.getImageUrls().size());
                                                         return dto;
                                                     })
                                                     .switchIfEmpty(Mono.defer(() -> {
                                                         // Если история не найдена (не должно происходить), возвращаем с ID=0
-                                                        log.warn("История не найдена для синхронной генерации, userId={}, sessionId={}", userId, imageRq.getSessionId());
+                                                        log.warn("История не найдена для синхронной генерации, userId={}, sessionId={}. Используем ID=0", 
+                                                                userId, imageRq.getSessionId());
                                                         FalAIQueueRequestStatusDTO dto = new FalAIQueueRequestStatusDTO();
                                                         dto.setId(0L);
                                                         dto.setQueueStatus(ru.oparin.troyka.model.enums.QueueStatus.COMPLETED);
@@ -80,6 +95,8 @@ public class GenerateController {
                                                         dto.setImageUrls(imageRs.getImageUrls());
                                                         dto.setPrompt(imageRq.getPrompt());
                                                         dto.setSessionId(imageRq.getSessionId());
+                                                        log.info("Возвращаем DTO с ID=0 для синхронной генерации: imageUrls count={}", 
+                                                                dto.getImageUrls().size());
                                                         return Mono.just(dto);
                                                     }));
                                         });
