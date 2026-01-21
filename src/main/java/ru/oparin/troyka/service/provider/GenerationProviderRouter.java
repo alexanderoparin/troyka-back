@@ -13,7 +13,16 @@ import java.util.Map;
 
 /**
  * Роутер для выбора активного провайдера генерации изображений.
- * Маршрутизирует запросы к нужному провайдеру на основе настроек.
+ * <p>
+ * Маршрутизирует запросы к нужному провайдеру на основе настроек системы.
+ * Обеспечивает единую точку входа для всех провайдеров генерации изображений.
+ * <p>
+ * Особенности:
+ * <ul>
+ *   <li>Автоматический выбор активного провайдера из настроек</li>
+ *   <li>Валидация наличия провайдера в списке доступных</li>
+ *   <li>Логирование всех маршрутизаций</li>
+ * </ul>
  */
 @Slf4j
 @Service
@@ -26,25 +35,22 @@ public class GenerationProviderRouter {
     /**
      * Генерировать изображение через активного провайдера.
      *
-     * @param request запрос на генерацию
+     * @param request запрос на генерацию изображения
      * @param userId  идентификатор пользователя
      * @return ответ с изображениями
+     * @throws IllegalStateException если активный провайдер не найден в списке доступных
      */
     public Mono<ImageRs> generateImage(ImageRq request, Long userId) {
         return settingsService.getActiveProvider()
                 .flatMap(activeProvider -> {
-                    ImageGenerationProvider provider = providers.get(activeProvider);
-                    if (provider == null) {
-                        log.error("Провайдер {} не найден в списке доступных провайдеров", activeProvider);
-                        return Mono.error(new IllegalStateException("Провайдер " + activeProvider + " не найден"));
-                    }
+                    ImageGenerationProvider provider = getProviderOrError(activeProvider);
                     log.debug("Маршрутизация запроса к провайдеру: {}", activeProvider);
                     return provider.generateImage(request, userId);
                 });
     }
 
     /**
-     * Получить активного провайдера.
+     * Получить активного провайдера из настроек.
      *
      * @return активный провайдер
      */
@@ -60,5 +66,25 @@ public class GenerationProviderRouter {
      */
     public ImageGenerationProvider getProvider(GenerationProvider provider) {
         return providers.get(provider);
+    }
+
+    /**
+     * Получить провайдер или выбросить исключение, если он не найден.
+     *
+     * @param provider имя провайдера
+     * @return провайдер
+     * @throws IllegalStateException если провайдер не найден
+     */
+    private ImageGenerationProvider getProviderOrError(GenerationProvider provider) {
+        ImageGenerationProvider foundProvider = providers.get(provider);
+        if (foundProvider == null) {
+            String message = String.format(
+                    ProviderConstants.ErrorMessages.PROVIDER_NOT_FOUND,
+                    provider
+            );
+            log.error(message);
+            throw new IllegalStateException(message);
+        }
+        return foundProvider;
     }
 }
