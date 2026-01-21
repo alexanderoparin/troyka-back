@@ -75,10 +75,23 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         context.pointsNeeded = calculatePointsNeeded(request);
 
         return validatePoints(context)
-                .doOnSuccess(ignored -> log.debug("Валидация поинтов пройдена для userId={}", userId))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("Валидация поинтов пройдена для userId={}", ctx.userId);
+                    } else {
+                        log.error("Контекст null после validatePoints для userId={}", userId);
+                    }
+                })
                 .doOnError(error -> log.error("Ошибка при валидации поинтов для userId={}: {}", 
                         userId, error.getMessage(), error))
-                .flatMap(ignored -> prepareContext(context))
+                .flatMap(ctx -> {
+                    log.debug("Вызов prepareContext для userId={}, context null={}", userId, ctx == null);
+                    if (ctx == null) {
+                        log.error("Контекст null перед вызовом prepareContext для userId={}", userId);
+                        return Mono.error(new IllegalStateException("Контекст не может быть null перед prepareContext"));
+                    }
+                    return prepareContext(ctx);
+                })
                 .doOnSuccess(ctx -> {
                     if (ctx != null) {
                         log.debug("Контекст подготовлен для userId={}, sessionId={}", 
@@ -87,6 +100,8 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                         log.error("Контекст null после prepareContext для userId={}", userId);
                     }
                 })
+                .doOnError(error -> log.error("Ошибка после prepareContext для userId={}: {}", 
+                        userId, error.getMessage(), error))
                 .doOnError(error -> log.error("Ошибка при подготовке контекста для userId={}: {}", 
                         userId, error.getMessage(), error))
                 .flatMap(this::deductPoints)
@@ -149,13 +164,17 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 })
                 .doOnError(error -> log.error("Ошибка в цепочке генерации для userId={}: {}", 
                         userId, error.getMessage(), error))
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.error("Цепочка генерации вернула пустой Mono для userId={}", userId);
+                    return Mono.error(new IllegalStateException("Генерация не вернула результат"));
+                }))
                 .onErrorResume(error -> errorHandler.handleError(userId, error, context.pointsNeeded, context.pointsDeducted));
     }
 
     /**
      * Валидировать наличие достаточного количества поинтов у пользователя.
      */
-    private Mono<Void> validatePoints(GenerationContext context) {
+    private Mono<GenerationContext> validatePoints(GenerationContext context) {
         return userPointsService.hasEnoughPoints(context.userId, context.pointsNeeded)
                 .flatMap(hasEnough -> {
                     if (!hasEnough) {
@@ -165,7 +184,7 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                         );
                         return Mono.error(new FalAIException(message, HttpStatus.PAYMENT_REQUIRED));
                     }
-                    return Mono.empty();
+                    return Mono.just(context);
                 });
     }
 
