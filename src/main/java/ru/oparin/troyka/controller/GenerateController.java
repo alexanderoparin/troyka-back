@@ -1,6 +1,5 @@
 package ru.oparin.troyka.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +34,6 @@ public class GenerateController {
     private final GenerationProviderRouter providerRouter;
     private final ImageGenerationHistoryService imageGenerationHistoryService;
     private final UserService userService;
-    private final ObjectMapper objectMapper;
 
     /**
      * Отправить запрос на генерацию изображения в очередь Fal.ai.
@@ -47,24 +45,6 @@ public class GenerateController {
             description = "Отправляет запрос в очередь Fal.ai (если активен FAL AI) или выполняет синхронную генерацию (для других провайдеров)")
     @PostMapping("/submit")
     public Mono<ResponseEntity<FalAIQueueRequestStatusDTO>> submitToQueue(@RequestBody ImageRq imageRq) {
-        // Логируем полный JSON тела запроса
-        try {
-            String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(imageRq);
-            log.info("Получен запрос на генерацию изображения (полный JSON):\n{}", requestJson);
-        } catch (Exception e) {
-            log.warn("Не удалось сериализовать запрос для логирования: {}", e.getMessage());
-            // Логируем хотя бы основные поля вручную
-            log.info("Получен запрос на генерацию: prompt={}, numImages={}, sessionId={}, styleId={}, model={}, resolution={}, inputImageUrls count={}",
-                    imageRq.getPrompt(),
-                    imageRq.getNumImages(),
-                    imageRq.getSessionId(),
-                    imageRq.getStyleId(),
-                    imageRq.getModel(),
-                    imageRq.getResolution(),
-                    imageRq.getInputImageUrls() != null ? imageRq.getInputImageUrls().size() : 0);
-        }
-        
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> providerRouter.getActiveProvider()
                         .flatMap(activeProvider -> {

@@ -264,7 +264,18 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         logGenerationRequest(context, endpoint);
 
         return createLaoZhangRequest(context)
-                .doOnNext(request -> log.debug("LaoZhangRequest создан для userId={}, endpoint={}", context.userId, endpoint))
+                .doOnNext(request -> {
+                    log.debug("LaoZhangRequest создан для userId={}, endpoint={}", context.userId, endpoint);
+                    // Логируем полный JSON запроса к LaoZhang API сразу после создания
+                    try {
+                        String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
+                                .writeValueAsString(request);
+                        log.info("=== ЗАПРОС В LAOZHANG API (полный JSON) для userId={}, endpoint={} ===\n{}", 
+                                context.userId, endpoint, requestJson);
+                    } catch (Exception e) {
+                        log.warn("Не удалось сериализовать LaoZhangRequest для логирования: {}", e.getMessage());
+                    }
+                })
                 .doOnError(error -> log.error("Ошибка при создании LaoZhangRequest для userId={}: {}", context.userId, error.getMessage(), error))
                 .flatMap(laoZhangRequest -> {
                     log.debug("Отправка запроса в LaoZhang API для userId={}, endpoint={}", context.userId, endpoint);
