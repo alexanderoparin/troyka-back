@@ -79,27 +79,63 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 .doOnError(error -> log.error("Ошибка при валидации поинтов для userId={}: {}", 
                         userId, error.getMessage(), error))
                 .flatMap(ignored -> prepareContext(context))
-                .doOnSuccess(ctx -> log.debug("Контекст подготовлен для userId={}, sessionId={}", 
-                        ctx.userId, ctx.session != null ? ctx.session.getId() : null))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("Контекст подготовлен для userId={}, sessionId={}", 
+                                ctx.userId, ctx.session != null ? ctx.session.getId() : null);
+                    } else {
+                        log.error("Контекст null после prepareContext для userId={}", userId);
+                    }
+                })
                 .doOnError(error -> log.error("Ошибка при подготовке контекста для userId={}: {}", 
                         userId, error.getMessage(), error))
                 .flatMap(this::deductPoints)
-                .doOnSuccess(ctx -> log.debug("Поинты списаны для userId={}, pointsDeducted={}", 
-                        ctx.userId, ctx.pointsDeducted))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("Поинты списаны для userId={}, pointsDeducted={}", 
+                                ctx.userId, ctx.pointsDeducted);
+                    } else {
+                        log.error("Контекст null после deductPoints для userId={}", userId);
+                    }
+                })
                 .doOnError(error -> log.error("Ошибка при списании поинтов для userId={}: {}", 
                         userId, error.getMessage(), error))
                 .flatMap(this::executeGeneration)
                 .doOnError(error -> log.error("Ошибка в executeGeneration для userId={}: {}", 
                         userId, error.getMessage(), error))
-                .doOnSuccess(ctx -> log.debug("Генерация выполнена для userId={}, base64Images count={}", 
-                        ctx.userId, ctx.base64Images != null ? ctx.base64Images.size() : 0))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("Генерация выполнена для userId={}, base64Images count={}", 
+                                ctx.userId, ctx.base64Images != null ? ctx.base64Images.size() : 0);
+                    } else {
+                        log.error("Контекст null после executeGeneration для userId={}", userId);
+                    }
+                })
                 .flatMap(this::saveImages)
-                .doOnSuccess(ctx -> log.debug("Изображения сохранены для userId={}, imageUrls count={}", 
-                        ctx.userId, ctx.imageUrls != null ? ctx.imageUrls.size() : 0))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("Изображения сохранены для userId={}, imageUrls count={}", 
+                                ctx.userId, ctx.imageUrls != null ? ctx.imageUrls.size() : 0);
+                    } else {
+                        log.error("Контекст null после saveImages для userId={}", userId);
+                    }
+                })
                 .flatMap(this::saveHistory)
-                .doOnSuccess(ctx -> log.debug("История сохранена для userId={}", ctx.userId))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("История сохранена для userId={}", ctx.userId);
+                    } else {
+                        log.error("Контекст null после saveHistory для userId={}", userId);
+                    }
+                })
                 .flatMap(this::updateSession)
-                .doOnSuccess(ctx -> log.debug("Сессия обновлена для userId={}", ctx.userId))
+                .doOnSuccess(ctx -> {
+                    if (ctx != null) {
+                        log.debug("Сессия обновлена для userId={}", ctx.userId);
+                    } else {
+                        log.error("Контекст null после updateSession для userId={}", userId);
+                    }
+                })
                 .map(this::createResponse)
                 .doOnSuccess(response -> {
                     if (response != null && response.getImageUrls() != null && !response.getImageUrls().isEmpty()) {
@@ -137,18 +173,46 @@ public class LaoZhangProvider implements ImageGenerationProvider {
      * Подготовить контекст генерации: получить сессию, стиль и пользователя.
      */
     private Mono<GenerationContext> prepareContext(GenerationContext context) {
+        log.debug("Начало подготовки контекста для userId={}, sessionId={}, styleId={}", 
+                context.userId, context.request.getSessionId(), context.request.getStyleId());
         return sessionService.getOrCreateSession(context.request.getSessionId(), context.userId)
+                .doOnNext(session -> log.debug("Сессия получена для userId={}, sessionId={}", 
+                        context.userId, session != null ? session.getId() : null))
+                .doOnError(error -> log.error("Ошибка при получении сессии для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
                 .flatMap(session -> {
+                    if (session == null) {
+                        log.error("Сессия null для userId={}", context.userId);
+                        return Mono.error(new IllegalStateException("Сессия не может быть null"));
+                    }
                     context.session = session;
                     return artStyleService.getStyleById(context.request.getStyleId());
                 })
+                .doOnNext(style -> log.debug("Стиль получен для userId={}, styleId={}", 
+                        context.userId, style != null ? style.getId() : null))
+                .doOnError(error -> log.error("Ошибка при получении стиля для userId={}, styleId={}: {}", 
+                        context.userId, context.request.getStyleId(), error.getMessage(), error))
                 .flatMap(style -> {
+                    if (style == null) {
+                        log.error("Стиль null для userId={}, styleId={}", context.userId, context.request.getStyleId());
+                        return Mono.error(new IllegalStateException("Стиль не может быть null"));
+                    }
                     context.style = style;
                     return userService.findByIdOrThrow(context.userId);
                 })
+                .doOnNext(user -> log.debug("Пользователь получен для userId={}", 
+                        user != null ? user.getId() : null))
+                .doOnError(error -> log.error("Ошибка при получении пользователя для userId={}: {}", 
+                        context.userId, error.getMessage(), error))
                 .map(user -> {
+                    if (user == null) {
+                        log.error("Пользователь null для userId={}", context.userId);
+                        throw new IllegalStateException("Пользователь не может быть null");
+                    }
                     context.user = user;
                     context.finalPrompt = buildFinalPrompt(context.request.getPrompt(), context.style);
+                    log.debug("Контекст подготовлен успешно для userId={}, finalPrompt length={}", 
+                            context.userId, context.finalPrompt != null ? context.finalPrompt.length() : 0);
                     return context;
                 });
     }
