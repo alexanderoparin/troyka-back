@@ -107,21 +107,24 @@ public class SessionController {
      * Получить детальную информацию о сессии с историей сообщений.
      * История возвращается с пагинацией для оптимизации производительности.
      *
-     * @param sessionId идентификатор сессии
+     * @param sessionIdStr строковое представление идентификатора сессии (будет валидировано и преобразовано в Long)
      * @param page номер страницы истории (начиная с 0)
      * @param size размер страницы истории
      * @return детальная информация о сессии с историей сообщений
+     * @throws IllegalArgumentException если sessionIdStr некорректный (null, пустой, "undefined", "null" или не число)
      */
     @GetMapping("/{sessionId}")
     @Operation(summary = "Получить детали сессии", 
                description = "Возвращает детальную информацию о сессии с историей сообщений")
     public Mono<ResponseEntity<SessionDetailDTO>> getSessionDetail(
             @Parameter(description = "Идентификатор сессии") 
-            @PathVariable Long sessionId,
+            @PathVariable("sessionId") String sessionIdStr,
             @Parameter(description = "Номер страницы истории (начиная с 0)") 
             @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Размер страницы истории") 
             @RequestParam(defaultValue = "20") int size) {
+        
+        Long sessionId = validateAndParseSessionId(sessionIdStr);
         
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.getSessionDetail(sessionId, userId, page, size))
@@ -137,17 +140,20 @@ public class SessionController {
      * Переименовать сессию.
      * Пользователь может изменить название сессии на любое удобное ему.
      *
-     * @param sessionId идентификатор сессии
+     * @param sessionIdStr строковое представление идентификатора сессии (будет валидировано и преобразовано в Long)
      * @param request данные для переименования (новое название)
      * @return обновленная сессия с новым названием
+     * @throws IllegalArgumentException если sessionIdStr некорректный (null, пустой, "undefined", "null" или не число)
      */
     @PutMapping("/{sessionId}/rename")
     @Operation(summary = "Переименовать сессию", 
                description = "Изменяет название сессии")
     public Mono<ResponseEntity<RenameSessionResponseDTO>> renameSession(
             @Parameter(description = "Идентификатор сессии") 
-            @PathVariable Long sessionId,
+            @PathVariable("sessionId") String sessionIdStr,
             @Valid @RequestBody RenameSessionRequestDTO request) {
+        
+        Long sessionId = validateAndParseSessionId(sessionIdStr);
         
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.renameSession(sessionId, userId, request.getName()))
@@ -163,15 +169,18 @@ public class SessionController {
      * Удалить сессию и все связанные записи истории.
      * Это действие необратимо - все изображения и история диалога будут удалены.
      *
-     * @param sessionId идентификатор сессии
+     * @param sessionIdStr строковое представление идентификатора сессии (будет валидировано и преобразовано в Long)
      * @return результат удаления с количеством удаленных записей истории
+     * @throws IllegalArgumentException если sessionIdStr некорректный (null, пустой, "undefined", "null" или не число)
      */
     @DeleteMapping("/{sessionId}")
     @Operation(summary = "Удалить сессию", 
                description = "Удаляет сессию и все связанные записи истории")
     public Mono<ResponseEntity<DeleteSessionResponseDTO>> deleteSession(
             @Parameter(description = "Идентификатор сессии") 
-            @PathVariable Long sessionId) {
+            @PathVariable("sessionId") String sessionIdStr) {
+        
+        Long sessionId = validateAndParseSessionId(sessionIdStr);
         
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> sessionService.deleteSession(sessionId, userId))
@@ -181,5 +190,26 @@ public class SessionController {
                         log.error("Ошибка при удалении сессии {}", sessionId, error);
                     }
                 });
+    }
+
+    /**
+     * Валидировать и преобразовать строковый sessionId в Long.
+     * 
+     * @param sessionIdStr строковое представление идентификатора сессии
+     * @return Long идентификатор сессии
+     * @throws IllegalArgumentException если sessionId некорректный
+     */
+    private Long validateAndParseSessionId(String sessionIdStr) {
+        if (sessionIdStr == null || sessionIdStr.isEmpty() || 
+            "undefined".equalsIgnoreCase(sessionIdStr) || 
+            "null".equalsIgnoreCase(sessionIdStr)) {
+            throw new IllegalArgumentException("Некорректный идентификатор сессии: " + sessionIdStr);
+        }
+        
+        try {
+            return Long.parseLong(sessionIdStr);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Некорректный формат идентификатора сессии: " + sessionIdStr, e);
+        }
     }
 }

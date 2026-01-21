@@ -100,13 +100,16 @@ public class GenerateController {
     /**
      * Получить статус запроса генерации по внутреннему ID.
      *
-     * @param id внутренний идентификатор записи в ImageGenerationHistory
+     * @param idStr строковое представление внутреннего идентификатора записи в ImageGenerationHistory (будет валидировано и преобразовано в Long)
      * @return статус запроса
+     * @throws IllegalArgumentException если idStr некорректный (null, пустой, "undefined", "null" или не число)
      */
     @Operation(summary = "Получить статус запроса генерации",
             description = "Возвращает текущий статус запроса генерации по внутреннему ID")
     @GetMapping("/status/{id}")
-    public Mono<ResponseEntity<FalAIQueueRequestStatusDTO>> getRequestStatus(@PathVariable Long id) {
+    public Mono<ResponseEntity<FalAIQueueRequestStatusDTO>> getRequestStatus(@PathVariable("id") String idStr) {
+        Long id = validateAndParseId(idStr);
+        
         return SecurityUtil.checkStudioAccess(userService)
                 .flatMap(userId -> providerRouter.getActiveProvider()
                         .flatMap(activeProvider -> {
@@ -149,5 +152,26 @@ public class GenerateController {
                         log.error("Ошибка при получении активных запросов пользователя", error);
                     }
                 });
+    }
+
+    /**
+     * Валидировать и преобразовать строковый id в Long.
+     * 
+     * @param idStr строковое представление идентификатора
+     * @return Long идентификатор
+     * @throws IllegalArgumentException если id некорректный
+     */
+    private Long validateAndParseId(String idStr) {
+        if (idStr == null || idStr.isEmpty() || 
+            "undefined".equalsIgnoreCase(idStr) || 
+            "null".equalsIgnoreCase(idStr)) {
+            throw new IllegalArgumentException("Некорректный идентификатор: " + idStr);
+        }
+        
+        try {
+            return Long.parseLong(idStr);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Некорректный формат идентификатора: " + idStr, e);
+        }
     }
 }

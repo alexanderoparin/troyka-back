@@ -83,9 +83,13 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 .flatMap(this::updateSession)
                 .map(this::createResponse)
                 .doOnSuccess(response -> {
-                    Long sessionId = context.session != null ? context.session.getId() : null;
-                    log.info("Успешно получен ответ с изображением для сессии {}: {}",
-                            sessionId != null ? sessionId : "unknown", response);
+                    if (response != null && response.getImageUrls() != null && !response.getImageUrls().isEmpty()) {
+                        Long sessionId = context.session != null ? context.session.getId() : null;
+                        log.info("Успешно получен ответ с изображением для сессии {}: {} изображений",
+                                sessionId != null ? sessionId : "unknown", response.getImageUrls().size());
+                    } else {
+                        log.warn("Получен null или пустой response после генерации для userId={}", context.userId);
+                    }
                 })
                 .onErrorResume(error -> errorHandler.handleError(userId, error, context.pointsNeeded, context.pointsDeducted));
     }
