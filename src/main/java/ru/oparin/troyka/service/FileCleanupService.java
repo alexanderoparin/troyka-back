@@ -159,13 +159,7 @@ public class FileCleanupService {
                     
                     ImageGenerationHistory lastHistory = histories.get(0);
                     if (lastHistory.getCreatedAt().isBefore(oneMonthAgo)) {
-                        log.info("Найден неактивный пользователь без платежей (ID: {}), последняя генерация: {}", 
-                                userId, lastHistory.getCreatedAt());
-                        
-                        return extractFilesFromHistories(histories)
-                                .doOnNext(file -> 
-                                    log.debug("Файл неактивного пользователя без платежей для удаления: {}", file)
-                                );
+                        return extractFilesFromHistories(histories);
                     }
                     return Flux.empty();
                 });
@@ -370,7 +364,7 @@ public class FileCleanupService {
      * @param deletedCount счетчик удаленных файлов (обновляется в процессе обработки)
      */
     private void processInfectedFiles(Path rootPath, Path directory, AtomicInteger deletedCount) {
-        Set<String> allowedSubdirectories = Set.of("avatar", "examples");
+        Set<String> allowedSubdirectories = Set.of("avatar", "examples", "lz");
         
         processDirectoryRecursive(rootPath, directory, path -> {
             if (Files.isDirectory(path)) {
