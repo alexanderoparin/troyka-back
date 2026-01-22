@@ -85,14 +85,14 @@ public class RobokassaService {
      * @throws RuntimeException если произошла ошибка при создании платежа
      */
     public Mono<PaymentResponse> createPayment(PaymentRequest request) {
-        // Используем количество поинтов из запроса
         Integer creditsAmount = request.getCredits();
+        String descriptionWithUserId = request.getDescription() + " - user_id=" + request.getUserId();
 
         // Создаем платеж в БД
         Payment payment = Payment.builder()
                 .userId(request.getUserId())
                 .amount(BigDecimal.valueOf(request.getAmount()))
-                .description(request.getDescription())
+                .description(descriptionWithUserId)
                 .status(PaymentStatus.CREATED)
                 .creditsAmount(creditsAmount)
                 .isTest(isTest)
@@ -104,14 +104,14 @@ public class RobokassaService {
                         // Используем ID платежа как InvId для Robokassa
                         String invId = savedPayment.getId().toString();
 
-                        // Создаем Receipt для фискализации
-                        Receipt receipt = createDefaultReceipt(request.getDescription(), request.getAmount());
+                        // Создаем Receipt для фискализации (используем оригинальное описание без user_id)
+                        Receipt receipt = createDefaultReceipt(descriptionWithUserId, request.getAmount());
 
                         // Создаем подпись для запроса (включая Receipt)
                         String signature = createSignature(request.getAmount(), invId, receipt);
 
-                        // Формируем URL для оплаты
-                        String paymentUrl = buildPaymentUrl(request.getAmount(), invId, request.getDescription(), signature, receipt);
+                        // Формируем URL для оплаты (используем оригинальное описание без user_id)
+                        String paymentUrl = buildPaymentUrl(request.getAmount(), invId, descriptionWithUserId, signature, receipt);
 
                         // Обновляем платеж с подписью и URL
                         savedPayment.setRobokassaSignature(signature);
