@@ -18,6 +18,7 @@ import reactor.netty.http.client.HttpClient;
 import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.config.properties.LaoZhangProperties;
 import ru.oparin.troyka.exception.FalAIException;
+import ru.oparin.troyka.exception.ProviderFallbackException;
 import ru.oparin.troyka.mapper.LaoZhangMapper;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
@@ -320,18 +321,33 @@ public class LaoZhangProvider implements ImageGenerationProvider {
     private Mono<List<String>> extractBase64Images(LaoZhangResponseDTO response) {
         if (response == null || response.getCandidates() == null || response.getCandidates().isEmpty()) {
             logFullResponse(response, "Пустой ответ от LaoZhang API (response или candidates == null)");
-            return Mono.error(new FalAIException(
+            return Mono.error(new ProviderFallbackException(
                     ProviderConstants.ErrorMessages.EMPTY_RESPONSE,
-                    HttpStatus.UNPROCESSABLE_ENTITY));
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "EMPTY_RESPONSE"));
         }
 
         List<String> base64Images = getImagesFromResponse(response);
 
         if (base64Images.isEmpty()) {
             logFullResponse(response, "Не найдено base64 изображений в ответе LaoZhang API");
-            return Mono.error(new FalAIException(
-                    ProviderConstants.ErrorMessages.NO_IMAGES_IN_RESPONSE,
-                    HttpStatus.UNPROCESSABLE_ENTITY));
+            // Проверяем finishReason для более точной диагностики
+            String finishReason = null;
+            if (response.getCandidates() != null && !response.getCandidates().isEmpty()) {
+                finishReason = response.getCandidates().get(0).getFinishReason();
+            }
+            String errorType = "NO_IMAGES_IN_RESPONSE";
+            String errorMessage = ProviderConstants.ErrorMessages.NO_IMAGES_IN_RESPONSE;
+            if (finishReason != null) {
+                errorMessage += " (finishReason: " + finishReason + ")";
+                if ("NO_IMAGE".equals(finishReason) || "SAFETY".equals(finishReason) || "RECITATION".equals(finishReason)) {
+                    errorType = "PROVIDER_REJECTED";
+                }
+            }
+            return Mono.error(new ProviderFallbackException(
+                    errorMessage,
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    errorType));
         }
 
         return Mono.just(base64Images);

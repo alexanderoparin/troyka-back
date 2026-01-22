@@ -35,11 +35,40 @@ public class ProviderErrorHandler {
      * @return Mono с ошибкой для дальнейшей обработки
      */
     public Mono<ImageRs> handleError(Long userId, Throwable error, Integer pointsNeeded, boolean pointsDeducted) {
-        log.error("Ошибка при работе с провайдером для userId={}, pointsNeeded={}, pointsDeducted={}: {}",
-                userId, pointsNeeded, pointsDeducted, error.getMessage(), error);
+        // Проверяем, требует ли ошибка fallback - для таких ошибок логируем как WARN без stack trace
+        boolean requiresFallback = requiresFallback(error);
+        if (requiresFallback) {
+            log.warn("Ошибка провайдера (требует fallback) для userId={}, pointsNeeded={}, pointsDeducted={}: {}",
+                    userId, pointsNeeded, pointsDeducted, error.getMessage());
+        } else {
+            // Для ошибок, не требующих fallback, логируем как ERROR с полным stack trace
+            log.error("Ошибка при работе с провайдером для userId={}, pointsNeeded={}, pointsDeducted={}: {}",
+                    userId, pointsNeeded, pointsDeducted, error.getMessage(), error);
+        }
 
-        // Если это уже наш кастомный эксепшн, возвращаем его без изменений
-        if (error instanceof FalAIException) {
+        // Если это уже ProviderFallbackException, возвращаем его без изменений
+        if (error instanceof ProviderFallbackException) {
+            return Mono.error(error);
+        }
+
+        // Если это FalAIException, проверяем, требует ли он fallback
+        if (error instanceof FalAIException falError) {
+            if (requiresFallback(error)) {
+                // Преобразуем в ProviderFallbackException для fallback
+                String message = falError.getMessage();
+                String errorType = message != null && message.contains("Не найдено изображений") 
+                        ? "NO_IMAGES_IN_RESPONSE" 
+                        : message != null && message.contains("Пустой ответ")
+                        ? "EMPTY_RESPONSE"
+                        : "PROVIDER_ERROR";
+                return Mono.error(new ProviderFallbackException(
+                        message != null ? message : "Ошибка провайдера",
+                        falError.getStatus(),
+                        errorType,
+                        falError.getStatus() != null ? falError.getStatus().value() : null
+                ));
+            }
+            // Если fallback не требуется, возвращаем как есть
             return Mono.error(error);
         }
 
@@ -71,6 +100,7 @@ public class ProviderErrorHandler {
      * - HTTP ошибок 5xx (серверные ошибки)
      * - HTTP ошибок 413 (Payload Too Large)
      * - HTTP ошибок 503 (Service Unavailable)
+     * - Ошибок провайдера (FalAIException с определенными типами)
      * <p>
      * Fallback НЕ требуется для:
      * - HTTP ошибок 4xx (кроме 413, 503) - это ошибки клиента
@@ -84,6 +114,22 @@ public class ProviderErrorHandler {
         // Если это уже ProviderFallbackException, значит fallback уже требуется
         if (error instanceof ProviderFallbackException) {
             return true;
+        }
+
+        // Проверяем FalAIException - некоторые типы ошибок требуют fallback
+        if (error instanceof FalAIException falError) {
+            String message = falError.getMessage();
+            // Ошибки типа "Не найдено изображений" или "Пустой ответ" - это проблемы провайдера, требуют fallback
+            if (message != null && (
+                    message.contains("Не найдено изображений") ||
+                    message.contains("Пустой ответ") ||
+                    message.contains("NO_IMAGE") ||
+                    message.contains("PROVIDER_REJECTED")
+            )) {
+                return true;
+            }
+            // Остальные FalAIException не требуют fallback (например, недостаточно поинтов)
+            return false;
         }
 
         // Таймауты требуют fallback
