@@ -9,22 +9,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
-import ru.oparin.troyka.model.dto.admin.AdminPaymentDTO;
-import ru.oparin.troyka.model.dto.admin.AdminStatsDTO;
-import ru.oparin.troyka.model.dto.admin.AdminUserDTO;
-import ru.oparin.troyka.model.dto.admin.GenerationProviderDTO;
-import ru.oparin.troyka.model.dto.admin.SetActiveProviderRequest;
-import ru.oparin.troyka.model.dto.admin.UserStatisticsDTO;
+import ru.oparin.troyka.model.dto.admin.*;
 import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.system.SystemStatusHistoryDTO;
 import ru.oparin.troyka.model.dto.system.SystemStatusRequest;
 import ru.oparin.troyka.model.enums.GenerationProvider;
-import ru.oparin.troyka.service.AdminService;
-import ru.oparin.troyka.service.GenerationProviderSettingsService;
-import ru.oparin.troyka.service.SystemStatusService;
-import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.service.*;
 import ru.oparin.troyka.service.provider.GenerationProviderRouter;
-import ru.oparin.troyka.service.provider.ImageGenerationProvider;
 import ru.oparin.troyka.util.SecurityUtil;
 
 import java.time.LocalDateTime;
@@ -45,6 +36,7 @@ public class AdminController {
     private final SystemStatusService systemStatusService;
     private final GenerationProviderSettingsService providerSettingsService;
     private final GenerationProviderRouter providerRouter;
+    private final ProviderFallbackMetricsService fallbackMetricsService;
 
     @Operation(summary = "Получить все оплаченные платежи",
             description = "Возвращает список всех успешно оплаченных платежей в системе. Требуется роль ADMIN.")
@@ -235,6 +227,19 @@ public class AdminController {
                     log.error("Ошибка установки активного провайдера: {}", e.getMessage());
                     return Mono.just(ResponseEntity.status(403)
                             .body(new MessageResponse("Ошибка установки провайдера: " + e.getMessage())));
+                });
+    }
+
+    @Operation(summary = "Получить статистику fallback переключений между провайдерами",
+            description = "Возвращает статистику автоматических переключений на резервный провайдер при ошибках. Требуется роль ADMIN.")
+    @GetMapping("/provider-fallback-stats")
+    public Mono<ResponseEntity<ProviderFallbackStatsDTO>> getProviderFallbackStats() {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMap(admin -> fallbackMetricsService.getFallbackStats()
+                        .map(ResponseEntity::ok))
+                .onErrorResume(e -> {
+                    log.error("Ошибка получения статистики fallback: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403).build());
                 });
     }
 }

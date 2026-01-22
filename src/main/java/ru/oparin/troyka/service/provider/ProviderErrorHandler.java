@@ -8,6 +8,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.FalAIException;
+import ru.oparin.troyka.exception.ProviderFallbackException;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
 import ru.oparin.troyka.service.UserPointsService;
 
@@ -42,12 +43,12 @@ public class ProviderErrorHandler {
             return Mono.error(error);
         }
 
-        // Обрабатываем таймауты
+        // Обрабатываем таймауты (требуют fallback)
         if (isTimeoutError(error)) {
             return handleTimeout(userId, pointsNeeded, pointsDeducted);
         }
 
-        // Обрабатываем ошибки подключения
+        // Обрабатываем ошибки подключения (требуют fallback)
         if (error instanceof WebClientRequestException) {
             return handleConnectionError(userId, pointsNeeded, pointsDeducted);
         }
@@ -57,8 +58,104 @@ public class ProviderErrorHandler {
             return handleProviderError(userId, pointsNeeded, pointsDeducted, webError);
         }
 
-        // Обрабатываем неизвестные ошибки
+        // Обрабатываем неизвестные ошибки (требуют fallback)
         return handleUnknownError(userId, pointsNeeded, pointsDeducted, error);
+    }
+
+    /**
+     * Проверить, требует ли ошибка fallback переключения на резервный провайдер.
+     * <p>
+     * Fallback требуется для:
+     * - Таймаутов
+     * - Ошибок подключения
+     * - HTTP ошибок 5xx (серверные ошибки)
+     * - HTTP ошибок 413 (Payload Too Large)
+     * - HTTP ошибок 503 (Service Unavailable)
+     * <p>
+     * Fallback НЕ требуется для:
+     * - HTTP ошибок 4xx (кроме 413, 503) - это ошибки клиента
+     * - Ошибок валидации
+     * - Недостаточно поинтов
+     *
+     * @param error ошибка
+     * @return true если требуется fallback, false в противном случае
+     */
+    public boolean requiresFallback(Throwable error) {
+        // Если это уже ProviderFallbackException, значит fallback уже требуется
+        if (error instanceof ProviderFallbackException) {
+            return true;
+        }
+
+        // Таймауты требуют fallback
+        if (isTimeoutError(error)) {
+            return true;
+        }
+
+        // Ошибки подключения требуют fallback
+        if (error instanceof WebClientRequestException) {
+            return true;
+        }
+
+        // HTTP ошибки от провайдера
+        if (error instanceof WebClientResponseException webError) {
+            HttpStatus status = HttpStatus.resolve(webError.getStatusCode().value());
+            if (status == null) {
+                return false;
+            }
+
+            // Серверные ошибки (5xx) требуют fallback
+            if (status.is5xxServerError()) {
+                return true;
+            }
+
+            // Специфичные клиентские ошибки, которые могут быть проблемой провайдера
+            if (status == HttpStatus.PAYLOAD_TOO_LARGE || status == HttpStatus.SERVICE_UNAVAILABLE) {
+                return true;
+            }
+
+            // Остальные 4xx ошибки - это ошибки клиента, fallback не требуется
+            return false;
+        }
+
+        // Неизвестные ошибки требуют fallback (на всякий случай)
+        return true;
+    }
+
+    /**
+     * Извлечь информацию об ошибке для метрик fallback.
+     *
+     * @param error ошибка
+     * @return массив [errorType, httpStatus, errorMessage]
+     */
+    public String[] extractErrorInfo(Throwable error) {
+        String errorType;
+        Integer httpStatus = null;
+        String errorMessage = error.getMessage();
+
+        if (error instanceof ProviderFallbackException fallbackError) {
+            errorType = fallbackError.getErrorType();
+            httpStatus = fallbackError.getHttpStatus();
+        } else if (isTimeoutError(error)) {
+            errorType = "TIMEOUT";
+        } else if (error instanceof WebClientRequestException) {
+            errorType = "CONNECTION_ERROR";
+        } else if (error instanceof WebClientResponseException webError) {
+            httpStatus = webError.getStatusCode().value();
+            HttpStatus status = HttpStatus.resolve(httpStatus);
+            if (status != null && status.is5xxServerError()) {
+                errorType = "HTTP_5XX";
+            } else if (status == HttpStatus.PAYLOAD_TOO_LARGE) {
+                errorType = "PAYLOAD_TOO_LARGE";
+            } else if (status == HttpStatus.SERVICE_UNAVAILABLE) {
+                errorType = "SERVICE_UNAVAILABLE";
+            } else {
+                errorType = "HTTP_ERROR";
+            }
+        } else {
+            errorType = "UNKNOWN_ERROR";
+        }
+
+        return new String[]{errorType, httpStatus != null ? httpStatus.toString() : null, errorMessage};
     }
 
     /**
@@ -76,9 +173,10 @@ public class ProviderErrorHandler {
     private Mono<ImageRs> handleTimeout(Long userId, Integer pointsNeeded, boolean pointsDeducted) {
         log.warn("Timeout при запросе к провайдеру для userId={}.", userId);
         return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
-                .then(Mono.error(new FalAIException(
+                .then(Mono.error(new ProviderFallbackException(
                         ProviderConstants.ErrorMessages.TIMEOUT_MESSAGE,
-                        HttpStatus.REQUEST_TIMEOUT)));
+                        HttpStatus.REQUEST_TIMEOUT,
+                        "TIMEOUT")));
     }
 
     /**
@@ -87,9 +185,10 @@ public class ProviderErrorHandler {
     private Mono<ImageRs> handleConnectionError(Long userId, Integer pointsNeeded, boolean pointsDeducted) {
         log.warn("Ошибка подключения к провайдеру для userId={}.", userId);
         return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
-                .then(Mono.error(new FalAIException(
+                .then(Mono.error(new ProviderFallbackException(
                         ProviderConstants.ErrorMessages.CONNECTION_ERROR,
-                        HttpStatus.SERVICE_UNAVAILABLE)));
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "CONNECTION_ERROR")));
     }
 
     /**
@@ -102,8 +201,29 @@ public class ProviderErrorHandler {
                 userId, webError.getStatusCode(), responseBody);
 
         String message = buildProviderErrorMessage(webError, responseBody);
-        return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
-                .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
+        HttpStatus status = HttpStatus.resolve(webError.getStatusCode().value());
+        
+        // Определяем, требует ли ошибка fallback
+        boolean requiresFallback = status != null && (
+                status.is5xxServerError() ||
+                status == HttpStatus.PAYLOAD_TOO_LARGE ||
+                status == HttpStatus.SERVICE_UNAVAILABLE
+        );
+
+        if (requiresFallback) {
+            String errorType = status.is5xxServerError() ? "HTTP_5XX" :
+                    status == HttpStatus.PAYLOAD_TOO_LARGE ? "PAYLOAD_TOO_LARGE" : "SERVICE_UNAVAILABLE";
+            return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
+                    .then(Mono.error(new ProviderFallbackException(
+                            message,
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            errorType,
+                            webError.getStatusCode().value())));
+        } else {
+            // Ошибки клиента (4xx кроме указанных выше) не требуют fallback
+            return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
+                    .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
+        }
     }
 
     /**
@@ -138,7 +258,10 @@ public class ProviderErrorHandler {
                 error.getMessage()
         );
         return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
-                .then(Mono.error(new FalAIException(message, HttpStatus.INTERNAL_SERVER_ERROR)));
+                .then(Mono.error(new ProviderFallbackException(
+                        message,
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "UNKNOWN_ERROR")));
     }
 
     /**
