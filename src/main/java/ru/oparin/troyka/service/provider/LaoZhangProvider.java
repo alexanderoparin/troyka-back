@@ -166,11 +166,12 @@ public class LaoZhangProvider implements ImageGenerationProvider {
 
         return createLaoZhangRequest(context)
                 .doOnNext(request -> {
-                    // Логируем полный JSON запроса к LaoZhang API
+                    // Логируем JSON запроса к LaoZhang API (без больших base64 данных)
                     try {
+                        LaoZhangRequestDTO loggableRequest = createLoggableRequest(request);
                         String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
-                                .writeValueAsString(request);
-                        log.info("=== ЗАПРОС В LAOZHANG API (полный JSON) для userId={}, endpoint={} ===\n{}", 
+                                .writeValueAsString(loggableRequest);
+                        log.info("=== ЗАПРОС В LAOZHANG API для userId={}, endpoint={} ===\n{}", 
                                 context.userId, endpoint, requestJson);
                     } catch (Exception e) {
                         log.warn("Не удалось сериализовать LaoZhangRequest для логирования: {}", e.getMessage());
@@ -382,6 +383,73 @@ public class LaoZhangProvider implements ImageGenerationProvider {
                 + mimeType
                 + ProviderConstants.LaoZhang.DATA_URL_SEPARATOR
                 + base64Data;
+    }
+
+    /**
+     * Создать версию запроса для логирования, где большие base64 данные заменены на информацию о размере.
+     *
+     * @param request оригинальный запрос
+     * @return запрос для логирования с сокращенными данными изображений
+     */
+    private LaoZhangRequestDTO createLoggableRequest(LaoZhangRequestDTO request) {
+        if (request == null || request.getContents() == null) {
+            return request;
+        }
+
+        List<LaoZhangRequestDTO.Content> loggableContents = new ArrayList<>();
+        for (LaoZhangRequestDTO.Content content : request.getContents()) {
+            if (content == null || content.getParts() == null) {
+                loggableContents.add(content);
+                continue;
+            }
+
+            List<LaoZhangRequestDTO.Part> loggableParts = new ArrayList<>();
+            for (LaoZhangRequestDTO.Part part : content.getParts()) {
+                if (part == null) {
+                    loggableParts.add(part);
+                    continue;
+                }
+
+                // Если это изображение с inlineData, заменяем base64 на информацию о размере
+                if (part.getInlineData() != null && part.getInlineData().getData() != null) {
+                    String originalData = part.getInlineData().getData();
+                    int dataSize = originalData.length();
+                    String mimeType = part.getInlineData().getMimeType() != null 
+                            ? part.getInlineData().getMimeType() 
+                            : "unknown";
+                    
+                    // Приблизительный размер в байтах (base64 примерно на 33% больше оригинала)
+                    int approximateBytes = (int) (dataSize * 0.75);
+                    String sizeInfo = String.format("[base64 data: %d chars (~%d KB), mimeType: %s]", 
+                            dataSize, approximateBytes / 1024, mimeType);
+                    
+                    LaoZhangRequestDTO.InlineData loggableInlineData = LaoZhangRequestDTO.InlineData.builder()
+                            .mimeType(mimeType)
+                            .data(sizeInfo)
+                            .build();
+                    
+                    LaoZhangRequestDTO.Part loggablePart = LaoZhangRequestDTO.Part.builder()
+                            .text(part.getText())
+                            .inlineData(loggableInlineData)
+                            .build();
+                    
+                    loggableParts.add(loggablePart);
+                } else {
+                    // Для текстовых частей оставляем как есть
+                    loggableParts.add(part);
+                }
+            }
+
+            LaoZhangRequestDTO.Content loggableContent = LaoZhangRequestDTO.Content.builder()
+                    .parts(loggableParts)
+                    .build();
+            loggableContents.add(loggableContent);
+        }
+
+        return LaoZhangRequestDTO.builder()
+                .contents(loggableContents)
+                .generationConfig(request.getGenerationConfig())
+                .build();
     }
 
     /**
