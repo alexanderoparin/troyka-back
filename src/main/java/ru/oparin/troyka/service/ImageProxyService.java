@@ -40,10 +40,7 @@ public class ImageProxyService {
      * @return содержимое изображения в виде байтов
      */
     public Mono<byte[]> proxyImage(String version, String fullPath) {
-        // Извлекаем путь после версии (например: /images/v1/b/rabbit/file.jpg -> b/rabbit/file.jpg)
         String filePath = extractFilePath(fullPath, version);
-        log.info("Проксирование изображения: version={}, path={}", version, filePath);
-
         String sourceUrl = buildSourceUrl(version, filePath);
         return webClientBuilder.build()
                 .get()

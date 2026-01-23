@@ -42,14 +42,10 @@ public class ImageProxyController {
         return imageProxyService.proxyImage(version, requestPath)
                 .map(fileData -> {
                     String contentType = determineContentTypeFromData(fileData);
-                    double sizeMB = fileData.length / (1024.0 * 1024.0);
-                    log.debug("Успешно проксировано изображение: size={} MB, contentType={}",
-                            String.format("%.2f", sizeMB), contentType);
-                    
                     return ResponseEntity.ok()
                             .contentType(MediaType.parseMediaType(contentType))
-                            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600") // Кешируем на 1 час (HTTP кеш, не хранение на диске)
-                            .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*") // CORS
+                            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+                            .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                             .header(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET")
                             .header(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, "Accept, Accept-Language, Content-Language, Content-Type")
                             .body(fileData);
