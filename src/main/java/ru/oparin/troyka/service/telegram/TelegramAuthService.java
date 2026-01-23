@@ -15,10 +15,7 @@ import ru.oparin.troyka.model.dto.auth.AuthResponse;
 import ru.oparin.troyka.model.dto.auth.TelegramAuthRequest;
 import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.enums.Role;
-import ru.oparin.troyka.service.JwtService;
-import ru.oparin.troyka.service.SessionService;
-import ru.oparin.troyka.service.UserPointsService;
-import ru.oparin.troyka.service.UserService;
+import ru.oparin.troyka.service.*;
 import ru.oparin.troyka.util.SecurityUtil;
 
 import javax.crypto.Mac;
@@ -46,6 +43,8 @@ public class TelegramAuthService {
     private final SessionService sessionService;
     private final TelegramMapper telegramMapper;
     private final GenerationProperties generationProperties;
+    private final EmailDomainBlacklistService emailDomainBlacklistService;
+    private final BlockedRegistrationMetricsService blockedRegistrationMetricsService;
 
     @Value("${jwt.expiration}")
     private long expiration;
@@ -58,9 +57,11 @@ public class TelegramAuthService {
      * Создает нового пользователя или находит существующего по telegram_id.
      *
      * @param request данные от Telegram Login Widget
+     * @param ipAddress IP адрес клиента
+     * @param userAgent User-Agent браузера
      * @return JWT токен и информация о пользователе
      */
-    public Mono<AuthResponse> loginWithTelegram(TelegramAuthRequest request) {
+    public Mono<AuthResponse> loginWithTelegram(TelegramAuthRequest request, String ipAddress, String userAgent) {
         return validateTelegramData(request)
                 .then(Mono.defer(() -> {
                     // Ищем пользователя по telegram_id (безопасно)
@@ -82,6 +83,33 @@ public class TelegramAuthService {
                             .switchIfEmpty(Mono.defer(() -> {
                                 // Если есть email - предлагаем привязку к существующему аккаунту
                                 if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
+                                    // Проверяем, не заблокирован ли домен email
+                                    if (emailDomainBlacklistService.isDomainBlocked(request.getEmail())) {
+                                        log.warn("Попытка регистрации через Telegram с заблокированным email доменом: {}", request.getEmail());
+                                        
+                                        // Извлекаем домен из email
+                                        String emailDomain = request.getEmail().substring(request.getEmail().indexOf('@') + 1).toLowerCase();
+                                        
+                                        // Записываем метрику блокированной регистрации (асинхронно, не блокируем ответ)
+                                        blockedRegistrationMetricsService.recordBlockedRegistration(
+                                                request.getEmail(),
+                                                emailDomain,
+                                                request.getUsername(),
+                                                ipAddress,
+                                                userAgent,
+                                                "TELEGRAM"
+                                        ).subscribe(
+                                                metric -> log.debug("Метрика блокированной регистрации сохранена: id={}", metric.getId()),
+                                                error -> log.error("Ошибка сохранения метрики блокированной регистрации", error)
+                                        );
+                                        
+                                        // Возвращаем общую ошибку без указания причины
+                                        return Mono.error(new AuthException(
+                                                HttpStatus.BAD_REQUEST,
+                                                "Ошибка регистрации. Проверьте введенные данные."
+                                        ));
+                                    }
+                                    
                                     return userService.findByEmail(request.getEmail())
                                             .flatMap(existingUser -> {
                                                 // Проверяем, не заблокирован ли пользователь

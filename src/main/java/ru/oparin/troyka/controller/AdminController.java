@@ -37,6 +37,7 @@ public class AdminController {
     private final GenerationProviderSettingsService providerSettingsService;
     private final GenerationProviderRouter providerRouter;
     private final ProviderFallbackMetricsService fallbackMetricsService;
+    private final BlockedRegistrationMetricsService blockedRegistrationMetricsService;
 
     @Operation(summary = "Получить все оплаченные платежи",
             description = "Возвращает список всех успешно оплаченных платежей в системе. Требуется роль ADMIN.")
@@ -261,6 +262,19 @@ public class AdminController {
                     log.error("Ошибка изменения статуса блокировки пользователя {}: {}", userId, e.getMessage());
                     return Mono.just(ResponseEntity.badRequest()
                             .body(new MessageResponse("Ошибка: " + e.getMessage())));
+                });
+    }
+
+    @Operation(summary = "Получить статистику блокированных регистраций",
+            description = "Возвращает статистику блокированных регистраций с временных email доменов. Требуется роль ADMIN.")
+    @GetMapping("/blocked-registrations/stats")
+    public Mono<ResponseEntity<BlockedRegistrationStatsDTO>> getBlockedRegistrationStats() {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMap(admin -> blockedRegistrationMetricsService.getStats())
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    log.error("Ошибка получения статистики блокированных регистраций: {}", e.getMessage());
+                    return Mono.just(ResponseEntity.status(403).build());
                 });
     }
 }

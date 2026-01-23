@@ -41,7 +41,8 @@ public class AuthController {
         return IpUtil.extractClientIp(exchange)
                 .<ResponseEntity<?>>flatMap(clientIp -> {
                     log.debug("IP адрес клиента для регистрации: {}", clientIp);
-                    return authService.register(request, clientIp)
+                    String userAgent = exchange.getRequest().getHeaders().getFirst("User-Agent");
+                    return authService.register(request, clientIp, userAgent)
                             .<ResponseEntity<?>>map(authResponse -> ResponseEntity.ok(authResponse))
                             .onErrorResume(e -> {
                                 if (e instanceof AuthException authEx) {
@@ -152,9 +153,25 @@ public class AuthController {
     @Operation(summary = "Вход через Telegram",
             description = "Аутентификация пользователя через Telegram Login Widget")
     @PostMapping("/telegram/login")
-    public Mono<ResponseEntity<AuthResponse>> loginWithTelegram(@Valid @RequestBody TelegramAuthRequest request) {
-        return telegramAuthService.loginWithTelegram(request)
-                .map(ResponseEntity::ok);
+    public Mono<ResponseEntity<AuthResponse>> loginWithTelegram(
+            @Valid @RequestBody TelegramAuthRequest request,
+            ServerWebExchange exchange) {
+        return IpUtil.extractClientIp(exchange)
+                .flatMap(clientIp -> {
+                    String userAgent = exchange.getRequest().getHeaders().getFirst("User-Agent");
+                    return telegramAuthService.loginWithTelegram(request, clientIp, userAgent);
+                })
+                .map(ResponseEntity::ok)
+                .onErrorResume(e -> {
+                    if (e instanceof AuthException authEx) {
+                        log.warn("Ошибка аутентификации при входе через Telegram: {}", authEx.getMessage());
+                        return Mono.just(ResponseEntity.status(authEx.getStatus())
+                                .body(new AuthResponse(null, null, null, null, null, false)));
+                    }
+                    log.error("Ошибка при входе через Telegram", e);
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(new AuthResponse(null, null, null, null, null, false)));
+                });
     }
 
     @Operation(summary = "Выход из системы",

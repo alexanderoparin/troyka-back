@@ -29,13 +29,42 @@ public class AuthService {
     private final EmailVerificationService emailVerificationService;
     private final GenerationProperties generationProperties;
     private final RateLimitingService rateLimitingService;
+    private final EmailDomainBlacklistService emailDomainBlacklistService;
+    private final BlockedRegistrationMetricsService blockedRegistrationMetricsService;
 
     @Value("${jwt.expiration}")
     private long expiration;
 
-    public Mono<AuthResponse> register(RegisterRequest request, String clientIp) {
+    public Mono<AuthResponse> register(RegisterRequest request, String clientIp, String userAgent) {
         String trimmedUsername = request.getUsername().trim();
         String trimmedEmail = request.getEmail().trim();
+        
+        // Проверяем, не заблокирован ли домен email
+        if (emailDomainBlacklistService.isDomainBlocked(trimmedEmail)) {
+            log.warn("Попытка регистрации с заблокированным email доменом. IP: {}, email: {}", clientIp, trimmedEmail);
+            
+            // Извлекаем домен из email
+            String emailDomain = trimmedEmail.substring(trimmedEmail.indexOf('@') + 1).toLowerCase();
+            
+            // Записываем метрику блокированной регистрации (асинхронно, не блокируем ответ)
+            blockedRegistrationMetricsService.recordBlockedRegistration(
+                    trimmedEmail,
+                    emailDomain,
+                    trimmedUsername,
+                    clientIp,
+                    userAgent,
+                    "EMAIL"
+            ).subscribe(
+                    metric -> log.debug("Метрика блокированной регистрации сохранена: id={}", metric.getId()),
+                    error -> log.error("Ошибка сохранения метрики блокированной регистрации", error)
+            );
+            
+            // Возвращаем общую ошибку без указания причины
+            return Mono.error(new AuthException(
+                    HttpStatus.BAD_REQUEST,
+                    "Ошибка регистрации. Проверьте введенные данные."
+            ));
+        }
         
         // Проверяем rate limit перед регистрацией
         return rateLimitingService.isRegistrationAllowed(clientIp)
