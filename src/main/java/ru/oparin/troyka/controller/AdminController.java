@@ -253,8 +253,8 @@ public class AdminController {
                 .flatMap(admin -> adminService.setUserBlockedStatus(userId, blocked))
                 .map(user -> {
                     String message = blocked ? "Пользователь заблокирован" : "Пользователь разблокирован";
-                    log.info("Администратор {} изменил статус блокировки пользователя {} на {}", 
-                            admin.getUsername(), userId, blocked);
+                    log.info("Администратор {} изменил статус блокировки пользователя {} на {}",
+                            user.getUsername(), userId, blocked);
                     return ResponseEntity.ok(new MessageResponse(message));
                 })
                 .onErrorResume(e -> {
