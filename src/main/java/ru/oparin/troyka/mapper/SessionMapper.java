@@ -166,34 +166,6 @@ public class SessionMapper {
     }
 
     /**
-     * Преобразует сущность Session и связанную историю в SessionDetailDTO.
-     * 
-     * @param session сущность сессии
-     * @param histories список истории генерации
-     * @param totalMessages общее количество сообщений
-     * @param hasMore есть ли еще сообщения для загрузки
-     * @return DTO детальной информации о сессии
-     */
-    public SessionDetailDTO toSessionDetailDTO(Session session, 
-                                            List<ImageGenerationHistory> histories,
-                                            int totalMessages,
-                                            boolean hasMore) {
-        if (session == null) {
-            return null;
-        }
-        
-        return SessionDetailDTO.builder()
-                .id(session.getId())
-                .name(session.getName())
-                .createdAt(session.getCreatedAt())
-                .updatedAt(session.getUpdatedAt())
-                .history(toSessionMessageDTOList(histories))
-                .totalMessages(totalMessages)
-                .hasMore(hasMore)
-                .build();
-    }
-
-    /**
      * Преобразует результат удаления сессии в DeleteSessionResponseDTO.
      * 
      * @param sessionId идентификатор удаленной сессии
