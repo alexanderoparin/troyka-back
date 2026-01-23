@@ -13,6 +13,7 @@ import ru.oparin.troyka.model.dto.admin.*;
 import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.system.SystemStatusHistoryDTO;
 import ru.oparin.troyka.model.dto.system.SystemStatusRequest;
+import ru.oparin.troyka.model.entity.User;
 import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.service.*;
 import ru.oparin.troyka.service.provider.GenerationProviderRouter;
@@ -20,6 +21,7 @@ import ru.oparin.troyka.util.SecurityUtil;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Контроллер для админ-панели.
@@ -253,9 +255,10 @@ public class AdminController {
         return SecurityUtil.getCurrentAdmin(userService)
                 .flatMap(admin -> adminService.setUserBlockedStatus(userId, blocked))
                 .map(user -> {
+                    Mono<User> admin = SecurityUtil.getCurrentAdmin(userService);
                     String message = blocked ? "Пользователь заблокирован" : "Пользователь разблокирован";
                     log.info("Администратор {} изменил статус блокировки пользователя {} на {}",
-                            user.getUsername(), userId, blocked);
+                            Objects.requireNonNull(admin.block()).getUsername(), userId, blocked);
                     return ResponseEntity.ok(new MessageResponse(message));
                 })
                 .onErrorResume(e -> {
