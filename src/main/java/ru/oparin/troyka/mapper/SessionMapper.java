@@ -133,22 +133,6 @@ public class SessionMapper {
     }
 
     /**
-     * Преобразует список сущностей ImageGenerationHistory в список SessionMessageDTO.
-     * 
-     * @param histories список сущностей истории генерации
-     * @return список DTO сообщений сессии
-     */
-    public List<SessionMessageDTO> toSessionMessageDTOList(List<ImageGenerationHistory> histories) {
-        if (histories == null) {
-            return null;
-        }
-        
-        return histories.stream()
-                .map(this::toSessionMessageDTO)
-                .toList();
-    }
-
-    /**
      * Преобразует список сущностей ImageGenerationHistory в список SessionMessageDTO с обогащением информацией о стиле.
      * 
      * @param histories список сущностей истории генерации
