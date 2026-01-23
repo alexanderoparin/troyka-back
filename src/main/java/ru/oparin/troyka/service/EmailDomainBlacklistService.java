@@ -39,8 +39,6 @@ public class EmailDomainBlacklistService {
             "dispostable.com",
             "meltmail.com",
             "melt.li",
-            "mintemail.com",
-            "mohmal.com",
             "mytrashmail.com",
             "nada.email",
             "nada.ltd",
