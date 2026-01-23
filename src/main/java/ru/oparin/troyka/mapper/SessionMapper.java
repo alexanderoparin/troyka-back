@@ -213,25 +213,6 @@ public class SessionMapper {
     }
 
     /**
-     * Преобразует SessionDTO в Session сущность.
-     * 
-     * @param sessionDTO DTO сессии
-     * @return сущность Session
-     */
-    public Session toSessionEntity(SessionDTO sessionDTO) {
-        if (sessionDTO == null) {
-            return null;
-        }
-        
-        return Session.builder()
-                .id(sessionDTO.getId())
-                .name(sessionDTO.getName())
-                .createdAt(sessionDTO.getCreatedAt())
-                .updatedAt(sessionDTO.getUpdatedAt())
-                .build();
-    }
-
-    /**
      * Создает новую сущность Session для пользователя.
      * 
      * @param userId идентификатор пользователя
