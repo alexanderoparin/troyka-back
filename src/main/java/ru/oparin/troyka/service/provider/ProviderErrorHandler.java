@@ -43,7 +43,7 @@ public class ProviderErrorHandler {
         } else {
             // Для ошибок, не требующих fallback, логируем как ERROR с полным stack trace
             log.error("Ошибка при работе с провайдером для userId={}, pointsNeeded={}, pointsDeducted={}: {}",
-                    userId, pointsNeeded, pointsDeducted, error.getMessage(), error);
+                    userId, pointsNeeded, pointsDeducted, error.getMessage());
         }
 
         // Если это уже ProviderFallbackException, возвращаем его без изменений

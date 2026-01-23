@@ -38,14 +38,10 @@ public class UserPointsService {
     @Transactional
     public Mono<UserPoints> addPointsToUser(Long userId, Integer points) {
         log.info("Добавление {} поинтов пользователю с ID: {}", points, userId);
-        
-        // Сначала пытаемся найти существующую запись
         return userPointsRepository.findByUserId(userId)
                 .flatMap(existingUserPoints -> {
-                    // Если запись существует, обновляем её
                     Integer currentPoints = existingUserPoints.getPoints() != null ? existingUserPoints.getPoints() : 0;
                     Integer newPoints = currentPoints + points;
-                    
                     return r2dbcEntityTemplate.update(UserPoints.class)
                             .matching(Query.query(Criteria.where("userId").is(userId)))
                             .apply(Update.update("points", newPoints)
@@ -54,8 +50,6 @@ public class UserPointsService {
                             .doOnNext(updated -> log.info("Поинты пользователя с ID {} обновлены: {} -> {}", userId, currentPoints, newPoints));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
-                    // Если запись не существует, создаем новую
-                    log.info("Создание новой записи поинтов для пользователя с ID: {}", userId);
                     UserPoints newUserPoints = UserPoints.builder()
                             .userId(userId)
                             .points(points)
