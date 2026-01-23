@@ -66,6 +66,15 @@ public class TelegramAuthService {
                     // Ищем пользователя по telegram_id (безопасно)
                     return userService.findByTelegramId(request.getId())
                             .flatMap(existingUser -> {
+                                // Проверяем, не заблокирован ли пользователь
+                                if (existingUser.getBlocked() != null && existingUser.getBlocked()) {
+                                    log.warn("Попытка входа заблокированного пользователя через Telegram: {}", existingUser.getUsername());
+                                    return Mono.error(new AuthException(
+                                            HttpStatus.FORBIDDEN,
+                                            "Ваш аккаунт заблокирован. Обратитесь к администратору."
+                                    ));
+                                }
+                                
                                 return updateTelegramData(existingUser, request)
                                         .flatMap(userService::saveUser)
                                         .map(this::createAuthResponse);
@@ -75,6 +84,15 @@ public class TelegramAuthService {
                                 if (request.getEmail() != null && !request.getEmail().trim().isEmpty()) {
                                     return userService.findByEmail(request.getEmail())
                                             .flatMap(existingUser -> {
+                                                // Проверяем, не заблокирован ли пользователь
+                                                if (existingUser.getBlocked() != null && existingUser.getBlocked()) {
+                                                    log.warn("Попытка входа заблокированного пользователя через Telegram (email): {}", existingUser.getUsername());
+                                                    return Mono.error(new AuthException(
+                                                            HttpStatus.FORBIDDEN,
+                                                            "Ваш аккаунт заблокирован. Обратитесь к администратору."
+                                                    ));
+                                                }
+                                                
                                                 // Проверяем, подтвержден ли email
                                                 if (existingUser.getEmailVerified() == null || !existingUser.getEmailVerified()) {
                                                 // Создаем нового пользователя, если email не подтвержден

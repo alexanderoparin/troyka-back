@@ -539,6 +539,7 @@ public class AdminService {
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .hasSuccessfulPayment(hasSuccessfulPayment)
+                .blocked(user.getBlocked() != null ? user.getBlocked() : false)
                 .build();
     }
 
@@ -550,6 +551,22 @@ public class AdminService {
                 .userId(userId)
                 .points(0)
                 .build();
+    }
+
+    /**
+     * Заблокировать или разблокировать пользователя.
+     *
+     * @param userId идентификатор пользователя
+     * @param blocked true - заблокировать, false - разблокировать
+     * @return обновленный пользователь
+     */
+    public Mono<User> setUserBlockedStatus(Long userId, Boolean blocked) {
+        return withRetry(userRepository.findById(userId))
+                .switchIfEmpty(Mono.error(new RuntimeException("Пользователь не найден")))
+                .flatMap(user -> {
+                    user.setBlocked(blocked);
+                    return withRetry(userRepository.save(user));
+                });
     }
 
     /**

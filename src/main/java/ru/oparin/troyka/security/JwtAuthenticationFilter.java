@@ -1,5 +1,6 @@
 package ru.oparin.troyka.security;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -10,6 +11,7 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.exception.AuthException;
 import ru.oparin.troyka.model.enums.Role;
 import ru.oparin.troyka.repository.UserRepository;
 import ru.oparin.troyka.service.JwtService;
@@ -36,14 +38,22 @@ public class JwtAuthenticationFilter implements WebFilter {
             String username = jwtService.getUsernameFromToken(token);
 
             return userRepository.findByUsername(username)
-                    .map(user -> {
+                    .flatMap(user -> {
+                        // Проверяем, не заблокирован ли пользователь
+                        if (user.getBlocked() != null && user.getBlocked()) {
+                            return Mono.error(new AuthException(
+                                    HttpStatus.FORBIDDEN,
+                                    "Пользователь заблокирован"
+                            ));
+                        }
+                        
                         List<GrantedAuthority> authorities = new ArrayList<>();
                         if (user.getRole() == Role.ADMIN) {
                             authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
                         }
                         authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
                         
-                        return new UsernamePasswordAuthenticationToken(username, null, authorities);
+                        return Mono.just(new UsernamePasswordAuthenticationToken(username, null, authorities));
                     })
                     .switchIfEmpty(Mono.just(new UsernamePasswordAuthenticationToken(username, null, new ArrayList<>())))
                     .flatMap(authentication -> {

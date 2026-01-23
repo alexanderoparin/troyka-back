@@ -91,6 +91,14 @@ public class User {
     private String telegramPhotoUrl;
 
     /**
+     * Флаг блокировки пользователя.
+     * true - пользователь заблокирован, false - активен.
+     * По умолчанию false (активен).
+     */
+    @Builder.Default
+    private Boolean blocked = false;
+
+    /**
      * Дата и время создания записи пользователя.
      * Автоматически устанавливается при создании.
      */

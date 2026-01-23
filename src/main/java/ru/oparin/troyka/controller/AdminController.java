@@ -242,5 +242,26 @@ public class AdminController {
                     return Mono.just(ResponseEntity.status(403).build());
                 });
     }
+
+    @Operation(summary = "Заблокировать или разблокировать пользователя",
+            description = "Изменяет статус блокировки пользователя. Требуется роль ADMIN.")
+    @PutMapping("/users/{userId}/block")
+    public Mono<ResponseEntity<MessageResponse>> blockUser(
+            @PathVariable Long userId,
+            @RequestParam Boolean blocked) {
+        return SecurityUtil.getCurrentAdmin(userService)
+                .flatMap(admin -> adminService.setUserBlockedStatus(userId, blocked))
+                .map(user -> {
+                    String message = blocked ? "Пользователь заблокирован" : "Пользователь разблокирован";
+                    log.info("Администратор {} изменил статус блокировки пользователя {} на {}", 
+                            admin.getUsername(), userId, blocked);
+                    return ResponseEntity.ok(new MessageResponse(message));
+                })
+                .onErrorResume(e -> {
+                    log.error("Ошибка изменения статуса блокировки пользователя {}: {}", userId, e.getMessage());
+                    return Mono.just(ResponseEntity.badRequest()
+                            .body(new MessageResponse("Ошибка: " + e.getMessage())));
+                });
+    }
 }
 

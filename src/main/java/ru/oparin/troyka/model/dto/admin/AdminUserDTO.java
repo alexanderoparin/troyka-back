@@ -29,5 +29,11 @@ public class AdminUserDTO {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Boolean hasSuccessfulPayment;
+    
+    /**
+     * Флаг блокировки пользователя.
+     * true - пользователь заблокирован, false - активен.
+     */
+    private Boolean blocked;
 }
 
