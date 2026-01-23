@@ -103,6 +103,7 @@ public class SessionMapper {
                 .imageCount(imageUrls.size())
                 .aspectRatio(history.getAspectRatio())
                 .modelType(modelType.getName())
+                .resolution(history.getResolution())
                 .build();
     }
 

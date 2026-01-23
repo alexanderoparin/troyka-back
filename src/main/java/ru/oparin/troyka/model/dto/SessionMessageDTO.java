@@ -48,4 +48,11 @@ public class SessionMessageDTO {
 
     /** Тип модели, использованной для генерации */
     private String modelType;
+
+    /**
+     * Разрешение изображения.
+     * Устанавливается только для PRO-моделей, поддерживающих параметр resolution (например, NANO_BANANA_PRO).
+     * Для обычных моделей (NANO_BANANA) может быть null.
+     */
+    private String resolution;
 }
