@@ -37,8 +37,6 @@ public class SessionMapper {
                 .name(session.getName())
                 .createdAt(session.getCreatedAt())
                 .updatedAt(session.getUpdatedAt())
-                .lastImageUrl(null) // Будет заполнено в сервисе при необходимости
-                .messageCount(0) // Будет заполнено в сервисе при необходимости
                 .build();
     }
 
