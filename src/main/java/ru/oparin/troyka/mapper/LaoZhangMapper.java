@@ -12,6 +12,8 @@ import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.laozhang.LaoZhangRequestDTO;
 import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.Resolution;
+import ru.oparin.troyka.service.ImageCompressionService;
+import ru.oparin.troyka.service.provider.ProviderConstants;
 
 import java.util.ArrayList;
 import java.util.Base64;
@@ -26,6 +28,7 @@ import java.util.List;
 public class LaoZhangMapper {
 
     private final WebClient.Builder webClientBuilder;
+    private final ImageCompressionService imageCompressionService;
 
     /**
      * Получить имя модели LaoZhang для типа модели.
@@ -159,7 +162,7 @@ public class LaoZhangMapper {
 
     /**
      * Конвертировать URL изображений в base64 для формата Gemini API.
-     * Загружает изображения по URL и конвертирует в base64 без префикса data:.
+     * Загружает изображения по URL, сжимает их при необходимости и конвертирует в base64 без префикса data:.
      *
      * @param imageUrls список URL изображений
      * @return список ImageData с MIME типом и base64 данными
@@ -172,19 +175,40 @@ public class LaoZhangMapper {
         WebClient webClient = webClientBuilder.build();
 
         return Flux.fromIterable(imageUrls)
-                .flatMap(url -> {
-                    log.debug("Загрузка изображения для конвертации в base64: {}", url);
+                .index()
+                .flatMap(tuple -> {
+                    long index = tuple.getT1();
+                    String url = tuple.getT2();
+                    log.debug("Загрузка изображения {} для конвертации в base64: {}", index + 1, url);
                     return webClient.get()
                             .uri(url)
                             .accept(MediaType.IMAGE_JPEG, MediaType.IMAGE_PNG, MediaType.parseMediaType("image/webp"))
                             .retrieve()
                             .bodyToMono(byte[].class)
                             .map(imageBytes -> {
-                                // Определяем MIME тип по URL или по первым байтам
-                                String mimeType = detectMimeType(url, imageBytes);
-                                // Base64 без префикса data: для Gemini API
-                                String base64 = Base64.getEncoder().encodeToString(imageBytes);
-                                return new ImageData(mimeType, base64);
+                                try {
+                                    // Определяем MIME тип по URL или по первым байтам
+                                    String mimeType = detectMimeType(url, imageBytes);
+                                    
+                                    // Сжимаем изображение, если оно превышает лимит
+                                    byte[] processedBytes = imageBytes;
+                                    if (imageBytes.length > ProviderConstants.LaoZhang.MAX_SINGLE_IMAGE_SIZE_BYTES) {
+                                        log.info("Изображение {} превышает лимит ({} bytes), начинаем сжатие", 
+                                                index + 1, imageBytes.length);
+                                        processedBytes = imageCompressionService.compressImage(imageBytes, mimeType);
+                                        // После сжатия всегда JPEG
+                                        mimeType = "image/jpeg";
+                                        log.info("Изображение {} сжато: {} -> {} bytes", 
+                                                index + 1, imageBytes.length, processedBytes.length);
+                                    }
+                                    
+                                    // Base64 без префикса data: для Gemini API
+                                    String base64 = Base64.getEncoder().encodeToString(processedBytes);
+                                    return new ImageData(mimeType, base64);
+                                } catch (Exception e) {
+                                    log.error("Ошибка при обработке изображения {}: {}", url, e.getMessage(), e);
+                                    throw new RuntimeException("Ошибка при обработке изображения: " + e.getMessage(), e);
+                                }
                             })
                             .onErrorResume(error -> {
                                 log.error("Ошибка при загрузке изображения {}: {}", url, error.getMessage());
@@ -192,7 +216,42 @@ public class LaoZhangMapper {
                             });
                 })
                 .collectList()
-                .doOnNext(imageDataList -> log.debug("Конвертировано {} изображений в base64", imageDataList.size()));
+                .flatMap(imageDataList -> {
+                    // Проверяем общий размер запроса (base64 + промпт + метаданные)
+                    long totalSize = estimateRequestSize(imageDataList);
+                    log.debug("Оценка размера запроса: {} bytes (лимит: {} bytes)", 
+                            totalSize, ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES);
+                    
+                    if (totalSize > ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES) {
+                        log.warn("Общий размер запроса ({}) превышает лимит ({}). " +
+                                "Это может привести к ошибке 413. Рекомендуется fallback на FAL_AI.", 
+                                totalSize, ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES);
+                        // Не бросаем ошибку здесь, пусть провайдер попробует отправить
+                        // Если будет 413, сработает fallback механизм
+                    }
+                    
+                    log.debug("Конвертировано {} изображений в base64", imageDataList.size());
+                    return Mono.just(imageDataList);
+                });
+    }
+
+    /**
+     * Оценить размер запроса в байтах (base64 изображения + промпт + метаданные).
+     * Base64 увеличивает размер примерно на 33%, поэтому учитываем это.
+     *
+     * @param imageDataList список изображений
+     * @return оценка размера в байтах
+     */
+    private long estimateRequestSize(List<ImageData> imageDataList) {
+        long imagesSize = imageDataList.stream()
+                .mapToLong(data -> data.base64Data.length())
+                .sum();
+        
+        // Примерная оценка размера метаданных и промпта (JSON структура)
+        // В реальности это будет больше, но для оценки достаточно
+        long metadataSize = 2000; // ~2KB на метаданные
+        
+        return imagesSize + metadataSize;
     }
 
     /**
