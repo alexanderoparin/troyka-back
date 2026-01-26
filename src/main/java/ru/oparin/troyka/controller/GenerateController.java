@@ -4,13 +4,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIQueueRequestStatusDTO;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
+import ru.oparin.troyka.model.dto.fal.ImageRs;
 import ru.oparin.troyka.model.enums.GenerationProvider;
+import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.service.FalAIQueueService;
 import ru.oparin.troyka.service.ImageGenerationHistoryService;
 import ru.oparin.troyka.service.UserService;
@@ -56,11 +59,6 @@ public class GenerateController {
                                 // Для других провайдеров (например, LaoZhang AI) используем синхронную генерацию
                                 log.debug("Использование синхронной генерации через провайдер {} для пользователя {}", activeProvider, userId);
                                 return providerRouter.generateImage(imageRq, userId)
-                                        .doOnNext(imageRs -> {
-                                            log.info("Получен ImageRs от провайдера {} для userId={}: {} изображений", 
-                                                    activeProvider, userId, 
-                                                    imageRs != null && imageRs.getImageUrls() != null ? imageRs.getImageUrls().size() : 0);
-                                        })
                                         .flatMap(imageRs -> {
                                             if (imageRs == null || imageRs.getImageUrls() == null || imageRs.getImageUrls().isEmpty()) {
                                                 log.error("ImageRs null или пустой для userId={}, sessionId={}", userId, imageRq.getSessionId());
@@ -72,31 +70,13 @@ public class GenerateController {
                                                     .map(history -> {
                                                         log.debug("Найдена история для синхронной генерации: historyId={}, userId={}, sessionId={}", 
                                                                 history.getId(), userId, imageRq.getSessionId());
-                                                        // Преобразуем ImageRs в FalAIQueueRequestStatusDTO для совместимости
-                                                        FalAIQueueRequestStatusDTO dto = new FalAIQueueRequestStatusDTO();
-                                                        dto.setId(history.getId());
-                                                        dto.setQueueStatus(ru.oparin.troyka.model.enums.QueueStatus.COMPLETED);
-                                                        dto.setQueuePosition(0);
-                                                        dto.setImageUrls(imageRs.getImageUrls());
-                                                        dto.setPrompt(imageRq.getPrompt());
-                                                        dto.setSessionId(imageRq.getSessionId());
-                                                        log.info("Возвращаем DTO для синхронной генерации: id={}, imageUrls count={}", 
-                                                                dto.getId(), dto.getImageUrls().size());
-                                                        return dto;
+                                                        return createFalAIQueueRequestStatusDTO(history.getId(), imageRs, imageRq);
                                                     })
                                                     .switchIfEmpty(Mono.defer(() -> {
                                                         // Если история не найдена (не должно происходить), возвращаем с ID=0
                                                         log.warn("История не найдена для синхронной генерации, userId={}, sessionId={}. Используем ID=0", 
                                                                 userId, imageRq.getSessionId());
-                                                        FalAIQueueRequestStatusDTO dto = new FalAIQueueRequestStatusDTO();
-                                                        dto.setId(0L);
-                                                        dto.setQueueStatus(ru.oparin.troyka.model.enums.QueueStatus.COMPLETED);
-                                                        dto.setQueuePosition(0);
-                                                        dto.setImageUrls(imageRs.getImageUrls());
-                                                        dto.setPrompt(imageRq.getPrompt());
-                                                        dto.setSessionId(imageRq.getSessionId());
-                                                        log.info("Возвращаем DTO с ID=0 для синхронной генерации: imageUrls count={}", 
-                                                                dto.getImageUrls().size());
+                                                        FalAIQueueRequestStatusDTO dto = createFalAIQueueRequestStatusDTO(0L, imageRs, imageRq);
                                                         return Mono.just(dto);
                                                     }));
                                         });
@@ -112,6 +92,17 @@ public class GenerateController {
                         log.error("Ошибка при отправке запроса на генерацию", error);
                     }
                 });
+    }
+
+    private static @NonNull FalAIQueueRequestStatusDTO createFalAIQueueRequestStatusDTO(Long history, ImageRs imageRs, ImageRq imageRq) {
+        FalAIQueueRequestStatusDTO dto = new FalAIQueueRequestStatusDTO();
+        dto.setId(history);
+        dto.setQueueStatus(QueueStatus.COMPLETED);
+        dto.setQueuePosition(0);
+        dto.setImageUrls(imageRs.getImageUrls());
+        dto.setPrompt(imageRq.getPrompt());
+        dto.setSessionId(imageRq.getSessionId());
+        return dto;
     }
 
     /**
