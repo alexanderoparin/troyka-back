@@ -1,16 +1,21 @@
 package ru.oparin.troyka.service;
 
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
 import ru.oparin.troyka.config.properties.FalAiProperties;
 import ru.oparin.troyka.config.properties.GenerationProperties;
 import ru.oparin.troyka.exception.FalAIException;
@@ -22,6 +27,7 @@ import ru.oparin.troyka.model.enums.Resolution;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -49,8 +55,17 @@ public class FalAIService {
                         SessionService sessionService,
                         ArtStyleService artStyleService,
                         FalAIQueueMapper mapper) {
+        // Создаем отдельный HttpClient для FAL AI с увеличенным таймаутом (5 минут)
+        HttpClient falAiHttpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                .responseTimeout(Duration.ofMinutes(5))
+                .doOnConnected(conn ->
+                        conn.addHandlerLast(new ReadTimeoutHandler(5, TimeUnit.MINUTES))
+                                .addHandlerLast(new WriteTimeoutHandler(5, TimeUnit.MINUTES)));
+
         this.webClient = webClientBuilder
                 .baseUrl(falAiProperties.getApi().getUrl())
+                .clientConnector(new ReactorClientHttpConnector(falAiHttpClient))
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Key " + falAiProperties.getApi().getKey())
                 .build();
@@ -108,7 +123,7 @@ public class FalAIService {
                                                                         .retrieve()
                                                                         .bodyToMono(new ParameterizedTypeReference<FalAIResponseDTO>() {
                                                                         })
-                                                                        .timeout(Duration.ofMinutes(3))
+                                                                        .timeout(Duration.ofMinutes(5))
                                                                         .map(response -> extractImageResponse(response, balance))
                                                                          .flatMap(response -> imageGenerationHistoryService.saveHistories(
                                                                                          userId, response.getImageUrls(), userPrompt,
