@@ -10,6 +10,7 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.exception.ProviderFallbackException;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
+import ru.oparin.troyka.service.AdminNotificationService;
 import ru.oparin.troyka.service.UserPointsService;
 
 import java.util.concurrent.TimeoutException;
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeoutException;
 public class ProviderErrorHandler {
 
     private final UserPointsService userPointsService;
+    private final AdminNotificationService adminNotificationService;
 
     /**
      * Обработать ошибку и вернуть поинты пользователю при необходимости.
@@ -246,6 +248,9 @@ public class ProviderErrorHandler {
         log.warn("Ошибка от провайдера для userId={}. Статус: {}, тело: {}.",
                 userId, webError.getStatusCode(), responseBody);
 
+        // Проверяем, является ли это ошибкой исчерпанного баланса LaoZhang AI
+        checkLaoZhangExhaustedBalance(webError, responseBody);
+
         String message = buildProviderErrorMessage(webError, responseBody);
         HttpStatus status = HttpStatus.resolve(webError.getStatusCode().value());
         
@@ -269,6 +274,29 @@ public class ProviderErrorHandler {
             // Ошибки клиента (4xx кроме указанных выше) не требуют fallback
             return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
                     .then(Mono.error(new FalAIException(message, HttpStatus.UNPROCESSABLE_ENTITY)));
+        }
+    }
+
+    /**
+     * Проверяем, является ли это ошибкой исчерпанного баланса LaoZhang AI.
+     * Отправляет уведомление администраторам, если обнаружена проблема с балансом.
+     */
+    private void checkLaoZhangExhaustedBalance(WebClientResponseException webError, String responseBody) {
+        if (webError.getStatusCode().value() == 403) {
+            String lowerBody = responseBody != null ? responseBody.toLowerCase() : "";
+            // Проверяем различные варианты сообщений об исчерпанном балансе LaoZhang AI
+            if (lowerBody.contains("quota is not enough") ||
+                lowerBody.contains("insufficient_user_quota") ||
+                lowerBody.contains("余额不足") ||
+                (lowerBody.contains("quota") && lowerBody.contains("not enough"))) {
+                log.error("Обнаружена критическая ошибка: исчерпан баланс LaoZhang AI. Отправляем уведомление администраторам.");
+                // Отправляем уведомление админам (не блокируем основной поток)
+                adminNotificationService.notifyAdminsAboutLaoZhangBalance(responseBody)
+                        .subscribe(
+                                null,
+                                error -> log.error("Ошибка при отправке уведомления администраторам о балансе LaoZhang AI", error)
+                        );
+            }
         }
     }
 

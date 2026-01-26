@@ -45,6 +45,7 @@ public class AdminNotificationService {
             .build();
 
     private static final String FAL_BALANCE_EXHAUSTED_KEY = "fal_balance_exhausted";
+    private static final String LAOZHANG_BALANCE_EXHAUSTED_KEY = "laozhang_balance_exhausted";
     private static final long NOTIFICATION_COOLDOWN_HOURS = 1;
 
     /**
@@ -208,6 +209,158 @@ public class AdminNotificationService {
                 "Детали ошибки:\n%s\n\n" +
                 "Необходимо пополнить баланс на https://fal.ai/dashboard/billing\n\n" +
                 "До пополнения баланса генерация изображений будет недоступна для пользователей.\n\n" +
+                "Это автоматическое уведомление. Повторное уведомление будет отправлено через час, если проблема сохранится.\n\n" +
+                "---\n" +
+                "Система 24reshai.ru",
+                errorMessage
+        );
+    }
+
+    /**
+     * Уведомить администраторов о проблеме с балансом LaoZhang AI.
+     * Отправляет письмо всем администраторам, но не чаще одного раза в час.
+     *
+     * @param errorMessage сообщение об ошибке от LaoZhang AI
+     */
+    public Mono<Void> notifyAdminsAboutLaoZhangBalance(String errorMessage) {
+        return Mono.fromCallable(() -> {
+            // Проверяем, не отправляли ли мы уведомление недавно
+            LocalDateTime lastSent = lastNotificationTime.getIfPresent(LAOZHANG_BALANCE_EXHAUSTED_KEY);
+            if (lastSent != null) {
+                LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(NOTIFICATION_COOLDOWN_HOURS);
+                if (lastSent.isAfter(oneHourAgo)) {
+                    log.debug("Уведомление о балансе LaoZhang AI уже было отправлено {} минут назад, пропускаем",
+                            Duration.between(lastSent, LocalDateTime.now()).toMinutes());
+                    return false;
+                }
+            }
+            return true;
+        })
+        .flatMap(shouldSend -> {
+            if (!shouldSend) {
+                return Mono.empty();
+            }
+
+            // Получаем список всех администраторов
+            return getAdminUsers()
+                    .collectList()
+                    .flatMap(admins -> {
+                        if (admins.isEmpty()) {
+                            log.warn("Не найдено администраторов для отправки уведомления о балансе LaoZhang AI");
+                            return Mono.empty();
+                        }
+
+                        // Отправляем письмо и Telegram уведомление каждому администратору
+                        return Flux.fromIterable(admins)
+                                .flatMap(admin -> {
+                                    Mono<Void> emailMono = (admin.getEmail() != null && !admin.getEmail().trim().isEmpty())
+                                            ? sendLaoZhangBalanceNotificationEmail(admin, errorMessage)
+                                            : Mono.empty();
+                                    Mono<Void> telegramMono = sendLaoZhangBalanceNotificationTelegram(admin, errorMessage);
+                                    return Mono.when(emailMono, telegramMono);
+                                })
+                                .then(Mono.fromRunnable(() -> {
+                                    // Сохраняем время отправки в кэш
+                                    lastNotificationTime.put(LAOZHANG_BALANCE_EXHAUSTED_KEY, LocalDateTime.now());
+                                    log.info("Уведомление о балансе LaoZhang AI отправлено {} администраторам (email и/или Telegram)", admins.size());
+                                }));
+                    });
+        })
+        .then();
+    }
+
+    /**
+     * Отправить письмо администратору о проблеме с балансом LaoZhang AI.
+     *
+     * @param admin администратор, которому отправляется письмо
+     * @param errorMessage сообщение об ошибке от LaoZhang AI
+     */
+    private Mono<Void> sendLaoZhangBalanceNotificationEmail(User admin, String errorMessage) {
+        return Mono.fromRunnable(() -> {
+            try {
+                SimpleMailMessage message = new SimpleMailMessage();
+                message.setFrom(fromEmail);
+                message.setTo(admin.getEmail());
+                message.setSubject("⚠️ Критическое уведомление: Исчерпан баланс LaoZhang AI");
+                message.setText(buildLaoZhangEmailContent(errorMessage));
+
+                mailSender.send(message);
+                log.info("Уведомление о балансе LaoZhang AI отправлено администратору: {}", admin.getEmail());
+            } catch (Exception e) {
+                log.error("Ошибка при отправке уведомления администратору {}: {}", admin.getEmail(), e.getMessage(), e);
+            }
+        });
+    }
+
+    /**
+     * Отправить уведомление администратору в Telegram о проблеме с балансом LaoZhang AI.
+     *
+     * @param admin администратор, которому отправляется уведомление
+     * @param errorMessage сообщение об ошибке от LaoZhang AI
+     */
+    private Mono<Void> sendLaoZhangBalanceNotificationTelegram(User admin, String errorMessage) {
+        // Проверяем, есть ли у админа telegramId
+        if (admin.getTelegramId() == null) {
+            log.debug("У администратора {} нет telegramId, пропускаем отправку Telegram уведомления", admin.getUsername());
+            return Mono.empty();
+        }
+
+        // Получаем chatId из TelegramBotSession
+        return telegramBotSessionService.getTelegramBotSessionEntityByUserId(admin.getId())
+                .flatMap(telegramBotSession -> {
+                    Long chatId = telegramBotSession.getChatId();
+                    String telegramMessage = buildLaoZhangTelegramMessage(errorMessage);
+                    return telegramMessageService.sendMessage(chatId, telegramMessage)
+                            .doOnSuccess(v -> log.info("Telegram уведомление о балансе LaoZhang AI отправлено администратору {} (chatId: {})", 
+                                    admin.getUsername(), chatId))
+                            .onErrorResume(e -> {
+                                log.warn("Ошибка при отправке Telegram уведомления администратору {} (chatId: {}): {}", 
+                                        admin.getUsername(), chatId, e.getMessage());
+                                return Mono.empty();
+                            });
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.debug("У администратора {} нет активной сессии Telegram бота, пропускаем отправку Telegram уведомления", 
+                            admin.getUsername());
+                    return Mono.empty();
+                }))
+                .onErrorResume(e -> {
+                    log.warn("Ошибка при получении Telegram сессии для администратора {}: {}", admin.getUsername(), e.getMessage());
+                    return Mono.empty();
+                });
+    }
+
+    /**
+     * Построить сообщение для Telegram с уведомлением о балансе LaoZhang AI.
+     *
+     * @param errorMessage сообщение об ошибке от LaoZhang AI
+     * @return текст сообщения для Telegram
+     */
+    private String buildLaoZhangTelegramMessage(String errorMessage) {
+        return String.format(
+                "⚠️ *Критическое уведомление: Исчерпан баланс LaoZhang AI*\n\n" +
+                "Обнаружена критическая проблема с балансом сервиса LaoZhang AI.\n\n" +
+                "*Детали ошибки:*\n`%s`\n\n" +
+                "Необходимо пополнить баланс на [laozhang.ai](https://laozhang.ai)\n\n" +
+                "До пополнения баланса генерация изображений через LaoZhang AI будет недоступна для пользователей.\n\n" +
+                "_Это автоматическое уведомление. Повторное уведомление будет отправлено через час, если проблема сохранится._",
+                errorMessage.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]")
+        );
+    }
+
+    /**
+     * Построить содержимое письма с уведомлением о балансе LaoZhang AI.
+     *
+     * @param errorMessage сообщение об ошибке от LaoZhang AI
+     * @return текст письма
+     */
+    private String buildLaoZhangEmailContent(String errorMessage) {
+        return String.format(
+                "Здравствуйте!\n\n" +
+                "Обнаружена критическая проблема с балансом сервиса LaoZhang AI.\n\n" +
+                "Детали ошибки:\n%s\n\n" +
+                "Необходимо пополнить баланс на https://laozhang.ai\n\n" +
+                "До пополнения баланса генерация изображений через LaoZhang AI будет недоступна для пользователей.\n\n" +
                 "Это автоматическое уведомление. Повторное уведомление будет отправлено через час, если проблема сохранится.\n\n" +
                 "---\n" +
                 "Система 24reshai.ru",
