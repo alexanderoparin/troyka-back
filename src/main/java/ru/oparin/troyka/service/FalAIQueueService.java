@@ -22,6 +22,7 @@ import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.model.enums.Resolution;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -445,6 +446,124 @@ public class FalAIQueueService {
                             history.getFalRequestId(), errorMessage, pointsNeeded, history.getUserId());
                     return userPointsService.addPointsToUser(history.getUserId(), pointsNeeded)
                             .then(Mono.just(updatedHistory));
+                });
+    }
+
+    /**
+     * Синхронная генерация изображения через очередь с ожиданием результата.
+     * Используется для fallback, когда нужен синхронный результат.
+     *
+     * @param imageRq запрос на генерацию изображения
+     * @param userId  идентификатор пользователя
+     * @return ответ с сгенерированными изображениями
+     */
+    public Mono<ImageRs> generateImageSync(ImageRq imageRq, Long userId) {
+        log.info("Синхронная генерация через очередь FAL AI для userId={}", userId);
+        
+        // Отправляем запрос в очередь
+        return submitToQueue(imageRq, userId)
+                .flatMap(statusDTO -> {
+                    if (statusDTO.getId() == null) {
+                        return Mono.error(new FalAIException(
+                                "Не удалось создать запрос в очереди", HttpStatus.INTERNAL_SERVER_ERROR));
+                    }
+                    
+                    // Получаем запись истории для опроса статуса
+                    return imageGenerationHistoryService.findById(statusDTO.getId())
+                            .switchIfEmpty(Mono.error(new FalAIException(
+                                    "Запись истории не найдена", HttpStatus.INTERNAL_SERVER_ERROR)))
+                            .flatMap(history -> {
+                                // Если уже завершено (не должно происходить, но на всякий случай)
+                                if (history.getQueueStatus() == QueueStatus.COMPLETED && 
+                                    history.getImageUrls() != null && !history.getImageUrls().isEmpty()) {
+                                    return userPointsService.getUserPoints(userId)
+                                            .map(balance -> new ImageRs(history.getImageUrls(), balance));
+                                }
+                                
+                                // Если уже провалилось
+                                if (history.getQueueStatus() == QueueStatus.FAILED) {
+                                    return Mono.error(new FalAIException(
+                                            "Запрос завершился с ошибкой", HttpStatus.INTERNAL_SERVER_ERROR));
+                                }
+                                
+                                // Ожидаем завершения, опрашивая статус
+                                long pollingInterval = falAiProperties.getQueue().getPollingIntervalMs();
+                                long maxWaitTime = falAiProperties.getQueue().getMaxWaitTimeMs();
+                                
+                                return pollStatusUntilComplete(history, pollingInterval, maxWaitTime)
+                                        .flatMap(completedHistory -> {
+                                            if (completedHistory.getQueueStatus() == QueueStatus.COMPLETED) {
+                                                if (completedHistory.getImageUrls() == null || 
+                                                    completedHistory.getImageUrls().isEmpty()) {
+                                                    return Mono.error(new FalAIException(
+                                                            "Запрос завершен, но изображения не получены", 
+                                                            HttpStatus.INTERNAL_SERVER_ERROR));
+                                                }
+                                                return userPointsService.getUserPoints(userId)
+                                                        .map(balance -> new ImageRs(
+                                                                completedHistory.getImageUrls(), 
+                                                                balance));
+                                            } else {
+                                                // FAILED
+                                                return Mono.error(new FalAIException(
+                                                        "Запрос завершился с ошибкой", 
+                                                        HttpStatus.INTERNAL_SERVER_ERROR));
+                                            }
+                                        });
+                            });
+                });
+    }
+
+    /**
+     * Опросить статус запроса до завершения (COMPLETED или FAILED).
+     *
+     * @param history         запись истории генерации
+     * @param pollingInterval интервал опроса в миллисекундах
+     * @param maxWaitTime     максимальное время ожидания в миллисекундах
+     * @return завершенная запись истории
+     */
+    private Mono<ImageGenerationHistory> pollStatusUntilComplete(
+            ImageGenerationHistory history, 
+            long pollingInterval, 
+            long maxWaitTime) {
+        
+        long startTime = System.currentTimeMillis();
+        
+        return Mono.defer(() -> pollStatus(history))
+                .flatMap(updatedHistory -> {
+                    QueueStatus status = updatedHistory.getQueueStatus();
+                    
+                    // Если завершено (успешно или с ошибкой), возвращаем
+                    if (status == QueueStatus.COMPLETED || status == QueueStatus.FAILED) {
+                        return Mono.just(updatedHistory);
+                    }
+                    
+                    // Проверяем таймаут
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    if (elapsed >= maxWaitTime) {
+                        log.warn("Превышено максимальное время ожидания для запроса {}: {} мс", 
+                                history.getFalRequestId(), elapsed);
+                        return Mono.error(new FalAIException(
+                                "Превышено время ожидания ответа от сервиса генерации. Попробуйте позже.",
+                                HttpStatus.REQUEST_TIMEOUT));
+                    }
+                    
+                    // Ждем интервал и опрашиваем снова
+                    return Mono.delay(Duration.ofMillis(pollingInterval))
+                            .then(pollStatusUntilComplete(updatedHistory, pollingInterval, maxWaitTime));
+                })
+                .onErrorResume(e -> {
+                    // Если ошибка при опросе, пробуем еще раз после задержки
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    if (elapsed >= maxWaitTime) {
+                        return Mono.error(new FalAIException(
+                                "Превышено время ожидания ответа от сервиса генерации. Попробуйте позже.",
+                                HttpStatus.REQUEST_TIMEOUT));
+                    }
+                    log.warn("Ошибка при опросе статуса запроса {}, повторная попытка через {} мс: {}", 
+                            history.getFalRequestId(), pollingInterval, e.getMessage());
+                    return Mono.delay(Duration.ofMillis(pollingInterval))
+                            .then(pollStatusUntilComplete(history, pollingInterval, maxWaitTime));
                 });
     }
 }
