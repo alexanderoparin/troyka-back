@@ -68,8 +68,6 @@ public class UserPointsService {
      */
     @Transactional
     public Mono<UserPoints> deductPointsFromUser(Long userId, Integer points) {
-        log.info("Списание {} поинтов у пользователя с ID: {}", points, userId);
-
         return userPointsRepository.findByUserId(userId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("У пользователя нет записи о поинтах")))
                 .flatMap(userPoints -> {

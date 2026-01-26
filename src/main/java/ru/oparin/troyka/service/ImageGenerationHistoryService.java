@@ -80,7 +80,7 @@ public class ImageGenerationHistoryService {
                         costUsd,
                         provider.getCode()
                 )
-                .doOnNext(history -> log.info("Запись истории сохранена: {}, стоимость: {} поинтов, себестоимость: ${}", history, pointsCost, costUsd))
+                .doOnNext(history -> log.info("Запись истории сохранена: {}", history))
                 .flux();
     }
 
