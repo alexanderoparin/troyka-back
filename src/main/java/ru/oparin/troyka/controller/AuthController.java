@@ -43,7 +43,7 @@ public class AuthController {
                     log.debug("IP адрес клиента для регистрации: {}", clientIp);
                     String userAgent = exchange.getRequest().getHeaders().getFirst("User-Agent");
                     return authService.register(request, clientIp, userAgent)
-                            .<ResponseEntity<?>>map(authResponse -> ResponseEntity.ok(authResponse))
+                            .<ResponseEntity<?>>map(ResponseEntity::ok)
                             .onErrorResume(e -> {
                                 if (e instanceof AuthException authEx) {
                                     log.warn("Ошибка аутентификации при регистрации: {}", authEx.getMessage());

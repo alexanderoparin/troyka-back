@@ -58,12 +58,12 @@ public class UserService {
 
     public Mono<User> findByUsernameOrThrow(String username) {
         return withRetry(userRepository.findByUsername(username))
-                .switchIfEmpty(Mono.error(createUserNotFoundError()));
+                .switchIfEmpty(Mono.error(new AuthException(HttpStatus.NOT_FOUND, "Пользователь c username" + username + " не найден")));
     }
 
     public Mono<User> findByIdOrThrow(Long id) {
         return withRetry(userRepository.findById(id))
-                .switchIfEmpty(Mono.error(createUserNotFoundError()));
+                .switchIfEmpty(Mono.error(new AuthException(HttpStatus.NOT_FOUND, "Пользователь c id" + id + " не найден")));
     }
 
     public Mono<User> findByEmail(String email) {
@@ -145,11 +145,6 @@ public class UserService {
         user.setEmail(newEmail);
         user.setEmailVerified(false);
         return saveUser(user);
-    }
-
-    // Вспомогательные методы для создания ошибок
-    private AuthException createUserNotFoundError() {
-        return new AuthException(HttpStatus.NOT_FOUND, USER_NOT_FOUND);
     }
 
     private AuthException createUsernameConflictError() {
