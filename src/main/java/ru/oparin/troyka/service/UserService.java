@@ -57,7 +57,7 @@ public class UserService {
     }
 
     public Mono<User> findByUsernameOrThrow(String username) {
-        return withRetry(userRepository.findByUsername(username))
+        return withRetry(userRepository.findByUsernameIgnoreCase(username))
                 .switchIfEmpty(Mono.error(new AuthException(HttpStatus.NOT_FOUND, "Пользователь c username" + username + " не найден")));
     }
 
@@ -67,7 +67,32 @@ public class UserService {
     }
 
     public Mono<User> findByEmail(String email) {
-        return withRetry(userRepository.findByEmail(email));
+        return withRetry(userRepository.findByEmailIgnoreCase(email));
+    }
+
+    /**
+     * Найти пользователя по username или email (без учета регистра).
+     * Сначала пытается найти по username, если не найден - ищет по email.
+     *
+     * @param usernameOrEmail username или email адрес
+     * @return найденный пользователь или ошибка, если не найден
+     */
+    public Mono<User> findByUsernameOrEmail(String usernameOrEmail) {
+        String trimmed = usernameOrEmail.trim();
+        
+        // Сначала пытаемся найти по username (без учета регистра)
+        return withRetry(userRepository.findByUsernameIgnoreCase(trimmed))
+                .switchIfEmpty(
+                        // Если не найден по username, пробуем найти по email (без учета регистра)
+                        withRetry(userRepository.findByEmailIgnoreCase(trimmed))
+                                .switchIfEmpty(Mono.defer(() -> {
+                                    log.warn("Пользователь не найден ни по username, ни по email: {}", trimmed);
+                                    return Mono.error(new AuthException(
+                                            HttpStatus.NOT_FOUND,
+                                            "Пользователь " + trimmed + " не найден ни по логину, ни по почте"
+                                    ));
+                                }))
+                );
     }
 
     public Mono<Void> existsByUsernameOrEmail(String username, String email) {

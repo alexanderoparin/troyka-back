@@ -112,12 +112,14 @@ public class AuthService {
     }
 
     public Mono<AuthResponse> login(LoginRequest request) {
-        String trimmedUsername = request.getUsername().trim();
-        return userService.findByUsernameOrThrow(trimmedUsername)
+        String trimmedInput = request.getUsername().trim();
+        
+        // Ищем пользователя по username или email
+        return userService.findByUsernameOrEmail(trimmedInput)
                 .flatMap(user -> {
                     // Проверяем, не заблокирован ли пользователь
                     if (user.getBlocked() != null && user.getBlocked()) {
-                        log.warn("Попытка входа заблокированного пользователя: {}", trimmedUsername);
+                        log.warn("Попытка входа заблокированного пользователя: {}", trimmedInput);
                         return Mono.error(new AuthException(
                                 HttpStatus.FORBIDDEN,
                                 "Ваш аккаунт заблокирован. Обратитесь к администратору."
