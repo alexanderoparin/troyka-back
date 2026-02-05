@@ -42,9 +42,9 @@ public class ImageCompressionService {
     private static final float MIN_JPEG_QUALITY = 0.6f;
 
     /**
-     * Начальное качество JPEG для сжатия (0.85).
+     * Начальное качество JPEG для сжатия (0.95). Если не влезает в лимит — пробуем 0.90, 0.85 и т.д.
      */
-    private static final float INITIAL_JPEG_QUALITY = 0.85f;
+    private static final float INITIAL_JPEG_QUALITY = 0.95f;
 
     /**
      * Сжать изображение до целевого размера.
@@ -57,7 +57,7 @@ public class ImageCompressionService {
      */
     public byte[] compressImage(byte[] imageBytes, String mimeType) throws IOException {
         if (imageBytes.length <= MAX_SINGLE_IMAGE_SIZE) {
-            log.debug("Изображение уже соответствует лимиту ({} bytes), сжатие не требуется", imageBytes.length);
+            log.debug("Изображение уже соответствует лимиту ({} MB), сжатие не требуется", String.format("%.2f", imageBytes.length / (1024.0 * 1024.0)));
             return imageBytes;
         }
 
@@ -104,7 +104,7 @@ public class ImageCompressionService {
                 while (compressed.length > TARGET_IMAGE_SIZE && quality >= MIN_JPEG_QUALITY) {
                     quality -= step;
                     compressed = compressWithQuality(image, quality);
-                    log.debug("Попытка сжатия с quality={}, размер={} bytes", quality, compressed.length);
+                    log.debug("Попытка сжатия с quality={}, размер={} MB", quality, String.format("%.2f", compressed.length / (1024.0 * 1024.0)));
                 }
             } else {
                 // Уже влезло после ресайза — поднимаем качество до максимума в пределах лимита
@@ -113,7 +113,7 @@ public class ImageCompressionService {
                     byte[] candidate = compressWithQuality(image, q);
                     if (candidate.length <= TARGET_IMAGE_SIZE) {
                         compressed = candidate;
-                        log.debug("Подобрано качество {} для лучшего вида при лимите 7 MB, размер={} bytes", String.format("%.2f", q), compressed.length);
+                        log.debug("Подобрано качество {} для лучшего вида при лимите 7 MB, размер={} MB", String.format("%.2f", q), String.format("%.2f", compressed.length / (1024.0 * 1024.0)));
                         break;
                     }
                 }

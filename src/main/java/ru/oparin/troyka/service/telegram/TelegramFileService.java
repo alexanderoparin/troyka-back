@@ -52,7 +52,7 @@ public class TelegramFileService {
                                 .uri(fullFileUrl)
                                 .retrieve()
                                 .bodyToMono(byte[].class)
-                                .doOnSuccess(bytes -> log.info("Файл скачан, размер: {} байт", bytes.length));
+                                .doOnSuccess(bytes -> log.info("Файл скачан, размер: {} MB", bytes != null ? String.format("%.2f", bytes.length / (1024.0 * 1024.0)) : "0"));
                     }
                     return Mono.error(new RuntimeException("Не удалось получить путь к файлу: " + response.getDescription()));
                 })

@@ -90,7 +90,7 @@ public class FileService {
                                                 filename = path.getFileName().toString().replaceAll("\\.[^.]+$", "") + ".jpg";
                                                 path = uploadPath.resolve(filename);
                                                 Files.write(path, compressed);
-                                                log.info("Файл пользователя сжат до {} байт, сохранён как {}", compressed.length, filename);
+                                                log.info("Файл пользователя сжат до {} MB, сохранён как {}", String.format("%.2f", compressed.length / (1024.0 * 1024.0)), filename);
                                             } else {
                                                 Files.delete(path);
                                                 throw new IllegalArgumentException("Файл слишком большой (максимум 10MB). После сжатия всё ещё " + (compressed.length / 1024 / 1024) + " MB.");
@@ -414,7 +414,7 @@ public class FileService {
         
         if (fileSize > maxFileSize) {
             Files.delete(filePath);
-            log.warn("{} {} слишком большой ({} байт), удален", fileType, uniqueFilename, fileSize);
+            log.warn("{} {} слишком большой ({} MB), удален", fileType, uniqueFilename, String.format("%.2f", fileSize / (1024.0 * 1024.0)));
             throw new IllegalArgumentException("Файл слишком большой (максимум 10MB)");
         }
         
@@ -425,8 +425,8 @@ public class FileService {
         }
         
         String fileUrl = baseUrl + uniqueFilename;
-        log.info("{} успешно загружен пользователем {}: {} (размер: {} байт)", 
-                fileType, username, fileUrl, fileSize);
+        log.info("{} успешно загружен пользователем {}: {} (размер: {} MB)", 
+                fileType, username, fileUrl, String.format("%.2f", fileSize / (1024.0 * 1024.0)));
         return fileUrl;
     }
 }

@@ -91,8 +91,8 @@ public class Base64ImageService {
                         ? "/files/" + subdirectory + "/" + uniqueFilename 
                         : "/files/" + uniqueFilename;
                 String fileUrl = "https://" + serverHost + urlPath;
-                log.info("Base64 изображение успешно сохранено пользователем {}: {} (размер: {} байт)",
-                        username, fileUrl, fileSize);
+                log.info("Base64 изображение успешно сохранено пользователем {}: {} (размер: {} MB)",
+                        username, fileUrl, String.format("%.2f", fileSize / (1024.0 * 1024.0)));
                 return fileUrl;
 
             } catch (IllegalArgumentException e) {
