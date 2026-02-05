@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import ru.oparin.troyka.config.properties.GenerationProperties;
+import ru.oparin.troyka.model.dto.pricing.GenerationPointsResponse;
 import ru.oparin.troyka.model.dto.pricing.PricingPlanResponse;
 import ru.oparin.troyka.service.PricingService;
 
@@ -22,6 +24,7 @@ import java.util.List;
 public class PricingController {
 
     private final PricingService pricingService;
+    private final GenerationProperties generationProperties;
 
     @Operation(summary = "Получить активные тарифные планы",
             description = "Возвращает список активных тарифных планов, отсортированных по порядку")
@@ -30,5 +33,17 @@ public class PricingController {
         return pricingService.getActivePricingPlans()
                 .collectList()
                 .map(ResponseEntity::ok);
+    }
+
+    @Operation(summary = "Получить стоимость генерации в поинтах",
+            description = "Единственный источник тарифов в поинтах для фронта. Кэшируется на клиенте.")
+    @GetMapping("/generation-points")
+    public Mono<ResponseEntity<GenerationPointsResponse>> getGenerationPoints() {
+        GenerationPointsResponse response = new GenerationPointsResponse(
+                generationProperties.getPointsPerImage(),
+                generationProperties.getPointsPerImageProForApi(),
+                generationProperties.getPointsOnRegistration()
+        );
+        return Mono.just(ResponseEntity.ok(response));
     }
 }

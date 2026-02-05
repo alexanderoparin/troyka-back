@@ -122,8 +122,12 @@ app:
     from: ${EMAIL_FROM:noreply@24reshai.ru}
     support: ${EMAIL_SUPPORT:support@24reshai.ru}
   generation:
-    points-per-image: ${GENERATION_POINTS_PER_IMAGE:2} # Количество поинтов за одно изображение (для nano-banana)
-    points-on-registration: ${REGISTRATION_POINTS:4} # Количество поинтов при регистрации
+    points-on-registration: ${REGISTRATION_POINTS:4}
+    points-per-image: ${GENERATION_POINTS_PER_IMAGE:2}
+    points-per-image-pro:
+      "1K": ${GENERATION_POINTS_PER_IMAGE_PRO_1K:8}
+      "2K": ${GENERATION_POINTS_PER_IMAGE_PRO_2K:9}
+      "4K": ${GENERATION_POINTS_PER_IMAGE_PRO_4K:15}
 
 # Robokassa
 robokassa:
