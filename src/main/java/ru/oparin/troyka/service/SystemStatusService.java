@@ -146,7 +146,7 @@ public class SystemStatusService {
         return statusHistoryRepository.findAll()
                 .sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .take(limit)
-                .flatMap(history -> {
+                .flatMapSequential(history -> {
                     if (history.getUserId() == null) {
                         return Mono.just(SystemStatusHistoryDTO.builder()
                                 .id(history.getId())
