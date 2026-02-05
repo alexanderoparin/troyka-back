@@ -125,9 +125,9 @@ app:
     points-on-registration: ${REGISTRATION_POINTS:4}
     points-per-image: ${GENERATION_POINTS_PER_IMAGE:2}
     points-per-image-pro:
-      "1K": ${GENERATION_POINTS_PER_IMAGE_PRO_1K:8}
-      "2K": ${GENERATION_POINTS_PER_IMAGE_PRO_2K:9}
-      "4K": ${GENERATION_POINTS_PER_IMAGE_PRO_4K:15}
+      "1K": ${GENERATION_POINTS_PER_IMAGE_PRO_1K:4}
+      "2K": ${GENERATION_POINTS_PER_IMAGE_PRO_2K:4}
+      "4K": ${GENERATION_POINTS_PER_IMAGE_PRO_4K:5}
 
 # Robokassa
 robokassa:
