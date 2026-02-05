@@ -36,8 +36,7 @@ public class GenerationProviderSettingsService {
                     log.debug("Ошибка при создании дефолтных настроек (возможно, запись уже существует), пытаемся получить существующую: {}", error.getMessage());
                     return repository.findById(DEFAULT_SETTINGS_ID);
                 }))
-                .map(GenerationProviderSettings::getActiveProviderEnum)
-                .doOnNext(provider -> log.debug("Активный провайдер: {}", provider));
+                .map(GenerationProviderSettings::getActiveProviderEnum);
     }
 
     /**
