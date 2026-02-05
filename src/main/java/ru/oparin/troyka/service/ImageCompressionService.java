@@ -85,25 +85,38 @@ public class ImageCompressionService {
             image = rgbImage;
         }
 
-        // Шаг 1: Уменьшаем разрешение, если нужно
-        if (originalWidth > MAX_DIMENSION || originalHeight > MAX_DIMENSION) {
-            image = resizeImage(image, MAX_DIMENSION);
-            log.debug("Изображение уменьшено до: {}x{}", image.getWidth(), image.getHeight());
-        }
-
-        // Шаг 2: Сжимаем через JPEG quality
+        // Шаг 1: Пробуем сжать в полном разрешении (PNG→JPEG уже сильно уменьшает размер)
         byte[] compressed = compressWithQuality(image, INITIAL_JPEG_QUALITY);
+        if (compressed.length <= TARGET_IMAGE_SIZE) {
+            log.debug("Уложились в лимит в полном разрешении {}x{}, сжатие без ресайза", image.getWidth(), image.getHeight());
+        } else {
+            // Шаг 2: Не влезло — уменьшаем разрешение до MAX_DIMENSION
+            if (originalWidth > MAX_DIMENSION || originalHeight > MAX_DIMENSION) {
+                image = resizeImage(image, MAX_DIMENSION);
+                log.debug("Изображение уменьшено до: {}x{}", image.getWidth(), image.getHeight());
+            }
+            compressed = compressWithQuality(image, INITIAL_JPEG_QUALITY);
 
-        // Шаг 3: Если все еще слишком большое, уменьшаем quality
-        if (compressed.length > TARGET_IMAGE_SIZE) {
-            log.debug("Изображение все еще слишком большое ({} bytes), уменьшаем quality", compressed.length);
-            float quality = INITIAL_JPEG_QUALITY;
-            float step = 0.05f;
-
-            while (compressed.length > TARGET_IMAGE_SIZE && quality >= MIN_JPEG_QUALITY) {
-                quality -= step;
-                compressed = compressWithQuality(image, quality);
-                log.debug("Попытка сжатия с quality={}, размер={} bytes", quality, compressed.length);
+            // Шаг 3: Подбираем максимальное качество, укладывающееся в лимит (не сжимать сильнее чем нужно)
+            if (compressed.length > TARGET_IMAGE_SIZE) {
+                float quality = INITIAL_JPEG_QUALITY;
+                float step = 0.05f;
+                while (compressed.length > TARGET_IMAGE_SIZE && quality >= MIN_JPEG_QUALITY) {
+                    quality -= step;
+                    compressed = compressWithQuality(image, quality);
+                    log.debug("Попытка сжатия с quality={}, размер={} bytes", quality, compressed.length);
+                }
+            } else {
+                // Уже влезло после ресайза — поднимаем качество до максимума в пределах лимита
+                float step = 0.05f;
+                for (float q = 1.0f; q >= MIN_JPEG_QUALITY; q -= step) {
+                    byte[] candidate = compressWithQuality(image, q);
+                    if (candidate.length <= TARGET_IMAGE_SIZE) {
+                        compressed = candidate;
+                        log.debug("Подобрано качество {} для лучшего вида при лимите 7 MB, размер={} bytes", String.format("%.2f", q), compressed.length);
+                        break;
+                    }
+                }
             }
 
             // Если все еще не помещается, уменьшаем разрешение еще больше
