@@ -14,7 +14,15 @@ import java.util.List;
 public class ImageRs {
     @Schema(description = "URL сгенерированного изображения", example = "https://v3.fal.media/files/kangaroo/xMO087rdsATkwF1VR2bRV.jpeg")
     private List<String> imageUrls;
-    
+
     @Schema(description = "Обновленный баланс поинтов пользователя после генерации")
     private Integer balance;
+
+    @Schema(description = "Предупреждение для пользователя (например, при сжатии загруженных изображений)")
+    private String warningMessage;
+
+    /** Конструктор без предупреждения (для обратной совместимости). */
+    public ImageRs(List<String> imageUrls, Integer balance) {
+        this(imageUrls, balance, null);
+    }
 }

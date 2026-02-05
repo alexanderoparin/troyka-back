@@ -75,20 +75,11 @@ public class Base64ImageService {
                 // Генерируем уникальное имя файла
                 String uniqueFilename = UUID.randomUUID().toString() + "." + imageFormat;
 
-                // Сохраняем файл
+                // Сохраняем файл как есть (ответы от провайдеров, например LaoZhang, без проверки размера и без сжатия)
                 Path filePath = uploadPath.resolve(uniqueFilename);
                 Files.write(filePath, imageBytes, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
 
-                // Валидация размера
                 long fileSize = Files.size(filePath);
-                long maxFileSize = 10 * 1024 * 1024; // 10MB
-
-                if (fileSize > maxFileSize) {
-                    Files.delete(filePath);
-                    log.warn("Изображение {} слишком большое ({} байт), удалено", uniqueFilename, fileSize);
-                    throw new IllegalArgumentException("Изображение слишком большое (максимум 10MB)");
-                }
-
                 if (fileSize == 0) {
                     Files.delete(filePath);
                     log.warn("Пустое изображение {} удалено", uniqueFilename);

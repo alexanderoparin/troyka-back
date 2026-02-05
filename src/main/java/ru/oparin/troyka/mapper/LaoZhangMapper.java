@@ -46,15 +46,14 @@ public class LaoZhangMapper {
     /**
      * Создать запрос к LaoZhang API в формате Google Gemini API.
      *
-     * @param imageRq      запрос на генерацию
-     * @param finalPrompt  финальный промпт (с учетом стиля)
-     * @param numImages    количество изображений
+     * @param imageRq        запрос на генерацию
+     * @param finalPrompt    финальный промпт (с учетом стиля)
      * @param inputImageUrls список URL входных изображений
-     * @param resolution   разрешение
-     * @return запрос к LaoZhang API
+     * @param resolution     разрешение
+     * @return запрос к LaoZhang API и опциональное предупреждение при сжатии
      */
-    public Mono<LaoZhangRequestDTO> createRequest(ImageRq imageRq, String finalPrompt, 
-                                                   Integer numImages, List<String> inputImageUrls, 
+    public Mono<LaoZhangRequestResult> createRequest(ImageRq imageRq, String finalPrompt,
+                                                   List<String> inputImageUrls,
                                                    Resolution resolution) {
         boolean isNewImage = CollectionUtils.isEmpty(inputImageUrls);
 
@@ -70,15 +69,13 @@ public class LaoZhangMapper {
                     .parts(parts)
                     .build());
 
-            return Mono.just(buildRequest(contents, imageRq, resolution));
+            return Mono.just(new LaoZhangRequestResult(buildRequest(contents, imageRq, resolution), null));
         } else {
             // Для редактирования - нужно передать изображения и промпт
             return convertImageUrlsToBase64ForGemini(inputImageUrls)
-                    .map(imageDataList -> {
+                    .map(convertResult -> {
                         List<LaoZhangRequestDTO.Part> parts = new ArrayList<>();
-
-                        // Добавляем изображения
-                        for (ImageData imageData : imageDataList) {
+                        for (ImageData imageData : convertResult.list) {
                             parts.add(LaoZhangRequestDTO.Part.builder()
                                     .inlineData(LaoZhangRequestDTO.InlineData.builder()
                                             .mimeType(imageData.mimeType)
@@ -86,8 +83,6 @@ public class LaoZhangMapper {
                                             .build())
                                     .build());
                         }
-
-                        // Добавляем текстовый промпт
                         parts.add(LaoZhangRequestDTO.Part.builder()
                                 .text(finalPrompt)
                                 .build());
@@ -97,7 +92,7 @@ public class LaoZhangMapper {
                                 .parts(parts)
                                 .build());
 
-                        return buildRequest(contents, imageRq, resolution);
+                        return new LaoZhangRequestResult(buildRequest(contents, imageRq, resolution), convertResult.warningMessage);
                     });
         }
     }
@@ -148,15 +143,50 @@ public class LaoZhangMapper {
     }
 
     /**
+     * Результат создания запроса: сам запрос и опциональное предупреждение для пользователя (если было сжатие).
+     */
+    public static class LaoZhangRequestResult {
+        private final LaoZhangRequestDTO request;
+        private final String warningMessage;
+
+        public LaoZhangRequestResult(LaoZhangRequestDTO request, String warningMessage) {
+            this.request = request;
+            this.warningMessage = warningMessage;
+        }
+
+        public LaoZhangRequestDTO getRequest() { return request; }
+        public String getWarningMessage() { return warningMessage; }
+    }
+
+    /**
      * Вспомогательный класс для хранения данных изображения.
      */
     private static class ImageData {
         String mimeType;
         String base64Data; // Без префикса data:image/...;base64,
+        boolean wasCompressed; // сжато из-за лимита 7 MB на файл
 
         ImageData(String mimeType, String base64Data) {
             this.mimeType = mimeType;
             this.base64Data = base64Data;
+            this.wasCompressed = false;
+        }
+
+        ImageData(String mimeType, String base64Data, boolean wasCompressed) {
+            this.mimeType = mimeType;
+            this.base64Data = base64Data;
+            this.wasCompressed = wasCompressed;
+        }
+    }
+
+    /** Результат конвертации URL в base64: список изображений и предупреждение при сжатии. */
+    private static class ConvertResult {
+        final List<ImageData> list;
+        final String warningMessage;
+
+        ConvertResult(List<ImageData> list, String warningMessage) {
+            this.list = list;
+            this.warningMessage = warningMessage;
         }
     }
 
@@ -165,11 +195,11 @@ public class LaoZhangMapper {
      * Загружает изображения по URL, сжимает их при необходимости и конвертирует в base64 без префикса data:.
      *
      * @param imageUrls список URL изображений
-     * @return список ImageData с MIME типом и base64 данными
+     * @return ConvertResult со списком ImageData и опциональным предупреждением при сжатии
      */
-    private Mono<List<ImageData>> convertImageUrlsToBase64ForGemini(List<String> imageUrls) {
+    private Mono<ConvertResult> convertImageUrlsToBase64ForGemini(List<String> imageUrls) {
         if (CollectionUtils.isEmpty(imageUrls)) {
-            return Mono.just(List.of());
+            return Mono.just(new ConvertResult(List.of(), null));
         }
 
         WebClient webClient = webClientBuilder.build();
@@ -190,21 +220,21 @@ public class LaoZhangMapper {
                                     // Определяем MIME тип по URL или по первым байтам
                                     String mimeType = detectMimeType(url, imageBytes);
                                     
-                                    // Сжимаем изображение, если оно превышает лимит
+                                    // Сжимаем изображение, если оно превышает лимит 7 MB на файл
                                     byte[] processedBytes = imageBytes;
+                                    boolean compressed = false;
                                     if (imageBytes.length > ProviderConstants.LaoZhang.MAX_SINGLE_IMAGE_SIZE_BYTES) {
-                                        log.info("Изображение {} превышает лимит ({} bytes), начинаем сжатие", 
+                                        log.info("Изображение {} превышает лимит ({} bytes), сжимаем перед отправкой", 
                                                 index + 1, imageBytes.length);
                                         processedBytes = imageCompressionService.compressImage(imageBytes, mimeType);
-                                        // После сжатия всегда JPEG
                                         mimeType = "image/jpeg";
+                                        compressed = true;
                                         log.info("Изображение {} сжато: {} -> {} bytes", 
                                                 index + 1, imageBytes.length, processedBytes.length);
                                     }
                                     
-                                    // Base64 без префикса data: для Gemini API
                                     String base64 = Base64.getEncoder().encodeToString(processedBytes);
-                                    return new ImageData(mimeType, base64);
+                                    return new ImageData(mimeType, base64, compressed);
                                 } catch (Exception e) {
                                     log.error("Ошибка при обработке изображения {}: {}", url, e.getMessage(), e);
                                     throw new RuntimeException("Ошибка при обработке изображения: " + e.getMessage(), e);
@@ -217,21 +247,37 @@ public class LaoZhangMapper {
                 })
                 .collectList()
                 .flatMap(imageDataList -> {
-                    // Проверяем общий размер запроса (base64 + промпт + метаданные)
+                    // Лимиты LaoZhang: один файл — макс. 7 MB, весь request body — макс. 20 MB
                     long totalSize = estimateRequestSize(imageDataList);
-                    log.debug("Оценка размера запроса: {} bytes (лимит: {} bytes)", 
-                            totalSize, ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES);
-                    
+                    boolean hadSingleCompression = imageDataList.stream().anyMatch(d -> d.wasCompressed);
+                    List<ImageData> resultList = imageDataList;
+                    String warningMessage = null;
+
                     if (totalSize > ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES) {
-                        log.warn("Общий размер запроса ({}) превышает лимит ({}). " +
-                                "Это может привести к ошибке 413. Рекомендуется fallback на FAL_AI.", 
-                                totalSize, ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES);
-                        // Не бросаем ошибку здесь, пусть провайдер попробует отправить
-                        // Если будет 413, сработает fallback механизм
+                        // Дожимаем каждое изображение, чтобы весь запрос уложился в 20 MB
+                        long maxBase64PerImage = (ProviderConstants.LaoZhang.MAX_REQUEST_BODY_SIZE_BYTES - 2000) / imageDataList.size();
+                        long maxDecodedPerImage = (long) (maxBase64PerImage * 0.75);
+                        log.info("Общий размер запроса {} bytes превышает лимит 20 MB. Дожимаем каждое изображение до ~{} bytes.", totalSize, maxDecodedPerImage);
+                        List<ImageData> compressedList = new ArrayList<>();
+                        for (ImageData data : imageDataList) {
+                            try {
+                                byte[] decoded = Base64.getDecoder().decode(data.base64Data);
+                                byte[] compressed = imageCompressionService.compressImageToMaxSize(decoded, data.mimeType, maxDecodedPerImage);
+                                String base64 = Base64.getEncoder().encodeToString(compressed);
+                                compressedList.add(new ImageData("image/jpeg", base64, false));
+                            } catch (Exception e) {
+                                log.warn("Не удалось дожать изображение для лимита 20 MB: {}", e.getMessage());
+                                compressedList.add(data);
+                            }
+                        }
+                        resultList = compressedList;
+                        warningMessage = "Изображения сжаты для соответствия лимитам запроса (7 MB на файл, 20 MB на весь запрос).";
+                    } else if (hadSingleCompression) {
+                        warningMessage = "Изображения сжаты для соответствия лимиту запроса (7 MB на файл).";
                     }
-                    
-                    log.debug("Конвертировано {} изображений в base64", imageDataList.size());
-                    return Mono.just(imageDataList);
+
+                    log.debug("Конвертировано {} изображений в base64", resultList.size());
+                    return Mono.just(new ConvertResult(resultList, warningMessage));
                 });
     }
 

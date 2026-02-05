@@ -25,6 +25,8 @@ import java.util.UUID;
 @Service
 public class FileService {
 
+    private static final long MAX_USER_FILE_SIZE = 10 * 1024 * 1024; // 10MB для загрузок пользователя в чат
+
     @Value("${file.upload-dir}")
     private String uploadDir;
 
@@ -33,10 +35,13 @@ public class FileService {
 
     private final UserService userService;
     private final UserAvatarService userAvatarService;
+    private final ImageCompressionService imageCompressionService;
 
-    public FileService(UserService userService, UserAvatarService userAvatarService) {
+    public FileService(UserService userService, UserAvatarService userAvatarService,
+                       ImageCompressionService imageCompressionService) {
         this.userService = userService;
         this.userAvatarService = userAvatarService;
+        this.imageCompressionService = imageCompressionService;
     }
 
     public Mono<ResponseEntity<String>> saveFile(FilePart filePart, String username) {
@@ -52,8 +57,6 @@ public class FileService {
             // Валидация файла
             return validateFile(filePart, username, "файл")
                     .flatMap(fileExtension -> {
-                        long maxFileSize = 10 * 1024 * 1024; // 10MB
-
                         // Создаем директорию для загрузки, если она не существует
                         Path uploadPath = Paths.get(uploadDir);
                         log.info("Проверяем существование директории для загрузки: {}", uploadPath.toAbsolutePath());
@@ -73,7 +76,34 @@ public class FileService {
 
                         return filePart.transferTo(filePath)
                                 .then(Mono.fromCallable(() -> {
-                                    return validateAndGetFileUrl(filePath, uniqueFilename, maxFileSize, username, 
+                                    // Для загрузок пользователя в чат: если файл > 10MB — сжимаем
+                                    Path path = filePath;
+                                    String filename = uniqueFilename;
+                                    long size = Files.size(path);
+                                    if (size > MAX_USER_FILE_SIZE) {
+                                        try {
+                                            byte[] compressed = imageCompressionService.compressImage(
+                                                    Files.readAllBytes(path),
+                                                    mimeTypeFromExtension(fileExtension));
+                                            if (compressed.length <= MAX_USER_FILE_SIZE) {
+                                                Files.delete(path);
+                                                filename = path.getFileName().toString().replaceAll("\\.[^.]+$", "") + ".jpg";
+                                                path = uploadPath.resolve(filename);
+                                                Files.write(path, compressed);
+                                                log.info("Файл пользователя сжат до {} байт, сохранён как {}", compressed.length, filename);
+                                            } else {
+                                                Files.delete(path);
+                                                throw new IllegalArgumentException("Файл слишком большой (максимум 10MB). После сжатия всё ещё " + (compressed.length / 1024 / 1024) + " MB.");
+                                            }
+                                        } catch (IllegalArgumentException e) {
+                                            throw e;
+                                        } catch (Exception e) {
+                                            log.warn("Не удалось сжать загруженный файл: {}", e.getMessage());
+                                            if (Files.exists(path)) Files.delete(path);
+                                            throw new IllegalArgumentException("Файл слишком большой (максимум 10MB). Сжатие не удалось: " + e.getMessage());
+                                        }
+                                    }
+                                    return validateAndGetFileUrl(path, filename, MAX_USER_FILE_SIZE, username,
                                             "https://" + serverHost + "/files/", "файл");
                                 }))
                                 .onErrorResume(AccessDeniedException.class, e -> {
@@ -368,6 +398,16 @@ public class FileService {
      * @return URL файла
      * @throws IllegalArgumentException если файл не прошел валидацию
      */
+    private static String mimeTypeFromExtension(String fileExtension) {
+        return switch (fileExtension.toLowerCase()) {
+            case ".jpg", ".jpeg" -> "image/jpeg";
+            case ".png" -> "image/png";
+            case ".gif" -> "image/gif";
+            case ".webp" -> "image/webp";
+            default -> "image/jpeg";
+        };
+    }
+
     private String validateAndGetFileUrl(Path filePath, String uniqueFilename, long maxFileSize, 
                                        String username, String baseUrl, String fileType) throws IOException {
         long fileSize = Files.size(filePath);

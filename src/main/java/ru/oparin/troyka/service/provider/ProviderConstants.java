@@ -51,12 +51,13 @@ public final class ProviderConstants {
         public static final String DATA_URL_SEPARATOR = ";base64,";
 
         /**
-         * Максимальный размер одного изображения в байтах (7MB для Gemini API).
+         * Максимальный размер одного файла (изображения) в запросе к LaoZhang: 7 MB.
+         * Изображения больше лимита сжимаются перед отправкой.
          */
         public static final long MAX_SINGLE_IMAGE_SIZE_BYTES = 7 * 1024 * 1024;
 
         /**
-         * Максимальный размер всего request body в байтах (20MB для Gemini API).
+         * Максимальный размер всего request body (все файлы + данные) в запросе к LaoZhang: 20 MB.
          */
         public static final long MAX_REQUEST_BODY_SIZE_BYTES = 20 * 1024 * 1024;
     }

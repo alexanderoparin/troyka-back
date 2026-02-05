@@ -122,6 +122,63 @@ public class ImageCompressionService {
     }
 
     /**
+     * Сжать изображение до заданного максимального размера (в байтах).
+     * Используется, когда общий размер запроса должен уложиться в лимит (например, 20 MB на весь body).
+     *
+     * @param imageBytes исходные байты изображения
+     * @param mimeType   MIME тип (image/jpeg, image/png и т.д.)
+     * @param maxBytes   максимальный размер результата в байтах
+     * @return сжатые байты (JPEG)
+     * @throws IOException если не удалось прочитать или записать изображение
+     */
+    public byte[] compressImageToMaxSize(byte[] imageBytes, String mimeType, long maxBytes) throws IOException {
+        if (imageBytes.length <= maxBytes) {
+            return imageBytes;
+        }
+        long target = Math.min(maxBytes, TARGET_IMAGE_SIZE);
+        return compressImageToTarget(imageBytes, mimeType, target);
+    }
+
+    /**
+     * Внутренний метод: сжать до целевого размера в байтах.
+     */
+    private byte[] compressImageToTarget(byte[] imageBytes, String mimeType, long targetSize) throws IOException {
+        BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
+        if (image == null) {
+            throw new IOException("Не удалось прочитать изображение");
+        }
+        if (image.getType() != BufferedImage.TYPE_INT_RGB) {
+            BufferedImage rgbImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = rgbImage.createGraphics();
+            g.setColor(Color.WHITE);
+            g.fillRect(0, 0, rgbImage.getWidth(), rgbImage.getHeight());
+            g.drawImage(image, 0, 0, null);
+            g.dispose();
+            image = rgbImage;
+        }
+        int originalWidth = image.getWidth();
+        int originalHeight = image.getHeight();
+        if (originalWidth > MAX_DIMENSION || originalHeight > MAX_DIMENSION) {
+            image = resizeImage(image, MAX_DIMENSION);
+        }
+        byte[] compressed = compressWithQuality(image, INITIAL_JPEG_QUALITY);
+        if (compressed.length > targetSize) {
+            float quality = INITIAL_JPEG_QUALITY;
+            float step = 0.05f;
+            while (compressed.length > targetSize && quality >= MIN_JPEG_QUALITY) {
+                quality -= step;
+                compressed = compressWithQuality(image, quality);
+            }
+            if (compressed.length > targetSize) {
+                int newMaxDimension = (int) (MAX_DIMENSION * 0.75);
+                image = resizeImage(image, newMaxDimension);
+                compressed = compressWithQuality(image, MIN_JPEG_QUALITY);
+            }
+        }
+        return compressed;
+    }
+
+    /**
      * Изменить размер изображения, сохраняя пропорции.
      *
      * @param image        исходное изображение

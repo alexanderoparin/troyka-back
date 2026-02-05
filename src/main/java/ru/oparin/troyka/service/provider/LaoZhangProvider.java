@@ -166,8 +166,8 @@ public class LaoZhangProvider implements ImageGenerationProvider {
         logGenerationRequest(context, endpoint);
 
         return createLaoZhangRequest(context)
+                .map(LaoZhangMapper.LaoZhangRequestResult::getRequest)
                 .doOnNext(request -> {
-                    // Логируем JSON запроса к LaoZhang API (без больших base64 данных)
                     try {
                         LaoZhangRequestDTO loggableRequest = createLoggableRequest(request);
                         String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
@@ -209,11 +209,10 @@ public class LaoZhangProvider implements ImageGenerationProvider {
     /**
      * Создать запрос для LaoZhang API.
      */
-    private Mono<LaoZhangRequestDTO> createLaoZhangRequest(GenerationContext context) {
+    private Mono<LaoZhangMapper.LaoZhangRequestResult> createLaoZhangRequest(GenerationContext context) {
         return laoZhangMapper.createRequest(
                 context.request,
                 context.finalPrompt,
-                context.request.getNumImages(),
                 context.request.getInputImageUrls(),
                 context.request.getResolution()
         );
