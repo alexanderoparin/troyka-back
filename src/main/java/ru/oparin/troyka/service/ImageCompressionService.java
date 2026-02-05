@@ -21,30 +21,29 @@ import java.io.IOException;
 @Service
 public class ImageCompressionService {
 
-    /**
-     * Максимальный размер одного изображения в байтах (7MB для Gemini API).
-     */
+    private static final double BYTES_PER_MB = 1024.0 * 1024.0;
+
+    /** Максимальный размер одного изображения (7MB для Gemini API). */
     private static final long MAX_SINGLE_IMAGE_SIZE = 7 * 1024 * 1024;
 
-    /**
-     * Целевой размер после сжатия (6.5MB с запасом).
-     */
+    /** Целевой размер после сжатия (6.5MB с запасом). */
     private static final long TARGET_IMAGE_SIZE = (long) (6.5 * 1024 * 1024);
 
-    /**
-     * Максимальное разрешение для уменьшения (2048px по большей стороне).
-     */
+    /** Максимальное разрешение по длинной стороне (px). */
     private static final int MAX_DIMENSION = 2048;
 
-    /**
-     * Минимальное качество JPEG (0.6).
-     */
+    /** Минимальное качество JPEG (0.0–1.0). */
     private static final float MIN_JPEG_QUALITY = 0.6f;
 
-    /**
-     * Начальное качество JPEG для сжатия (0.95). Если не влезает в лимит — пробуем 0.90, 0.85 и т.д.
-     */
+    /** Начальное качество JPEG; при переполнении лимита понижаем шагом {@link #QUALITY_STEP}. */
     private static final float INITIAL_JPEG_QUALITY = 0.95f;
+
+    /** Шаг понижения/повышения качества при подборе. */
+    private static final float QUALITY_STEP = 0.05f;
+
+    private static String formatMb(long bytes) {
+        return String.format("%.2f", bytes / BYTES_PER_MB);
+    }
 
     /**
      * Сжать изображение до целевого размера.
@@ -57,33 +56,18 @@ public class ImageCompressionService {
      */
     public byte[] compressImage(byte[] imageBytes, String mimeType) throws IOException {
         if (imageBytes.length <= MAX_SINGLE_IMAGE_SIZE) {
-            log.debug("Изображение уже соответствует лимиту ({} MB), сжатие не требуется", String.format("%.2f", imageBytes.length / (1024.0 * 1024.0)));
+            log.debug("Изображение уже соответствует лимиту ({} MB), сжатие не требуется", formatMb(imageBytes.length));
             return imageBytes;
         }
 
-        double sizeMb = imageBytes.length / (1024.0 * 1024.0);
-        log.info("Начало сжатия изображения: размер={} MB, mimeType={}", String.format("%.2f", sizeMb), mimeType);
+        log.info("Начало сжатия изображения: размер={} MB, mimeType={}", formatMb(imageBytes.length), mimeType);
 
-        // Читаем изображение
-        BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
-        if (image == null) {
-            throw new IOException("Не удалось прочитать изображение");
-        }
-
+        BufferedImage image = readImage(imageBytes);
         int originalWidth = image.getWidth();
         int originalHeight = image.getHeight();
         log.debug("Исходные размеры изображения: {}x{}", originalWidth, originalHeight);
 
-        // Конвертируем в RGB если нужно (для PNG с прозрачностью)
-        if (image.getType() != BufferedImage.TYPE_INT_RGB) {
-            BufferedImage rgbImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = rgbImage.createGraphics();
-            g.setColor(Color.WHITE);
-            g.fillRect(0, 0, rgbImage.getWidth(), rgbImage.getHeight());
-            g.drawImage(image, 0, 0, null);
-            g.dispose();
-            image = rgbImage;
-        }
+        image = ensureRgb(image);
 
         // Шаг 1: Пробуем сжать в полном разрешении (PNG→JPEG уже сильно уменьшает размер)
         byte[] compressed = compressWithQuality(image, INITIAL_JPEG_QUALITY);
@@ -97,44 +81,71 @@ public class ImageCompressionService {
             }
             compressed = compressWithQuality(image, INITIAL_JPEG_QUALITY);
 
-            // Шаг 3: Подбираем максимальное качество, укладывающееся в лимит (не сжимать сильнее чем нужно)
+            // Шаг 3: Подбираем качество — либо понижаем, пока влезет, либо поднимаем до максимума в лимите
             if (compressed.length > TARGET_IMAGE_SIZE) {
-                float quality = INITIAL_JPEG_QUALITY;
-                float step = 0.05f;
-                while (compressed.length > TARGET_IMAGE_SIZE && quality >= MIN_JPEG_QUALITY) {
-                    quality -= step;
-                    compressed = compressWithQuality(image, quality);
-                    log.debug("Попытка сжатия с quality={}, размер={} MB", quality, String.format("%.2f", compressed.length / (1024.0 * 1024.0)));
-                }
+                compressed = reduceQualityUntilFits(image, compressed);
             } else {
-                // Уже влезло после ресайза — поднимаем качество до максимума в пределах лимита
-                float step = 0.05f;
-                for (float q = 1.0f; q >= MIN_JPEG_QUALITY; q -= step) {
-                    byte[] candidate = compressWithQuality(image, q);
-                    if (candidate.length <= TARGET_IMAGE_SIZE) {
-                        compressed = candidate;
-                        log.debug("Подобрано качество {} для лучшего вида при лимите 7 MB, размер={} MB", String.format("%.2f", q), String.format("%.2f", compressed.length / (1024.0 * 1024.0)));
-                        break;
-                    }
-                }
+                compressed = increaseQualityUpToLimit(image, compressed);
             }
 
-            // Если все еще не помещается, уменьшаем разрешение еще больше
             if (compressed.length > TARGET_IMAGE_SIZE) {
                 log.warn("Изображение все еще слишком большое после сжатия quality, уменьшаем разрешение");
-                int newMaxDimension = (int) (MAX_DIMENSION * 0.75);
-                image = resizeImage(image, newMaxDimension);
+                image = resizeImage(image, (int) (MAX_DIMENSION * 0.75));
                 compressed = compressWithQuality(image, MIN_JPEG_QUALITY);
             }
         }
 
-        float compressionRatio = (float) compressed.length / imageBytes.length;
-        double originalMb = imageBytes.length / (1024.0 * 1024.0);
-        double compressedMb = compressed.length / (1024.0 * 1024.0);
-        log.info("Сжатие завершено: исходный размер={} MB, сжатый размер={} MB, коэффициент={}",
-                String.format("%.2f", originalMb), String.format("%.2f", compressedMb), String.format("%.2f", compressionRatio));
+        logCompressionResult(imageBytes.length, compressed.length);
 
         return compressed;
+    }
+
+    private BufferedImage readImage(byte[] imageBytes) throws IOException {
+        BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
+        if (image == null) {
+            throw new IOException("Не удалось прочитать изображение");
+        }
+        return image;
+    }
+
+    private BufferedImage ensureRgb(BufferedImage image) {
+        if (image.getType() == BufferedImage.TYPE_INT_RGB) {
+            return image;
+        }
+        BufferedImage rgb = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = rgb.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, rgb.getWidth(), rgb.getHeight());
+        g.drawImage(image, 0, 0, null);
+        g.dispose();
+        return rgb;
+    }
+
+    private byte[] reduceQualityUntilFits(BufferedImage image, byte[] compressed) throws IOException {
+        float quality = INITIAL_JPEG_QUALITY;
+        while (compressed.length > TARGET_IMAGE_SIZE && quality >= MIN_JPEG_QUALITY) {
+            quality -= QUALITY_STEP;
+            compressed = compressWithQuality(image, quality);
+            log.debug("Попытка сжатия с quality={}, размер={} MB", quality, formatMb(compressed.length));
+        }
+        return compressed;
+    }
+
+    private byte[] increaseQualityUpToLimit(BufferedImage image, byte[] compressed) throws IOException {
+        for (float q = 1.0f; q >= MIN_JPEG_QUALITY; q -= QUALITY_STEP) {
+            byte[] candidate = compressWithQuality(image, q);
+            if (candidate.length <= TARGET_IMAGE_SIZE) {
+                log.debug("Подобрано качество {} для лучшего вида при лимите 7 MB, размер={} MB", String.format("%.2f", q), formatMb(candidate.length));
+                return candidate;
+            }
+        }
+        return compressed;
+    }
+
+    private void logCompressionResult(int originalBytes, int compressedBytes) {
+        float ratio = (float) compressedBytes / originalBytes;
+        log.info("Сжатие завершено: исходный размер={} MB, сжатый размер={} MB, коэффициент={}",
+                formatMb(originalBytes), formatMb(compressedBytes), String.format("%.2f", ratio));
     }
 
     /**
@@ -159,35 +170,20 @@ public class ImageCompressionService {
      * Внутренний метод: сжать до целевого размера в байтах.
      */
     private byte[] compressImageToTarget(byte[] imageBytes, String mimeType, long targetSize) throws IOException {
-        BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
-        if (image == null) {
-            throw new IOException("Не удалось прочитать изображение");
-        }
-        if (image.getType() != BufferedImage.TYPE_INT_RGB) {
-            BufferedImage rgbImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = rgbImage.createGraphics();
-            g.setColor(Color.WHITE);
-            g.fillRect(0, 0, rgbImage.getWidth(), rgbImage.getHeight());
-            g.drawImage(image, 0, 0, null);
-            g.dispose();
-            image = rgbImage;
-        }
-        int originalWidth = image.getWidth();
-        int originalHeight = image.getHeight();
-        if (originalWidth > MAX_DIMENSION || originalHeight > MAX_DIMENSION) {
+        BufferedImage image = readImage(imageBytes);
+        image = ensureRgb(image);
+        if (image.getWidth() > MAX_DIMENSION || image.getHeight() > MAX_DIMENSION) {
             image = resizeImage(image, MAX_DIMENSION);
         }
         byte[] compressed = compressWithQuality(image, INITIAL_JPEG_QUALITY);
         if (compressed.length > targetSize) {
             float quality = INITIAL_JPEG_QUALITY;
-            float step = 0.05f;
             while (compressed.length > targetSize && quality >= MIN_JPEG_QUALITY) {
-                quality -= step;
+                quality -= QUALITY_STEP;
                 compressed = compressWithQuality(image, quality);
             }
             if (compressed.length > targetSize) {
-                int newMaxDimension = (int) (MAX_DIMENSION * 0.75);
-                image = resizeImage(image, newMaxDimension);
+                image = resizeImage(image, (int) (MAX_DIMENSION * 0.75));
                 compressed = compressWithQuality(image, MIN_JPEG_QUALITY);
             }
         }
