@@ -61,7 +61,8 @@ public class ImageCompressionService {
             return imageBytes;
         }
 
-        log.info("Начало сжатия изображения: размер={} bytes, mimeType={}", imageBytes.length, mimeType);
+        double sizeMb = imageBytes.length / (1024.0 * 1024.0);
+        log.info("Начало сжатия изображения: размер={} MB, mimeType={}", String.format("%.2f", sizeMb), mimeType);
 
         // Читаем изображение
         BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
@@ -115,8 +116,10 @@ public class ImageCompressionService {
         }
 
         float compressionRatio = (float) compressed.length / imageBytes.length;
-        log.info("Сжатие завершено: исходный размер={} bytes, сжатый размер={} bytes, коэффициент={:.2f}",
-                imageBytes.length, compressed.length, compressionRatio);
+        double originalMb = imageBytes.length / (1024.0 * 1024.0);
+        double compressedMb = compressed.length / (1024.0 * 1024.0);
+        log.info("Сжатие завершено: исходный размер={} MB, сжатый размер={} MB, коэффициент={}",
+                String.format("%.2f", originalMb), String.format("%.2f", compressedMb), String.format("%.2f", compressionRatio));
 
         return compressed;
     }
