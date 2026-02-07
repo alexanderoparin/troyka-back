@@ -21,6 +21,8 @@ public class GenerationProperties {
     private static final BigDecimal LAOZHANG_COST_NANO_BANANA_USD = new BigDecimal("0.025");
     /** Себестоимость одного изображения LaoZhang: Pro, любое разрешение (USD). */
     private static final BigDecimal LAOZHANG_COST_PRO_USD = new BigDecimal("0.05");
+    /** Себестоимость FAL: Nano Banana, стандартная модель (USD). */
+    private static final BigDecimal FAL_COST_NANO_BANANA_USD = new BigDecimal("0.039");
     /** Себестоимость FAL: Pro 1K/2K (USD). */
     private static final BigDecimal FAL_COST_PRO_1K_2K_USD = new BigDecimal("0.15");
     /** Себестоимость FAL: Pro 4K (USD). */
@@ -105,8 +107,13 @@ public class GenerationProperties {
         if (provider == GenerationProvider.LAOZHANG_AI) {
             return modelType == GenerationModelType.NANO_BANANA_PRO ? LAOZHANG_COST_PRO_USD : LAOZHANG_COST_NANO_BANANA_USD;
         }
-        if (provider == GenerationProvider.FAL_AI && modelType == GenerationModelType.NANO_BANANA_PRO && resolution != null) {
-            return resolution == Resolution.RESOLUTION_4K ? FAL_COST_PRO_4K_USD : FAL_COST_PRO_1K_2K_USD;
+        if (provider == GenerationProvider.FAL_AI) {
+            if (modelType == GenerationModelType.NANO_BANANA_PRO && resolution != null) {
+                return resolution == Resolution.RESOLUTION_4K ? FAL_COST_PRO_4K_USD : FAL_COST_PRO_1K_2K_USD;
+            }
+            if (modelType == GenerationModelType.NANO_BANANA) {
+                return FAL_COST_NANO_BANANA_USD;
+            }
         }
         return BigDecimal.ZERO;
     }

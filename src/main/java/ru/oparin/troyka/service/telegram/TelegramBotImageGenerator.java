@@ -5,12 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
-import ru.oparin.troyka.service.FalAIService;
+import ru.oparin.troyka.service.provider.GenerationProviderRouter;
 
 import java.util.List;
 
 /**
  * Генератор изображений для Telegram бота.
+ * Использует активного провайдера из настроек (как и веб), а не только FAL.
  */
 @RequiredArgsConstructor
 @Component
@@ -19,7 +20,7 @@ public class TelegramBotImageGenerator {
 
     private static final long DEFAULT_STYLE_ID = 1L;
 
-    private final FalAIService falAIService;
+    private final GenerationProviderRouter providerRouter;
     private final TelegramBotSessionService telegramBotSessionService;
     private final TelegramMessageService telegramMessageService;
     private final TelegramBotMessageBuilder messageBuilder;
@@ -35,7 +36,7 @@ public class TelegramBotImageGenerator {
         Long finalStyleId = styleId != null ? styleId : DEFAULT_STYLE_ID;
         ImageRq imageRq = buildImageRequest(prompt, sessionId, inputImageUrls, finalStyleId);
 
-        return falAIService.getImageResponse(imageRq, userId)
+        return providerRouter.generateImage(imageRq, userId)
                 .flatMap(imageResponse -> sendGeneratedImage(userId, imageResponse, displayPrompt))
                 .onErrorResume(error -> handleGenerationError(userId, error));
     }
