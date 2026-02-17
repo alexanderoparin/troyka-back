@@ -7,6 +7,7 @@ import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.BlockedRegistrationMetric;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Репозиторий для работы с метриками блокированных регистраций.
@@ -64,4 +65,16 @@ public interface BlockedRegistrationMetricRepository extends ReactiveCrudReposit
      */
     @Query("SELECT * FROM troyka.blocked_registration_metrics ORDER BY created_at DESC LIMIT :limit")
     Flux<BlockedRegistrationMetric> findRecentMetrics(int limit);
+
+    /**
+     * Подсчитать количество метрик по методу регистрации за период.
+     */
+    @Query("SELECT COUNT(*) FROM troyka.blocked_registration_metrics WHERE registration_method = :registrationMethod AND created_at >= :startDate AND created_at <= :endDate")
+    Mono<Long> countByRegistrationMethodAndCreatedAtBetween(String registrationMethod, LocalDateTime startDate, LocalDateTime endDate);
+
+    /**
+     * Найти метрики за период с указанными методами регистрации.
+     */
+    @Query("SELECT * FROM troyka.blocked_registration_metrics WHERE registration_method IN (:methods) AND created_at >= :startDate AND created_at <= :endDate")
+    Flux<BlockedRegistrationMetric> findByCreatedAtBetweenAndRegistrationMethodIn(LocalDateTime startDate, LocalDateTime endDate, List<String> methods);
 }

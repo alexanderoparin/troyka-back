@@ -71,6 +71,20 @@ public class AuthService {
                 .flatMap(isAllowed -> {
                     if (!isAllowed) {
                         log.warn("Попытка регистрации заблокирована из-за превышения лимита для IP: {}", clientIp);
+                        String emailDomain = trimmedEmail.contains("@")
+                                ? trimmedEmail.substring(trimmedEmail.indexOf('@') + 1).toLowerCase()
+                                : "-";
+                        blockedRegistrationMetricsService.recordBlockedRegistration(
+                                trimmedEmail,
+                                emailDomain,
+                                trimmedUsername,
+                                clientIp,
+                                userAgent,
+                                "IP_RATE_LIMIT"
+                        ).subscribe(
+                                metric -> log.debug("Метрика блокировки по IP (rate limit) сохранена: id={}", metric.getId()),
+                                error -> log.error("Ошибка сохранения метрики блокировки по IP", error)
+                        );
                         return Mono.error(new AuthException(
                                 HttpStatus.TOO_MANY_REQUESTS,
                                 "Превышен лимит регистраций. Попробуйте позже."

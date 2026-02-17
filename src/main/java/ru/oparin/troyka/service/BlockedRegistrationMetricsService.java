@@ -67,6 +67,8 @@ public class BlockedRegistrationMetricsService {
                 .doOnError(error -> log.error("Ошибка сохранения метрики блокированной регистрации", error));
     }
 
+    private static final List<String> EMAIL_METHODS = List.of("EMAIL", "TELEGRAM");
+
     /**
      * Получить статистику блокированных регистраций.
      *
@@ -78,33 +80,45 @@ public class BlockedRegistrationMetricsService {
         LocalDateTime weekStart = now.minusDays(DAYS_IN_WEEK).with(LocalTime.MIN);
         LocalDateTime monthStart = now.minusDays(DAYS_IN_MONTH).with(LocalTime.MIN);
 
-        Mono<Long> todayCountMono = withRetry(repository.countByCreatedAtBetween(todayStart, now));
-        Mono<Long> weekCountMono = withRetry(repository.countByCreatedAtBetween(weekStart, now));
-        Mono<Long> monthCountMono = withRetry(repository.countByCreatedAtBetween(monthStart, now));
+        Mono<Long> todayEmailMono = countEmailAndTelegramBetween(todayStart, now);
+        Mono<Long> weekEmailMono = countEmailAndTelegramBetween(weekStart, now);
+        Mono<Long> monthEmailMono = countEmailAndTelegramBetween(monthStart, now);
+
+        Mono<Long> ipTodayMono = withRetry(repository.countByRegistrationMethodAndCreatedAtBetween("IP_RATE_LIMIT", todayStart, now));
+        Mono<Long> ipWeekMono = withRetry(repository.countByRegistrationMethodAndCreatedAtBetween("IP_RATE_LIMIT", weekStart, now));
+        Mono<Long> ipMonthMono = withRetry(repository.countByRegistrationMethodAndCreatedAtBetween("IP_RATE_LIMIT", monthStart, now));
 
         Mono<Map<String, Long>> countByDomainMono = getCountByDomain(monthStart, now);
         Mono<Map<String, Long>> countByIpMono = getCountByIpAddress(monthStart, now);
         Mono<List<BlockedRegistrationMetricDTO>> recentMetricsMono = getRecentMetrics();
 
-        return Mono.zip(todayCountMono, weekCountMono, monthCountMono, countByDomainMono, countByIpMono, recentMetricsMono)
+        return Mono.zip(todayEmailMono, weekEmailMono, monthEmailMono,
+                        ipTodayMono, ipWeekMono, ipMonthMono,
+                        countByDomainMono, countByIpMono, recentMetricsMono)
                 .map(tuple -> BlockedRegistrationStatsDTO.builder()
                         .todayCount(tuple.getT1())
                         .last7DaysCount(tuple.getT2())
                         .last30DaysCount(tuple.getT3())
-                        .countByDomain(tuple.getT4())
-                        .countByIpAddress(tuple.getT5())
-                        .recentMetrics(tuple.getT6())
+                        .ipRateLimitTodayCount(tuple.getT4())
+                        .ipRateLimitLast7DaysCount(tuple.getT5())
+                        .ipRateLimitLast30DaysCount(tuple.getT6())
+                        .countByDomain(tuple.getT7())
+                        .countByIpAddress(tuple.getT8())
+                        .recentMetrics(tuple.getT9())
                         .build());
     }
 
+    private Mono<Long> countEmailAndTelegramBetween(LocalDateTime start, LocalDateTime end) {
+        Mono<Long> email = withRetry(repository.countByRegistrationMethodAndCreatedAtBetween("EMAIL", start, end));
+        Mono<Long> telegram = withRetry(repository.countByRegistrationMethodAndCreatedAtBetween("TELEGRAM", start, end));
+        return Mono.zip(email, telegram).map(t -> t.getT1() + t.getT2());
+    }
+
     /**
-     * Получить количество блокированных регистраций по доменам за период.
+     * Получить количество блокированных регистраций по доменам за период (только EMAIL и TELEGRAM).
      */
     private Mono<Map<String, Long>> getCountByDomain(LocalDateTime startDate, LocalDateTime endDate) {
-        return repository.findAll()
-                .filter(metric -> metric.getCreatedAt() != null 
-                        && !metric.getCreatedAt().isBefore(startDate) 
-                        && !metric.getCreatedAt().isAfter(endDate))
+        return repository.findByCreatedAtBetweenAndRegistrationMethodIn(startDate, endDate, EMAIL_METHODS)
                 .collectList()
                 .map(metrics -> {
                     Map<String, Long> countMap = new HashMap<>();
@@ -117,14 +131,11 @@ public class BlockedRegistrationMetricsService {
     }
 
     /**
-     * Получить количество блокированных регистраций по IP адресам за период.
+     * Получить количество блокированных регистраций по IP адресам за период (только EMAIL и TELEGRAM).
      */
     private Mono<Map<String, Long>> getCountByIpAddress(LocalDateTime startDate, LocalDateTime endDate) {
-        return repository.findAll()
-                .filter(metric -> metric.getCreatedAt() != null 
-                        && metric.getIpAddress() != null
-                        && !metric.getCreatedAt().isBefore(startDate) 
-                        && !metric.getCreatedAt().isAfter(endDate))
+        return repository.findByCreatedAtBetweenAndRegistrationMethodIn(startDate, endDate, EMAIL_METHODS)
+                .filter(metric -> metric.getIpAddress() != null)
                 .collectList()
                 .map(metrics -> {
                     Map<String, Long> countMap = new HashMap<>();

@@ -33,6 +33,21 @@ public class BlockedRegistrationStatsDTO {
     private Long last30DaysCount;
 
     /**
+     * Количество блокировок по IP (превышение лимита регистраций с одного IP) за сегодня.
+     */
+    private Long ipRateLimitTodayCount;
+
+    /**
+     * Количество блокировок по IP за последние 7 дней.
+     */
+    private Long ipRateLimitLast7DaysCount;
+
+    /**
+     * Количество блокировок по IP за последние 30 дней.
+     */
+    private Long ipRateLimitLast30DaysCount;
+
+    /**
      * Количество блокированных регистраций по доменам (топ доменов).
      * Ключ - домен, значение - количество попыток.
      */
