@@ -12,6 +12,7 @@ import ru.oparin.troyka.exception.FalAIException;
 import ru.oparin.troyka.model.dto.fal.FalAIQueueRequestStatusDTO;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.model.enums.QueueStatus;
 import ru.oparin.troyka.service.FalAIQueueService;
@@ -49,7 +50,7 @@ public class GenerateController {
     @PostMapping("/submit")
     public Mono<ResponseEntity<FalAIQueueRequestStatusDTO>> submitToQueue(@RequestBody ImageRq imageRq) {
         return SecurityUtil.checkStudioAccess(userService)
-                .flatMap(userId -> providerRouter.getActiveProvider()
+                .flatMap(userId -> providerRouter.getActiveProvider(imageRq.getModel())
                         .flatMap(activeProvider -> {
                             if (activeProvider == GenerationProvider.FAL_AI) {
                                 // Для FAL AI используем очередь
@@ -119,7 +120,7 @@ public class GenerateController {
         Long id = validateAndParseId(idStr);
         
         return SecurityUtil.checkStudioAccess(userService)
-                .flatMap(userId -> providerRouter.getActiveProvider()
+                .flatMap(userId -> providerRouter.getActiveProvider(GenerationModelType.NANO_BANANA)
                         .flatMap(activeProvider -> {
                             if (activeProvider == GenerationProvider.FAL_AI || id != 0) {
                                 // Для FAL AI или если ID не 0, используем стандартный метод

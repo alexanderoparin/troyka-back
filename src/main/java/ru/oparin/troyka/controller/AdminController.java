@@ -8,11 +8,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.admin.*;
 import ru.oparin.troyka.model.dto.auth.MessageResponse;
 import ru.oparin.troyka.model.dto.system.SystemStatusHistoryDTO;
 import ru.oparin.troyka.model.dto.system.SystemStatusRequest;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.service.*;
 import ru.oparin.troyka.service.provider.GenerationProviderRouter;
@@ -166,40 +168,12 @@ public class AdminController {
                 });
     }
 
-    @Operation(summary = "Получить список провайдеров генерации изображений",
-            description = "Возвращает список всех доступных провайдеров с их статусом и доступностью. Требуется роль ADMIN.")
+    @Operation(summary = "Получить настройки провайдеров по моделям",
+            description = "Возвращает для каждой модели список провайдеров с доступностью и активным провайдером. Требуется роль ADMIN.")
     @GetMapping("/generation-providers")
-    public Mono<ResponseEntity<List<GenerationProviderDTO>>> getGenerationProviders() {
+    public Mono<ResponseEntity<List<ru.oparin.troyka.model.dto.admin.ModelProviderSettingsDTO>>> getGenerationProviders() {
         return SecurityUtil.getCurrentAdmin(userService)
-                .flatMap(admin -> {
-                    return providerSettingsService.getActiveProvider()
-                            .flatMap(activeProvider -> {
-                                return Mono.zip(
-                                        providerRouter.getProvider(GenerationProvider.FAL_AI)
-                                                .isAvailable()
-                                                .defaultIfEmpty(false),
-                                        providerRouter.getProvider(GenerationProvider.LAOZHANG_AI)
-                                                .isAvailable()
-                                                .defaultIfEmpty(false)
-                                ).map(availability -> {
-                                    Boolean falAvailable = availability.getT1();
-                                    Boolean laoZhangAvailable = availability.getT2();
-
-                                    return List.of(
-                                            GenerationProviderDTO.fromProvider(
-                                                    GenerationProvider.FAL_AI,
-                                                    falAvailable,
-                                                    activeProvider == GenerationProvider.FAL_AI
-                                            ),
-                                            GenerationProviderDTO.fromProvider(
-                                                    GenerationProvider.LAOZHANG_AI,
-                                                    laoZhangAvailable,
-                                                    activeProvider == GenerationProvider.LAOZHANG_AI
-                                            )
-                                    );
-                                });
-                            });
-                })
+                .flatMap(admin -> buildModelProviderSettingsList())
                 .map(ResponseEntity::ok)
                 .onErrorResume(e -> {
                     log.error("Ошибка получения списка провайдеров: {}", e.getMessage());
@@ -207,21 +181,59 @@ public class AdminController {
                 });
     }
 
-    @Operation(summary = "Установить активного провайдера генерации изображений",
-            description = "Переключает активного провайдера генерации изображений. Требуется роль ADMIN.")
+    private Mono<List<ru.oparin.troyka.model.dto.admin.ModelProviderSettingsDTO>> buildModelProviderSettingsList() {
+        Mono<Boolean> falAvailable = providerRouter.getProvider(GenerationProvider.FAL_AI).isAvailable().defaultIfEmpty(false);
+        Mono<Boolean> laoZhangAvailable = providerRouter.getProvider(GenerationProvider.LAOZHANG_AI).isAvailable().defaultIfEmpty(false);
+        return Mono.zip(falAvailable, laoZhangAvailable)
+                .flatMapMany(availability -> Flux.fromArray(GenerationModelType.values())
+                        .flatMap(modelType -> providerSettingsService.getActiveProvider(modelType)
+                                .map(activeProvider -> ru.oparin.troyka.model.dto.admin.ModelProviderSettingsDTO.builder()
+                                        .modelType(modelType.name())
+                                        .modelDisplayName(getModelDisplayName(modelType))
+                                        .providers(List.of(
+                                                GenerationProviderDTO.fromProvider(
+                                                        GenerationProvider.FAL_AI,
+                                                        availability.getT1(),
+                                                        activeProvider == GenerationProvider.FAL_AI
+                                                ),
+                                                GenerationProviderDTO.fromProvider(
+                                                        GenerationProvider.LAOZHANG_AI,
+                                                        availability.getT2(),
+                                                        activeProvider == GenerationProvider.LAOZHANG_AI
+                                                )
+                                        ))
+                                        .build())))
+                .collectList();
+    }
+
+    private static String getModelDisplayName(GenerationModelType modelType) {
+        return switch (modelType) {
+            case NANO_BANANA -> "Nano Banana";
+            case NANO_BANANA_PRO -> "Nano Banana PRO";
+        };
+    }
+
+    @Operation(summary = "Установить активного провайдера для модели",
+            description = "Переключает активного провайдера генерации для указанной модели. Требуется роль ADMIN.")
     @PutMapping("/generation-providers/active")
     public Mono<ResponseEntity<MessageResponse>> setActiveProvider(@Valid @RequestBody SetActiveProviderRequest request) {
         return SecurityUtil.getCurrentAdmin(userService)
                 .flatMap(admin -> {
+                    GenerationModelType modelType;
+                    try {
+                        modelType = GenerationModelType.valueOf(request.getModelType());
+                    } catch (IllegalArgumentException e) {
+                        modelType = GenerationModelType.fromName(request.getModelType());
+                    }
                     GenerationProvider provider = GenerationProvider.fromCode(request.getProvider());
                     if (provider == null) {
                         return Mono.just(ResponseEntity.badRequest()
                                 .body(new MessageResponse("Неизвестный провайдер: " + request.getProvider())));
                     }
-
-                    return providerSettingsService.setActiveProvider(provider)
+                    GenerationModelType finalModelType = modelType;
+                    return providerSettingsService.setActiveProvider(modelType, provider)
                             .map(settings -> ResponseEntity.ok(
-                                    new MessageResponse("Активный провайдер установлен: " + provider.getDisplayName())
+                                    new MessageResponse("Для модели " + finalModelType.name() + " установлен провайдер: " + provider.getDisplayName())
                             ));
                 })
                 .onErrorResume(e -> {

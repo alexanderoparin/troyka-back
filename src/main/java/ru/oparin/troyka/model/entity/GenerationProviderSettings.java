@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 
 /**
  * Сущность настроек провайдера генерации изображений.
- * Хранит информацию о том, какой провайдер активен в системе.
+ * Одна запись на модель: для каждой модели (NANO_BANANA, NANO_BANANA_PRO, …) хранится свой активный провайдер.
  */
 @Data
 @Builder
@@ -24,16 +24,17 @@ import java.time.LocalDateTime;
 @Table(value = "generation_provider_settings", schema = "troyka")
 public class GenerationProviderSettings {
 
-    /**
-     * Уникальный идентификатор настройки.
-     * Всегда будет равен 1, так как настройка одна для всей системы.
-     */
     @Id
     private Long id;
 
     /**
-     * Активный провайдер генерации изображений.
-     * По умолчанию FAL_AI.
+     * Тип модели генерации (NANO_BANANA, NANO_BANANA_PRO и т.д.).
+     */
+    @Column("model_type")
+    private String modelType;
+
+    /**
+     * Активный провайдер для этой модели (FAL_AI, LAOZHANG_AI).
      */
     @Column("active_provider")
     @Builder.Default

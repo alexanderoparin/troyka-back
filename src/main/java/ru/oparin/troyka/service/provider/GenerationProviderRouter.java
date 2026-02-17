@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
+import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.GenerationProvider;
 import ru.oparin.troyka.service.GenerationProviderSettingsService;
 import ru.oparin.troyka.service.ProviderFallbackMetricsService;
@@ -47,7 +48,7 @@ public class GenerationProviderRouter {
      * @throws IllegalStateException если активный провайдер не найден в списке доступных
      */
     public Mono<ImageRs> generateImage(ImageRq request, Long userId) {
-        return settingsService.getActiveProvider()
+        return settingsService.getActiveProvider(request.getModel())
                 .flatMap(activeProvider -> {
                     ImageGenerationProvider activeProviderInstance = getProviderOrError(activeProvider);
                     log.debug("Маршрутизация запроса к активному провайдеру: {}", activeProvider);
@@ -131,12 +132,13 @@ public class GenerationProviderRouter {
     }
 
     /**
-     * Получить активного провайдера из настроек.
+     * Получить активного провайдера для модели из настроек.
      *
-     * @return активный провайдер
+     * @param modelType тип модели генерации
+     * @return активный провайдер для этой модели
      */
-    public Mono<GenerationProvider> getActiveProvider() {
-        return settingsService.getActiveProvider();
+    public Mono<GenerationProvider> getActiveProvider(GenerationModelType modelType) {
+        return settingsService.getActiveProvider(modelType);
     }
 
     /**

@@ -4,5 +4,6 @@
     <file url="file://$PROJECT_DIR$/database_scripts/add_blocked_field_to_user.sql" value="9fab6114-9c36-4a07-80b0-a63f3ac80816" />
     <file url="file://$PROJECT_DIR$/database_scripts/create_blocked_registration_metrics_table.sql" value="9fab6114-9c36-4a07-80b0-a63f3ac80816" />
     <file url="file://$PROJECT_DIR$/database_scripts/create_provider_fallback_metrics_table.sql" value="9fab6114-9c36-4a07-80b0-a63f3ac80816" />
+    <file url="file://$PROJECT_DIR$/database_scripts/generation_provider_settings_per_model.sql" value="9fab6114-9c36-4a07-80b0-a63f3ac80816" />
   </component>
 </project>
