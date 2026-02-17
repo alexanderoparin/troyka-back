@@ -71,7 +71,12 @@ public class FalAIQueueMapper {
         if (model == GenerationModelType.SEEDREAM_4_5) {
             String size = rq.getSeedreamImageSize();
             if (size != null && !size.isBlank()) {
-                builder.imageSize(size.trim());
+                size = size.trim();
+                switch (size) {
+                    case "4k_landscape_4_3" -> builder.imageSize(java.util.Map.of("width", 4096, "height", 3072));
+                    case "4k_portrait_4_3" -> builder.imageSize(java.util.Map.of("width", 3072, "height", 4096));
+                    default -> builder.imageSize(size);
+                }
             } else {
                 String aspect = rq.getAspectRatio() != null ? rq.getAspectRatio() : "1:1";
                 builder.imageSize(SEEDREAM_IMAGE_SIZE_BY_ASPECT.getOrDefault(aspect, SEEDREAM_IMAGE_SIZE_DEFAULT));
