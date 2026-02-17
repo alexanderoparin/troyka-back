@@ -73,7 +73,7 @@ public class FalAIQueueMapper {
             if (size != null && !size.isBlank()) {
                 size = size.trim();
                 switch (size) {
-                    case "4k_landscape_4_3" -> builder.imageSize(java.util.Map.of("width", 4096, "height", 3072));
+                    case "4k_landscape_4_3" -> builder.imageSize(Map.of("width", 4096, "height", 3072));
                     case "4k_portrait_4_3" -> builder.imageSize(java.util.Map.of("width", 3072, "height", 4096));
                     default -> builder.imageSize(size);
                 }

@@ -177,7 +177,8 @@ public class ImageGenerationHistoryService {
                 pointsCost,
                 costUsd,
                 now,
-                GenerationProvider.FAL_AI.getCode() // Очередь используется только для FAL AI
+                GenerationProvider.FAL_AI.getCode(), // Очередь используется только для FAL AI
+                false // deleted
         ).doOnSuccess(h -> log.info("Создана запись истории со статусом {}: id={}, falRequestId={}, numImages={}, pointsCost={}, costUsd=${}",
                 queueStatus, h.getId(), falRequestId, numImages, pointsCost, costUsd));
     }

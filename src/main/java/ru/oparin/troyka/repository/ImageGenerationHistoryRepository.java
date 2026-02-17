@@ -229,14 +229,14 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
      */
     @Query("INSERT INTO troyka.image_generation_history " +
            "(user_id, image_urls, prompt, created_at, session_id, input_image_urls, style_id, aspect_ratio, model_type, resolution, " +
-           "fal_request_id, queue_status, queue_position, num_images, points_cost, cost_usd, updated_at, provider) " +
+           "fal_request_id, queue_status, queue_position, num_images, points_cost, cost_usd, updated_at, provider, deleted) " +
            "VALUES (:userId, :imageUrlsJson::jsonb, :prompt, :createdAt, :sessionId, " +
            "CASE WHEN :inputImageUrlsJson IS NULL THEN NULL ELSE :inputImageUrlsJson::jsonb END, " +
-           ":styleId, :aspectRatio, :modelType, :resolution, :falRequestId, :queueStatus, :queuePosition, :numImages, :pointsCost, :costUsd, :updatedAt, :provider) " +
+           ":styleId, :aspectRatio, :modelType, :resolution, :falRequestId, :queueStatus, :queuePosition, :numImages, :pointsCost, :costUsd, :updatedAt, :provider, :deleted) " +
            "RETURNING *")
     Mono<ImageGenerationHistory> saveQueueRequest(Long userId, String imageUrlsJson, String prompt,
                                                    LocalDateTime createdAt, Long sessionId, String inputImageUrlsJson,
                                                    Long styleId, String aspectRatio, String modelType, String resolution,
                                                    String falRequestId, String queueStatus, Integer queuePosition, Integer numImages,
-                                                   Integer pointsCost, BigDecimal costUsd, LocalDateTime updatedAt, String provider);
+                                                   Integer pointsCost, BigDecimal costUsd, LocalDateTime updatedAt, String provider, Boolean deleted);
 }
