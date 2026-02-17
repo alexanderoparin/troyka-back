@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Сервис для работы с историей генерации изображений.
@@ -72,7 +73,7 @@ public class ImageGenerationHistoryService {
                         sessionId,
                         inputImageUrlsJson,
                         styleId,
-                        aspectRatio != null ? aspectRatio : "1:1",
+                        normalizeAspectRatioForDb(aspectRatio),
                         modelTypeToSave,
                         resolutionToSave,
                         numImages,
@@ -159,7 +160,8 @@ public class ImageGenerationHistoryService {
         Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImagesForCalculation);
         BigDecimal costUsd = generationProperties.getCostUsd(modelType, resolution, numImagesForCalculation);
 
-        String aspectRatioToSave = aspectRatio != null ? aspectRatio : "1:1";
+        // БД: aspect_ratio varchar(10). Фронт для Seedream может слать длинную подпись — приводим к короткому формату.
+        String aspectRatioToSave = normalizeAspectRatioForDb(aspectRatio);
         log.info("saveQueueRequest INSERT: userId={}, imageUrlsJson={}, prompt={}, createdAt={}, sessionId={}, inputImageUrlsJson={}, styleId={}, aspectRatio={}, modelType={}, resolution={}, falRequestId={}, queueStatus={}, queuePosition=null, numImages={}, pointsCost={}, costUsd={}, updatedAt={}, provider={}, deleted=false",
                 userId, imageUrlsJson, prompt, now, sessionId, inputImageUrlsJson, styleId, aspectRatioToSave, modelTypeToSave, resolutionToSave, falRequestId, queueStatus.name(), numImages, pointsCost, costUsd, now, GenerationProvider.FAL_AI.getCode());
 
@@ -171,7 +173,7 @@ public class ImageGenerationHistoryService {
                 sessionId,
                 inputImageUrlsJson,
                 styleId,
-                aspectRatio != null ? aspectRatio : "1:1",
+                aspectRatioToSave,
                 modelTypeToSave,
                 resolutionToSave,
                 falRequestId,
@@ -237,6 +239,40 @@ public class ImageGenerationHistoryService {
      */
     public Mono<ImageGenerationHistory> findById(Long id) {
         return imageGenerationHistoryRepository.findById(id);
+    }
+
+    /**
+     * Приводит aspect_ratio к формату для БД (varchar(10)).
+     * Для 4K-пресетов Seedream сохраняем размеры "Ш×В" (4096×3072), иначе — соотношение "4:3" и т.д.
+     */
+    private static String normalizeAspectRatioForDb(String aspectRatio) {
+        if (aspectRatio == null || aspectRatio.isBlank()) {
+            return "1:1";
+        }
+        String s = aspectRatio.trim();
+        if (s.length() <= 10) {
+            return s;
+        }
+        // Сначала пробуем вытащить размеры из скобок, например "(4096×3072)"
+        var sizeInParens = Pattern.compile("\\((\\d+)×(\\d+)\\)").matcher(s);
+        if (sizeInParens.find()) {
+            String wxh = sizeInParens.group(1) + "×" + sizeInParens.group(2);
+            if (wxh.length() <= 10) return wxh;
+        }
+        // Известные 4K-пресеты Seedream -> сохраняем размеры
+        if (s.contains("4k_landscape_4_3") || (s.contains("Landscape") && s.contains("4:3") && s.contains("4096"))) return "4096×3072";
+        if (s.contains("4k_portrait_4_3") || (s.contains("Portrait") && s.contains("4:3") && s.contains("3072"))) return "3072×4096";
+        // Остальные длинные подписи -> короткое соотношение
+        if (s.contains("Landscape") && s.contains("4:3")) return "4:3";
+        if (s.contains("Portrait") && s.contains("4:3")) return "3:4";
+        if (s.contains("Landscape") && s.contains("16:9")) return "16:9";
+        if (s.contains("Portrait") && s.contains("16:9")) return "9:16";
+        var m = Pattern.compile("(\\d+):(\\d+)").matcher(s);
+        if (m.find()) {
+            String ratio = m.group(1) + ":" + m.group(2);
+            return ratio.length() <= 10 ? ratio : "1:1";
+        }
+        return "1:1";
     }
 
 }
