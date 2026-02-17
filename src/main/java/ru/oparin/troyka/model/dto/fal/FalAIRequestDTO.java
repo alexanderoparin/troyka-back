@@ -1,5 +1,6 @@
 package ru.oparin.troyka.model.dto.fal;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,10 +10,12 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * DTO для запроса к fal.ai API
+ * DTO для запроса к fal.ai API.
+ * Поля null не сериализуются в JSON.
  */
 @Data
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @NoArgsConstructor
 @AllArgsConstructor
 public class FalAIRequestDTO {

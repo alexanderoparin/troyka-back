@@ -59,13 +59,15 @@ public class FalAIQueueMapper {
      * Создать тело запроса для Fal.ai.
      */
     public FalAIRequestDTO createRqBody(ImageRq rq, String prompt, Integer numImages, List<String> inputImageUrls, Resolution resolution) {
+        GenerationModelType model = rq.getModel();
         FalAIRequestDTO.FalAIRequestDTOBuilder builder = FalAIRequestDTO.builder()
                 .prompt(prompt)
                 .numImages(numImages)
-                .imageUrls(removingBlob(inputImageUrls))
-                .aspectRatio(rq.getAspectRatio());
-
-        GenerationModelType model = rq.getModel();
+                .imageUrls(removingBlob(inputImageUrls));
+        // Для Seedream в FAL уходит только image_size, aspect_ratio не передаём
+        if (model != GenerationModelType.SEEDREAM_4_5) {
+            builder.aspectRatio(rq.getAspectRatio() != null ? rq.getAspectRatio() : "1:1");
+        }
         if (model == GenerationModelType.SEEDREAM_4_5) {
             String size = rq.getSeedreamImageSize();
             if (size != null && !size.isBlank()) {
