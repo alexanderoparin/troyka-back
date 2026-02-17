@@ -21,9 +21,14 @@ public final class ProviderConstants {
         }
 
         /**
-         * Шаблон endpoint для Google Native Format API.
+         * Шаблон endpoint для Google Native Format API (Nano Banana, Pro).
          */
         public static final String ENDPOINT_TEMPLATE = "/v1beta/models/%s:generateContent";
+
+        /**
+         * Endpoint для LaoZhang SeeDream API (OpenAI-совместимый формат).
+         */
+        public static final String SEEDREAM_ENDPOINT = "/v1/images/generations";
 
         /**
          * Таймаут для HTTP запросов (12 минут для поддержки генерации 4K).

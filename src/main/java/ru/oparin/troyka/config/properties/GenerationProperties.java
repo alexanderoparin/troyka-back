@@ -21,6 +21,8 @@ public class GenerationProperties {
     private static final BigDecimal LAOZHANG_COST_NANO_BANANA_USD = new BigDecimal("0.025");
     /** Себестоимость одного изображения LaoZhang: Pro, любое разрешение (USD). */
     private static final BigDecimal LAOZHANG_COST_PRO_USD = new BigDecimal("0.05");
+    /** Себестоимость LaoZhang: SeeDream 4.5 (USD). */
+    private static final BigDecimal LAOZHANG_COST_SEEDREAM_4_5_USD = new BigDecimal("0.045");
     /** Себестоимость FAL: Nano Banana, стандартная модель (USD). */
     private static final BigDecimal FAL_COST_NANO_BANANA_USD = new BigDecimal("0.039");
     /** Себестоимость FAL: Pro 1K/2K (USD). */
@@ -113,7 +115,9 @@ public class GenerationProperties {
      */
     private BigDecimal getCostPerImageUsd(GenerationModelType modelType, Resolution resolution, GenerationProvider provider) {
         if (provider == GenerationProvider.LAOZHANG_AI) {
-            return modelType == GenerationModelType.NANO_BANANA_PRO ? LAOZHANG_COST_PRO_USD : LAOZHANG_COST_NANO_BANANA_USD;
+            if (modelType == GenerationModelType.SEEDREAM_4_5) return LAOZHANG_COST_SEEDREAM_4_5_USD;
+            if (modelType == GenerationModelType.NANO_BANANA_PRO) return LAOZHANG_COST_PRO_USD;
+            return LAOZHANG_COST_NANO_BANANA_USD;
         }
         if (provider == GenerationProvider.FAL_AI) {
             if (modelType == GenerationModelType.SEEDREAM_4_5) {

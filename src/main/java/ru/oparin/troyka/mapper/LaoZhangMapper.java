@@ -13,6 +13,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.laozhang.LaoZhangRequestDTO;
+import ru.oparin.troyka.model.dto.laozhang.LaoZhangSeedreamRequestDTO;
 import ru.oparin.troyka.model.enums.GenerationModelType;
 import ru.oparin.troyka.model.enums.Resolution;
 import ru.oparin.troyka.service.ImageCompressionService;
@@ -21,6 +22,7 @@ import ru.oparin.troyka.service.provider.ProviderConstants;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Маппер для конвертации запросов в формат LaoZhang AI API.
@@ -48,6 +50,24 @@ public class LaoZhangMapper {
     }
 
     /**
+     * Маппинг пресета Seedream / aspect_ratio в формат "WxH" для LaoZhang (BytePlus size).
+     * 4K-пресеты и рекомендуемые размеры по доке BytePlus Seedream 4.5.
+     */
+    private static final Map<String, String> SEEDREAM_SIZE_WXH_BY_PRESET = Map.ofEntries(
+            Map.entry("4k_landscape_4_3", "4096x3072"),
+            Map.entry("4k_portrait_4_3", "3072x4096"),
+            Map.entry("1:1", "2048x2048"),
+            Map.entry("4:3", "2304x1728"),
+            Map.entry("3:4", "1728x2304"),
+            Map.entry("16:9", "2560x1440"),
+            Map.entry("9:16", "1440x2560"),
+            Map.entry("3:2", "2496x1664"),
+            Map.entry("2:3", "1664x2496"),
+            Map.entry("21:9", "3024x1296")
+    );
+    private static final String SEEDREAM_SIZE_WXH_DEFAULT = "2048x2048";
+
+    /**
      * Получить имя модели LaoZhang для типа модели.
      *
      * @param modelType тип модели
@@ -57,8 +77,30 @@ public class LaoZhangMapper {
         return switch (modelType) {
             case NANO_BANANA -> "gemini-2.5-flash-image-preview";
             case NANO_BANANA_PRO -> "gemini-3-pro-image-preview";
-            case SEEDREAM_4_5 -> throw new IllegalArgumentException("LaoZhang не поддерживает модель Seedream 4.5");
+            case SEEDREAM_4_5 -> "seedream-4-5-251128";
         };
+    }
+
+    /**
+     * Создать запрос к LaoZhang SeeDream API (OpenAI-формат: model, prompt, size, image).
+     */
+    public LaoZhangSeedreamRequestDTO createSeedreamRequest(ImageRq imageRq, String finalPrompt,
+                                                           List<String> inputImageUrls) {
+        String sizeWxH = seedreamPresetToSizeWxH(imageRq.getSeedreamImageSize(),
+                imageRq.getAspectRatio() != null ? imageRq.getAspectRatio() : "1:1");
+        String modelName = getLaoZhangModelName(GenerationModelType.SEEDREAM_4_5);
+        LaoZhangSeedreamRequestDTO.LaoZhangSeedreamRequestDTOBuilder builder = LaoZhangSeedreamRequestDTO.builder()
+                .model(modelName)
+                .prompt(finalPrompt)
+                .size(sizeWxH)
+                .responseFormat("b64_json")
+                .watermark(false);
+        if (!CollectionUtils.isEmpty(inputImageUrls)) {
+            builder.image(inputImageUrls.get(0));
+        }
+        Integer numImages = imageRq.getNumImages() != null ? imageRq.getNumImages() : 1;
+        builder.n(numImages);
+        return builder.build();
     }
 
     /**
@@ -73,6 +115,10 @@ public class LaoZhangMapper {
     public Mono<LaoZhangRequestResult> createRequest(ImageRq imageRq, String finalPrompt,
                                                      List<String> inputImageUrls,
                                                      Resolution resolution) {
+        if (imageRq.getModel() == GenerationModelType.SEEDREAM_4_5) {
+            LaoZhangSeedreamRequestDTO seedreamRequest = createSeedreamRequest(imageRq, finalPrompt, inputImageUrls);
+            return Mono.just(new LaoZhangRequestResult(seedreamRequest, null));
+        }
         if (CollectionUtils.isEmpty(inputImageUrls)) {
             List<LaoZhangRequestDTO.Content> contents = buildContentsForNewImage(finalPrompt);
             return Mono.just(new LaoZhangRequestResult(buildRequest(contents, imageRq, resolution), null));
@@ -121,6 +167,12 @@ public class LaoZhangMapper {
     private LaoZhangRequestDTO.ImageConfig buildImageConfig(ImageRq imageRq, Resolution resolution) {
         String aspectRatio = imageRq.getAspectRatio() != null ? imageRq.getAspectRatio() : "1:1";
 
+        if (imageRq.getModel() == GenerationModelType.SEEDREAM_4_5) {
+            String sizeWxH = seedreamPresetToSizeWxH(imageRq.getSeedreamImageSize(), aspectRatio);
+            return LaoZhangRequestDTO.ImageConfig.builder()
+                    .imageSize(sizeWxH)
+                    .build();
+        }
         if (imageRq.getModel() == GenerationModelType.NANO_BANANA_PRO) {
             LaoZhangRequestDTO.ImageConfig config = LaoZhangRequestDTO.ImageConfig.builder()
                     .aspectRatio(aspectRatio)
@@ -134,16 +186,29 @@ public class LaoZhangMapper {
                     .imageSize("1K")
                     .build();
         }
-        // SEEDREAM_4_5 не поддерживается LaoZhang (роутер использует только FAL для этой модели)
         return null;
     }
 
     /**
-     * Результат создания запроса: сам запрос и опциональное предупреждение для пользователя (если было сжатие).
+     * Преобразовать пресет Seedream (или aspect_ratio) в строку "WxH" для LaoZhang/BytePlus size.
+     */
+    private static String seedreamPresetToSizeWxH(String seedreamImageSize, String aspectRatio) {
+        if (seedreamImageSize != null && !seedreamImageSize.isBlank()) {
+            String key = seedreamImageSize.trim();
+            if (SEEDREAM_SIZE_WXH_BY_PRESET.containsKey(key)) {
+                return SEEDREAM_SIZE_WXH_BY_PRESET.get(key);
+            }
+        }
+        String ratio = (aspectRatio != null && !aspectRatio.isBlank()) ? aspectRatio.trim() : "1:1";
+        return SEEDREAM_SIZE_WXH_BY_PRESET.getOrDefault(ratio, SEEDREAM_SIZE_WXH_DEFAULT);
+    }
+
+    /**
+     * Результат создания запроса: сам запрос (LaoZhangRequestDTO для Gemini, LaoZhangSeedreamRequestDTO для Seedream) и опциональное предупреждение.
      */
     @Value
     public static class LaoZhangRequestResult {
-        LaoZhangRequestDTO request;
+        Object request;
         String warningMessage;
     }
 

@@ -24,6 +24,8 @@ import ru.oparin.troyka.model.dto.fal.ImageRq;
 import ru.oparin.troyka.model.dto.fal.ImageRs;
 import ru.oparin.troyka.model.dto.laozhang.LaoZhangRequestDTO;
 import ru.oparin.troyka.model.dto.laozhang.LaoZhangResponseDTO;
+import ru.oparin.troyka.model.dto.laozhang.LaoZhangSeedreamRequestDTO;
+import ru.oparin.troyka.model.dto.laozhang.LaoZhangSeedreamResponseDTO;
 import ru.oparin.troyka.model.entity.ArtStyle;
 import ru.oparin.troyka.model.entity.Session;
 import ru.oparin.troyka.model.entity.User;
@@ -162,30 +164,100 @@ public class LaoZhangProvider implements ImageGenerationProvider {
      * Выполнить генерацию изображений через LaoZhang API.
      */
     private Mono<GenerationContext> executeGeneration(GenerationContext context) {
+        if (context.request.getModel() == GenerationModelType.SEEDREAM_4_5) {
+            return executeSeedreamGeneration(context);
+        }
         String endpoint = buildEndpoint(context.request.getModel());
         logGenerationRequest(context, endpoint);
 
         return createLaoZhangRequest(context)
                 .map(LaoZhangMapper.LaoZhangRequestResult::getRequest)
+                .cast(LaoZhangRequestDTO.class)
                 .doOnNext(request -> {
                     try {
                         LaoZhangRequestDTO loggableRequest = createLoggableRequest(request);
                         String requestJson = objectMapper.writerWithDefaultPrettyPrinter()
                                 .writeValueAsString(loggableRequest);
-                        log.info("=== ЗАПРОС В LAOZHANG API для userId={}, endpoint={} ===\n{}", 
+                        log.info("=== ЗАПРОС В LAOZHANG API для userId={}, endpoint={} ===\n{}",
                                 context.userId, endpoint, requestJson);
                     } catch (Exception e) {
                         log.warn("Не удалось сериализовать LaoZhangRequest для логирования: {}", e.getMessage());
                     }
                 })
                 .flatMap(laoZhangRequest -> sendApiRequest(endpoint, laoZhangRequest, context))
-                .doOnNext(response -> log.info("Получен ответ от LaoZhang API для userId={}, response null={}", 
+                .doOnNext(response -> log.info("Получен ответ от LaoZhang API для userId={}, response null={}",
                         context.userId, response == null))
                 .flatMap(this::extractBase64Images)
                 .map(base64Images -> {
                     context.base64Images = base64Images;
                     return context;
                 });
+    }
+
+    /**
+     * Генерация через LaoZhang SeeDream API (OpenAI-формат: /v1/images/generations).
+     */
+    private Mono<GenerationContext> executeSeedreamGeneration(GenerationContext context) {
+        String endpoint = ProviderConstants.LaoZhang.SEEDREAM_ENDPOINT;
+        logGenerationRequest(context, endpoint);
+
+        return createLaoZhangRequest(context)
+                .map(LaoZhangMapper.LaoZhangRequestResult::getRequest)
+                .cast(LaoZhangSeedreamRequestDTO.class)
+                .doOnNext(req -> {
+                    try {
+                        log.info("=== ЗАПРОС LAOZHANG SEEDREAM для userId={}, endpoint={} ===\n{}",
+                                context.userId, endpoint, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(req));
+                    } catch (Exception e) {
+                        log.warn("Не удалось сериализовать Seedream request: {}", e.getMessage());
+                    }
+                })
+                .flatMap(seedreamRequest -> sendSeedreamRequest(endpoint, seedreamRequest, context))
+                .doOnNext(response -> log.info("Получен ответ LaoZhang Seedream для userId={}, data size={}",
+                        context.userId, response != null && response.getData() != null ? response.getData().size() : 0))
+                .flatMap(this::extractBase64ImagesFromSeedreamResponse)
+                .map(base64Images -> {
+                    context.base64Images = base64Images;
+                    return context;
+                });
+    }
+
+    private Mono<LaoZhangSeedreamResponseDTO> sendSeedreamRequest(String endpoint,
+                                                                  LaoZhangSeedreamRequestDTO request,
+                                                                  GenerationContext context) {
+        return getWebClient().post()
+                .uri(endpoint)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(LaoZhangSeedreamResponseDTO.class)
+                .timeout(ProviderConstants.LaoZhang.REQUEST_TIMEOUT)
+                .doOnError(error -> log.error("Ошибка LaoZhang Seedream для userId={}, endpoint={}: {}",
+                        context.userId, endpoint, error.getMessage(), error))
+                .doOnCancel(() -> errorHandler.handleCancellation(context.userId, context.pointsNeeded));
+    }
+
+    private Mono<List<String>> extractBase64ImagesFromSeedreamResponse(LaoZhangSeedreamResponseDTO response) {
+        if (response == null || response.getData() == null || response.getData().isEmpty()) {
+            log.error("Пустой ответ LaoZhang Seedream: data == null или пустой");
+            return Mono.error(new ProviderFallbackException(
+                    ProviderConstants.ErrorMessages.EMPTY_RESPONSE,
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "EMPTY_RESPONSE"));
+        }
+        List<String> dataUrls = new ArrayList<>();
+        for (LaoZhangSeedreamResponseDTO.ImageData item : response.getData()) {
+            if (item.getB64Json() != null && !item.getB64Json().isEmpty()) {
+                dataUrls.add(buildDataUrl("image/jpeg", item.getB64Json()));
+            }
+        }
+        if (dataUrls.isEmpty()) {
+            log.error("В ответе LaoZhang Seedream нет b64_json в data");
+            return Mono.error(new ProviderFallbackException(
+                    ProviderConstants.ErrorMessages.NO_IMAGES_IN_RESPONSE,
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "NO_IMAGES_IN_RESPONSE"));
+        }
+        return Mono.just(dataUrls);
     }
 
     /**
