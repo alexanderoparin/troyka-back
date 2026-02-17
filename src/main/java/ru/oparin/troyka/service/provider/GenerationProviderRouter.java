@@ -49,6 +49,13 @@ public class GenerationProviderRouter {
      */
     public Mono<ImageRs> generateImage(ImageRq request, Long userId) {
         return settingsService.getActiveProvider(request.getModel())
+                .map(activeProvider -> {
+                    // Seedream 4.5 пока только через FAL; LaoZhang — позже
+                    if (request.getModel() == GenerationModelType.SEEDREAM_4_5) {
+                        return GenerationProvider.FAL_AI;
+                    }
+                    return activeProvider;
+                })
                 .flatMap(activeProvider -> {
                     ImageGenerationProvider activeProviderInstance = getProviderOrError(activeProvider);
                     log.debug("Маршрутизация запроса к активному провайдеру: {}", activeProvider);

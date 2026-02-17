@@ -152,11 +152,9 @@ public class FalAIQueueService {
         
         // Используем модель из истории (дефолт установлен в сущности)
         GenerationModelType modelType = history.getGenerationModelType();
-        String model = modelType.getEndpoint(isNewImage);
-        
-        // Извлекаем базовый model_id (убираем подпуть после "/", если есть)
-        String baseModelId = model.contains("/") ? model.substring(0, model.indexOf("/")) : model;
-        String statusPath = PREFIX_PATH + baseModelId + "/requests/" + falRequestId + "/status";
+        String modelEndpoint = modelType.getEndpoint(isNewImage);
+        // Полный путь модели для статуса и результата (для bytedance/seedream/... и для nano-banana)
+        String statusPath = PREFIX_PATH + modelEndpoint + "/requests/" + falRequestId + "/status";
 
         return queueWebClient.get()
                 .uri(statusPath)
@@ -206,7 +204,7 @@ public class FalAIQueueService {
                             log.warn("Получен COMPLETED статус без responseUrl для запроса {}, пробуем получить результат напрямую по request_id", 
                                     falRequestId);
                             // Пробуем получить результат напрямую по request_id (без /status в пути)
-                            String resultPath = PREFIX_PATH + baseModelId + "/requests/" + falRequestId;
+                            String resultPath = PREFIX_PATH + modelEndpoint + "/requests/" + falRequestId;
                             log.info("Попытка получить результат напрямую по пути: {}", resultPath);
                             return processCompletedRequestDirectly(history, resultPath);
                         }

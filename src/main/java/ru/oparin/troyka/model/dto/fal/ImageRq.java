@@ -58,4 +58,8 @@ public class ImageRq {
     /** Разрешение изображения */
     @Schema(description = "Разрешение изображения. Возможные значения: RESOLUTION_1K, RESOLUTION_2K, RESOLUTION_4K", example = "RESOLUTION_1K")
     private Resolution resolution;
+
+    /** Размер изображения для Seedream 4.5 (square_hd, square, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9, auto_2K, auto_4K). Если задан — отправляется в FAL как image_size. */
+    @Schema(description = "Для модели Seedream 4.5: image_size (square_hd, square, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9, auto_2K, auto_4K)")
+    private String seedreamImageSize;
 }

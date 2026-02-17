@@ -210,6 +210,7 @@ public class AdminController {
         return switch (modelType) {
             case NANO_BANANA -> "Nano Banana";
             case NANO_BANANA_PRO -> "Nano Banana PRO";
+            case SEEDREAM_4_5 -> "Seedream 4.5";
         };
     }
 

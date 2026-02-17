@@ -17,7 +17,12 @@ public enum GenerationModelType {
     /**
      * Продвинутая модель nano-banana-pro с поддержкой разных разрешений.
      */
-    NANO_BANANA_PRO("nano-banana-pro", "nano-banana-pro", "nano-banana-pro/edit");
+    NANO_BANANA_PRO("nano-banana-pro", "nano-banana-pro", "nano-banana-pro/edit"),
+
+    /**
+     * ByteDance Seedream 4.5 (text-to-image и edit). Пока только FAL.
+     */
+    SEEDREAM_4_5("seedream-4.5", "bytedance/seedream/v4.5/text-to-image", "bytedance/seedream/v4.5/edit");
 
     private final String name;
     private final String createEndpoint;

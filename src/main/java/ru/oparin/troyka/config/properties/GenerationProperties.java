@@ -27,6 +27,8 @@ public class GenerationProperties {
     private static final BigDecimal FAL_COST_PRO_1K_2K_USD = new BigDecimal("0.15");
     /** Себестоимость FAL: Pro 4K (USD). */
     private static final BigDecimal FAL_COST_PRO_4K_USD = new BigDecimal("0.30");
+    /** Себестоимость FAL: Seedream 4.5 (USD). */
+    private static final BigDecimal FAL_COST_SEEDREAM_4_5_USD = new BigDecimal("0.04");
 
     /** Поинтов за одно изображение (модель nano-banana). Источник: application.yml. */
     private Integer pointsPerImage;
@@ -36,6 +38,9 @@ public class GenerationProperties {
 
     /** Поинтов за одно изображение PRO по разрешениям (ключи "1K", "2K", "4K"). Источник: application.yml. */
     private Map<String, Integer> pointsPerImagePro;
+
+    /** Поинтов за одно изображение Seedream 4.5. Источник: application.yml. По умолчанию 4. */
+    private Integer pointsPerImageSeedream = 4;
 
     /**
      * Получить общую стоимость генерации для указанного количества изображений.
@@ -56,6 +61,9 @@ public class GenerationProperties {
         if (modelType == GenerationModelType.NANO_BANANA_PRO && resolution != null && pointsPerImagePro != null) {
             String key = resolution.getValue();
             return pointsPerImagePro.getOrDefault(key, pointsPerImagePro.get("1K"));
+        }
+        if (modelType == GenerationModelType.SEEDREAM_4_5 && pointsPerImageSeedream != null) {
+            return pointsPerImageSeedream;
         }
         return pointsPerImage;
     }
@@ -108,6 +116,9 @@ public class GenerationProperties {
             return modelType == GenerationModelType.NANO_BANANA_PRO ? LAOZHANG_COST_PRO_USD : LAOZHANG_COST_NANO_BANANA_USD;
         }
         if (provider == GenerationProvider.FAL_AI) {
+            if (modelType == GenerationModelType.SEEDREAM_4_5) {
+                return FAL_COST_SEEDREAM_4_5_USD;
+            }
             if (modelType == GenerationModelType.NANO_BANANA_PRO && resolution != null) {
                 return resolution == Resolution.RESOLUTION_4K ? FAL_COST_PRO_4K_USD : FAL_COST_PRO_1K_2K_USD;
             }

@@ -57,6 +57,7 @@ public class LaoZhangMapper {
         return switch (modelType) {
             case NANO_BANANA -> "gemini-2.5-flash-image-preview";
             case NANO_BANANA_PRO -> "gemini-3-pro-image-preview";
+            case SEEDREAM_4_5 -> throw new IllegalArgumentException("LaoZhang не поддерживает модель Seedream 4.5");
         };
     }
 
@@ -133,6 +134,7 @@ public class LaoZhangMapper {
                     .imageSize("1K")
                     .build();
         }
+        // SEEDREAM_4_5 не поддерживается LaoZhang (роутер использует только FAL для этой модели)
         return null;
     }
 

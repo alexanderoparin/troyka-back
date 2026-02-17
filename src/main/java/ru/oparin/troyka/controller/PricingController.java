@@ -42,6 +42,7 @@ public class PricingController {
         GenerationPointsResponse response = new GenerationPointsResponse(
                 generationProperties.getPointsPerImage(),
                 generationProperties.getPointsPerImageProForApi(),
+                generationProperties.getPointsPerImageSeedream(),
                 generationProperties.getPointsOnRegistration()
         );
         return Mono.just(ResponseEntity.ok(response));

@@ -31,5 +31,9 @@ public class FalAIRequestDTO {
 
     @JsonProperty("resolution")
     private String resolution;
+
+    /** Для Seedream 4.5: image_size (square, landscape_4_3, portrait_16_9 и т.д.). */
+    @JsonProperty("image_size")
+    private String imageSize;
 }
 
