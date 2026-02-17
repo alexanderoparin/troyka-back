@@ -25,8 +25,32 @@ WHERE n.nspname = 'troyka'
   AND NOT a.attisdropped
 ORDER BY a.attnum;
 
--- Шаг 2: Исправление.
--- Колонка deleted имеет NOT NULL, но в INSERT при постановке в очередь она не передаётся.
--- Задаём значение по умолчанию — тогда вставка без deleted будет подставлять false.
-ALTER TABLE troyka.image_generation_history
-  ALTER COLUMN deleted SET DEFAULT false;
+-- 1c) Типы колонок model_type и queue_status (если ENUM — значение 'seedream-4.5' / IN_QUEUE может быть не в списке):
+SELECT a.attname AS column_name,
+       format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class t ON a.attrelid = t.oid
+JOIN pg_namespace n ON t.relnamespace = n.oid
+WHERE n.nspname = 'troyka'
+  AND t.relname = 'image_generation_history'
+  AND a.attname IN ('model_type', 'queue_status')
+  AND a.attnum > 0
+  AND NOT a.attisdropped;
+
+-- 1d) Если в 1c тип оказался enum (например ..._enum), посмотреть допустимые значения:
+-- SELECT t.typname AS enum_type, e.enumlabel AS enum_value
+-- FROM pg_type t
+-- JOIN pg_enum e ON t.oid = e.enumtypid
+-- JOIN pg_namespace n ON t.typnamespace = n.oid
+-- WHERE n.nspname = 'troyka' AND t.typname LIKE '%model%'
+-- ORDER BY t.typname, e.enumsortorder;
+
+-- Шаг 2: Исправление deleted (если ещё не сделано).
+-- ALTER TABLE troyka.image_generation_history ALTER COLUMN deleted SET DEFAULT false;
+
+-- Шаг 3: Если в 1c) model_type оказался enum (например troyka.model_type_enum):
+-- вставка падает из‑за значения 'seedream-4.5', которого нет в enum. Варианты:
+-- A) Добавить значение в enum (подставьте имя типа из 1c):
+--    ALTER TYPE troyka.model_type_enum ADD VALUE IF NOT EXISTS 'seedream-4.5';
+-- B) Или перевести колонку на varchar (убрать привязку к enum):
+--    ALTER TABLE troyka.image_generation_history ALTER COLUMN model_type TYPE varchar(64) USING model_type::text;

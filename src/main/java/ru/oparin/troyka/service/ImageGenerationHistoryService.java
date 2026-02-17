@@ -159,6 +159,10 @@ public class ImageGenerationHistoryService {
         Integer pointsCost = generationProperties.getPointsNeeded(modelType, resolution, numImagesForCalculation);
         BigDecimal costUsd = generationProperties.getCostUsd(modelType, resolution, numImagesForCalculation);
 
+        String aspectRatioToSave = aspectRatio != null ? aspectRatio : "1:1";
+        log.info("saveQueueRequest INSERT: userId={}, imageUrlsJson={}, prompt={}, createdAt={}, sessionId={}, inputImageUrlsJson={}, styleId={}, aspectRatio={}, modelType={}, resolution={}, falRequestId={}, queueStatus={}, queuePosition=null, numImages={}, pointsCost={}, costUsd={}, updatedAt={}, provider={}, deleted=false",
+                userId, imageUrlsJson, prompt, now, sessionId, inputImageUrlsJson, styleId, aspectRatioToSave, modelTypeToSave, resolutionToSave, falRequestId, queueStatus.name(), numImages, pointsCost, costUsd, now, GenerationProvider.FAL_AI.getCode());
+
         return imageGenerationHistoryRepository.saveQueueRequest(
                 userId,
                 imageUrlsJson,

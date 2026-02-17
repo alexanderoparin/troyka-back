@@ -131,7 +131,9 @@ public class FalAIQueueService {
                                                                 queueResponse.getRequestId(), numImages);
                                                     })
                                                     .onErrorResume(e -> {
-                                                        log.error("Ошибка при отправке запроса в очередь Fal.ai для userId={}", userId, e);
+                                                        Throwable cause = e;
+                                                        while (cause.getCause() != null) cause = cause.getCause();
+                                                        log.error("Ошибка при отправке запроса в очередь Fal.ai для userId={}. Причина: {}", userId, cause.getMessage(), e);
                                                         return handleQueueError(userId, e, pointsNeeded);
                                                     });
                                         });
