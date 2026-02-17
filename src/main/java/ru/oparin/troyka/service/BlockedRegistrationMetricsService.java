@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple6;
 import ru.oparin.troyka.model.dto.admin.BlockedRegistrationMetricDTO;
 import ru.oparin.troyka.model.dto.admin.BlockedRegistrationStatsDTO;
 import ru.oparin.troyka.model.entity.BlockedRegistrationMetric;
@@ -92,20 +93,24 @@ public class BlockedRegistrationMetricsService {
         Mono<Map<String, Long>> countByIpMono = getCountByIpAddress(monthStart, now);
         Mono<List<BlockedRegistrationMetricDTO>> recentMetricsMono = getRecentMetrics();
 
-        return Mono.zip(todayEmailMono, weekEmailMono, monthEmailMono,
-                        ipTodayMono, ipWeekMono, ipMonthMono,
-                        countByDomainMono, countByIpMono, recentMetricsMono)
-                .map(tuple -> BlockedRegistrationStatsDTO.builder()
-                        .todayCount(tuple.getT1())
-                        .last7DaysCount(tuple.getT2())
-                        .last30DaysCount(tuple.getT3())
-                        .ipRateLimitTodayCount(tuple.getT4())
-                        .ipRateLimitLast7DaysCount(tuple.getT5())
-                        .ipRateLimitLast30DaysCount(tuple.getT6())
-                        .countByDomain(tuple.getT7())
-                        .countByIpAddress(tuple.getT8())
-                        .recentMetrics(tuple.getT9())
-                        .build());
+        Mono<Tuple6<Long, Long, Long, Long, Long, Long>> countsMono =
+                Mono.zip(todayEmailMono, weekEmailMono, monthEmailMono, ipTodayMono, ipWeekMono, ipMonthMono);
+
+        return Mono.zip(countsMono, countByDomainMono, countByIpMono, recentMetricsMono)
+                .map(tuple -> {
+                    Tuple6<Long, Long, Long, Long, Long, Long> c = tuple.getT1();
+                    return BlockedRegistrationStatsDTO.builder()
+                            .todayCount(c.getT1())
+                            .last7DaysCount(c.getT2())
+                            .last30DaysCount(c.getT3())
+                            .ipRateLimitTodayCount(c.getT4())
+                            .ipRateLimitLast7DaysCount(c.getT5())
+                            .ipRateLimitLast30DaysCount(c.getT6())
+                            .countByDomain(tuple.getT2())
+                            .countByIpAddress(tuple.getT3())
+                            .recentMetrics(tuple.getT4())
+                            .build();
+                });
     }
 
     private Mono<Long> countEmailAndTelegramBetween(LocalDateTime start, LocalDateTime end) {
