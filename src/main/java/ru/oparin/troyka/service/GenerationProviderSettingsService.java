@@ -27,23 +27,24 @@ public class GenerationProviderSettingsService {
 
     /**
      * Получить активного провайдера для указанной модели.
-     * Если записи для модели нет, создаётся запись с провайдером по умолчанию (LAOZHANG_AI).
+     * Только из таблицы; если записи нет — возвращается провайдер по умолчанию (без записи в БД).
      */
     public Mono<GenerationProvider> getActiveProvider(GenerationModelType modelType) {
         String modelTypeName = modelType.name();
         return repository.findByModelType(modelTypeName)
-                .switchIfEmpty(createDefaultForModel(modelTypeName))
-                .map(GenerationProviderSettings::getActiveProviderEnum);
+                .map(GenerationProviderSettings::getActiveProviderEnum)
+                .defaultIfEmpty(DEFAULT_PROVIDER);
     }
 
     /**
      * Установить активного провайдера для указанной модели.
+     * Только обновление существующей записи в таблице; если записи нет — ошибка.
      */
     public Mono<GenerationProviderSettings> setActiveProvider(GenerationModelType modelType, GenerationProvider provider) {
         log.info("Установка активного провайдера для модели {}: {}", modelType.name(), provider);
         String modelTypeName = modelType.name();
         return repository.findByModelType(modelTypeName)
-                .switchIfEmpty(createDefaultForModel(modelTypeName))
+                .switchIfEmpty(Mono.error(new IllegalStateException("Нет записи в generation_provider_settings для модели " + modelTypeName + ". Добавьте строку в таблицу.")))
                 .flatMap(settings -> {
                     settings.setActiveProviderEnum(provider);
                     settings.setUpdatedAt(LocalDateTime.now());
@@ -57,20 +58,5 @@ public class GenerationProviderSettingsService {
      */
     public Flux<GenerationProviderSettings> getAllSettings() {
         return repository.findAllOrderByModelType();
-    }
-
-    private Mono<GenerationProviderSettings> createDefaultForModel(String modelTypeName) {
-        log.info("Создание настроек по умолчанию для модели {} (провайдер: {})", modelTypeName, DEFAULT_PROVIDER);
-        GenerationProviderSettings settings = GenerationProviderSettings.builder()
-                .modelType(modelTypeName)
-                .activeProvider(DEFAULT_PROVIDER.getCode())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
-        return repository.save(settings)
-                .onErrorResume(e -> {
-                    log.debug("Ошибка при создании настроек для модели {} (возможно, запись уже есть): {}", modelTypeName, e.getMessage());
-                    return repository.findByModelType(modelTypeName);
-                });
     }
 }
