@@ -153,10 +153,10 @@ public class FalAIQueueService {
         // Используем модель из истории (дефолт установлен в сущности)
         GenerationModelType modelType = history.getGenerationModelType();
         String modelEndpoint = modelType.getEndpoint(isNewImage);
-        // FAL: subpath (например text-to-image) используется при POST, но НЕ при запросе статуса/результата (docs).
-        // model_id для статуса = путь без последнего сегмента (bytedance/seedream/v4.5 для .../v4.5/text-to-image).
+        // FAL: для статуса/результата используется только верхний model_id (первый сегмент пути).
+        // Пример: POST в fal-ai/bytedance/seedream/v4.5/text-to-image, статус — GET fal-ai/bytedance/requests/{id}/status
         String modelIdForStatus = modelEndpoint.contains("/")
-                ? modelEndpoint.substring(0, modelEndpoint.lastIndexOf('/'))
+                ? modelEndpoint.substring(0, modelEndpoint.indexOf('/'))
                 : modelEndpoint;
         String statusPath = PREFIX_PATH + modelIdForStatus + "/requests/" + falRequestId + "/status";
 
