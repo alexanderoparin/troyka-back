@@ -5,10 +5,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Сервис для проксирования изображений из внешних источников.
@@ -39,6 +42,10 @@ public class ImageProxyService {
      * @param fullPath полный путь к файлу из запроса
      * @return содержимое изображения в виде байтов
      */
+    /** Число повторных попыток при временном сбое (таймаут, 5xx, сетевая ошибка). */
+    private static final int MAX_RETRIES = 2;
+    private static final Duration RETRY_BACKOFF = Duration.ofMillis(800);
+
     public Mono<byte[]> proxyImage(String version, String fullPath) {
         String filePath = extractFilePath(fullPath, version);
         String sourceUrl = buildSourceUrl(version, filePath);
@@ -49,7 +56,25 @@ public class ImageProxyService {
                 .retrieve()
                 .bodyToMono(byte[].class)
                 .timeout(TIMEOUT)
+                .retryWhen(Retry.backoff(MAX_RETRIES, RETRY_BACKOFF)
+                        .filter(this::isRetryableError)
+                        .doBeforeRetry(s -> log.warn("Повтор загрузки изображения (попытка {}): {}", s.totalRetries() + 1, sourceUrl)))
                 .doOnError(error -> log.error("Ошибка загрузки изображения с URL {}: {}", sourceUrl, error.getMessage()));
+    }
+
+    /** Сбои, при которых имеет смысл повторить запрос (таймаут, сеть, 5xx). */
+    private boolean isRetryableError(Throwable error) {
+        if (error == null) return false;
+        if (error instanceof TimeoutException) return true;
+        if (error.getCause() instanceof TimeoutException) return true;
+        if (error instanceof WebClientResponseException e && e.getStatusCode().is5xxServerError()) return true;
+        String msg = error.getMessage();
+        if (msg != null) {
+            if (msg.contains("Timeout") || msg.contains("timed out")) return true;
+            if (msg.contains("Connection") || msg.contains("connection")) return true;
+            if (msg.contains("502") || msg.contains("503") || msg.contains("504")) return true;
+        }
+        return false;
     }
 
     /**

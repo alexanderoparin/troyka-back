@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.service.ImageProxyService;
 
+import java.util.concurrent.TimeoutException;
+
 /**
  * Контроллер для проксирования изображений из внешних источников.
  * Предоставляет публичный доступ к изображениям через наш домен для корректной работы download атрибута.
@@ -53,7 +55,11 @@ public class ImageProxyController {
                 .onErrorResume(error -> {
                     log.error("Ошибка проксирования изображения: version={}, path={}, error={}", 
                             version, requestPath, error.getMessage(), error);
-                    return Mono.just(ResponseEntity.status(500)
+                    boolean isTimeout = error instanceof TimeoutException
+                            || (error.getCause() != null && error.getCause() instanceof TimeoutException)
+                            || (error.getMessage() != null && error.getMessage().contains("Timeout"));
+                    int status = isTimeout ? 504 : 500;
+                    return Mono.just(ResponseEntity.status(status)
                             .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                             .build());
                 });
