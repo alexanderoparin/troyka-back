@@ -101,11 +101,12 @@ public class ProviderErrorHandler {
      * - Ошибок подключения
      * - HTTP ошибок 5xx (серверные ошибки)
      * - HTTP ошибок 413 (Payload Too Large)
+     * - HTTP ошибок 429 (Too Many Requests — перегрузка провайдера)
      * - HTTP ошибок 503 (Service Unavailable)
      * - Ошибок провайдера (FalAIException с определенными типами)
      * <p>
      * Fallback НЕ требуется для:
-     * - HTTP ошибок 4xx (кроме 413, 503) - это ошибки клиента
+     * - HTTP ошибок 4xx (кроме 413, 429, 503) - это ошибки клиента
      * - Ошибок валидации
      * - Недостаточно поинтов
      *
@@ -156,8 +157,10 @@ public class ProviderErrorHandler {
                 return true;
             }
 
-            // Специфичные клиентские ошибки, которые могут быть проблемой провайдера
-            if (status == HttpStatus.PAYLOAD_TOO_LARGE || status == HttpStatus.SERVICE_UNAVAILABLE) {
+            // Специфичные ошибки, которые могут быть проблемой провайдера (перегрузка, лимиты)
+            if (status == HttpStatus.PAYLOAD_TOO_LARGE
+                    || status == HttpStatus.TOO_MANY_REQUESTS
+                    || status == HttpStatus.SERVICE_UNAVAILABLE) {
                 return true;
             }
 
@@ -194,6 +197,8 @@ public class ProviderErrorHandler {
                 errorType = "HTTP_5XX";
             } else if (status == HttpStatus.PAYLOAD_TOO_LARGE) {
                 errorType = "PAYLOAD_TOO_LARGE";
+            } else if (status == HttpStatus.TOO_MANY_REQUESTS) {
+                errorType = "TOO_MANY_REQUESTS";
             } else if (status == HttpStatus.SERVICE_UNAVAILABLE) {
                 errorType = "SERVICE_UNAVAILABLE";
             } else {
@@ -258,12 +263,14 @@ public class ProviderErrorHandler {
         boolean requiresFallback = status != null && (
                 status.is5xxServerError() ||
                 status == HttpStatus.PAYLOAD_TOO_LARGE ||
+                status == HttpStatus.TOO_MANY_REQUESTS ||
                 status == HttpStatus.SERVICE_UNAVAILABLE
         );
 
         if (requiresFallback) {
             String errorType = status.is5xxServerError() ? "HTTP_5XX" :
-                    status == HttpStatus.PAYLOAD_TOO_LARGE ? "PAYLOAD_TOO_LARGE" : "SERVICE_UNAVAILABLE";
+                    status == HttpStatus.PAYLOAD_TOO_LARGE ? "PAYLOAD_TOO_LARGE" :
+                    status == HttpStatus.TOO_MANY_REQUESTS ? "TOO_MANY_REQUESTS" : "SERVICE_UNAVAILABLE";
             return refundPointsIfNeeded(userId, pointsNeeded, pointsDeducted)
                     .then(Mono.error(new ProviderFallbackException(
                             message,
