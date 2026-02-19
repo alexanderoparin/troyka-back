@@ -74,7 +74,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(FalAIException.class)
     public Mono<ResponseEntity<Map<String, Object>>> handleFalAIException(FalAIException ex) {
-        log.error("Ошибка FalAI: {}", ex.getMessage());
+        log.error("Ошибка сервиса генерации: {}", ex.getMessage());
 
         if (ex.getCause() != null) {
             log.error("Cause: {}", ex.getCause().getMessage());
