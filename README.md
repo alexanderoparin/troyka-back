@@ -127,7 +127,7 @@ Backend-приложение на Java 21 с использованием Spring
 - `SMTP_PORT` - SMTP порт (по умолчанию: 587)
 - `SMTP_USERNAME` - Email пользователь
 - `SMTP_PASSWORD` - Email пароль
-- `EMAIL_FROM` - Отправитель (по умолчанию: noreply@24reshai.ru)
+- `EMAIL_FROM` - Отправитель (по умолчанию: support@24reshai.ru)
 - `EMAIL_SUPPORT` - Поддержка (по умолчанию: support@24reshai.ru)
 
 #### Робокасса

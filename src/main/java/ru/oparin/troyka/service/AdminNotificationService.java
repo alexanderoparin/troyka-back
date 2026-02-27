@@ -35,7 +35,7 @@ public class AdminNotificationService {
     private final TelegramMessageService telegramMessageService;
     private final TelegramBotSessionService telegramBotSessionService;
 
-    @Value("${app.email.from:noreply@24reshai.ru}")
+    @Value("${app.email.from}")
     private String fromEmail;
 
     // Кэш для отслеживания последней отправки уведомлений (ключ: тип уведомления, значение: время последней отправки)

@@ -23,10 +23,10 @@ public class EmailVerificationService {
     private final EmailVerificationTokenRepository tokenRepository;
     private final UserService userService;
 
-    @Value("${app.email.from:noreply@24reshai.ru}")
+    @Value("${app.email.from}")
     private String fromEmail;
 
-    @Value("${app.frontend.url:https://24reshai.ru}")
+    @Value("${app.frontend.url}")
     private String frontendUrl;
 
     public Mono<Void> sendVerificationEmail(User user) {

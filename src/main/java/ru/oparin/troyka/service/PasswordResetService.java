@@ -35,7 +35,7 @@ public class PasswordResetService {
     @Value("${app.frontend.url:https://24reshai.ru}")
     private String frontendUrl;
 
-    @Value("${app.email.from:noreply@24reshai.ru}")
+    @Value("${app.email.from}")
     private String fromEmail;
 
     private static final int TOKEN_LENGTH = 32;

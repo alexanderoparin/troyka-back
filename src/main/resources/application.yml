@@ -34,7 +34,7 @@ spring:
   mail:
     host: ${SMTP_HOST:smtp.timeweb.ru}
     port: ${SMTP_PORT:587}
-    username: ${SMTP_USERNAME:noreply@24reshai.ru}
+    username: ${SMTP_USERNAME:support@24reshai.ru}
     password: ${SMTP_PASSWORD:}
     properties:
       mail:
@@ -119,7 +119,7 @@ app:
   frontend:
     url: ${FRONTEND_URL:https://24reshai.ru}
   email:
-    from: ${EMAIL_FROM:noreply@24reshai.ru}
+    from: ${EMAIL_FROM:support@24reshai.ru}
     support: ${EMAIL_SUPPORT:support@24reshai.ru}
   generation:
     points-on-registration: ${REGISTRATION_POINTS:4}

@@ -21,10 +21,10 @@ public class ContactService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${app.email.from:noreply@24reshai.ru}")
+    @Value("${app.email.from}")
     private String fromEmail;
 
-    @Value("${app.email.support:support@24reshai.ru}")
+    @Value("${app.email.support}")
     private String supportEmail;
 
     public Mono<ContactResponse> sendContactMessage(ContactRequest request) {
