@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 import ru.oparin.troyka.model.entity.EmailVerificationToken;
 import ru.oparin.troyka.model.entity.User;
@@ -30,6 +31,10 @@ public class EmailVerificationService {
     private String frontendUrl;
 
     public Mono<Void> sendVerificationEmail(User user) {
+        if (!StringUtils.hasText(user.getEmail())) {
+            log.info("У пользователя {} (id={}) нет email, пропускаем отправку письма подтверждения", user.getUsername(), user.getId());
+            return Mono.empty();
+        }
         // Проверяем, не был ли создан токен совсем недавно (в последние 5 секунд) другим запросом
         return tokenRepository.findLatestByUserId(user.getId())
                 .flatMap(latestToken -> {
@@ -50,6 +55,10 @@ public class EmailVerificationService {
     }
 
     private Mono<Void> createAndSendToken(User user) {
+        if (!StringUtils.hasText(user.getEmail())) {
+            log.debug("У пользователя {} нет email, не создаем токен и не отправляем письмо", user.getUsername());
+            return Mono.empty();
+        }
         // Создаем токен подтверждения
         String token = generateVerificationToken();
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(24); // Токен действителен 24 часа
@@ -159,6 +168,10 @@ public class EmailVerificationService {
      * @return Mono<Boolean> true если письмо было отправлено, false если уже есть свежий токен
      */
     public Mono<Boolean> checkAndSendVerificationEmailIfNeeded(User user) {
+        if (!StringUtils.hasText(user.getEmail())) {
+            log.info("У пользователя {} (id={}) нет email, верификация по почте не требуется", user.getUsername(), user.getId());
+            return Mono.just(false);
+        }
         return tokenRepository.findLatestByUserId(user.getId())
                 .flatMap(latestToken -> {
                     LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);

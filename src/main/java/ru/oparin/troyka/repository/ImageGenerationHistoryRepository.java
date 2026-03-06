@@ -158,6 +158,14 @@ public interface ImageGenerationHistoryRepository extends ReactiveCrudRepository
                                                Integer pointsCost, BigDecimal costUsd, String provider);
 
     /**
+     * Найти все записи истории, помеченные как удалённые (soft delete).
+     * Используется для очистки файлов lz, привязанных к удалённым записям.
+     *
+     * @return поток удалённых записей
+     */
+    Flux<ImageGenerationHistory> findByDeletedTrue();
+
+    /**
      * Найти запись истории по идентификатору запроса Fal.ai.
      *
      * @param falRequestId идентификатор запроса в очереди Fal.ai

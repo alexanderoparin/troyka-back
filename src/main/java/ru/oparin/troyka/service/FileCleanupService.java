@@ -57,24 +57,146 @@ public class FileCleanupService {
     /**
      * Очистить старые неиспользуемые файлы.
      * Удаляет:
-     * 1. Файлы, которые не используются в БД и старше указанного количества дней
-     * 2. Файлы пользователей, которые никогда не оплачивали и генерировали изображения больше месяца назад
+     * 1. Файлы из директории lz, привязанные к записям истории с deleted = true
+     * 2. Файлы, которые не используются в БД и старше указанного количества дней
+     * 3. Файлы пользователей, которые никогда не оплачивали и генерировали изображения больше месяца назад
      *
      * @param daysOld минимальный возраст файла в днях для удаления
      * @return количество удаленных файлов
      */
     public Mono<Integer> cleanupOldUnusedFiles(int daysOld) {
-        return getAllUsedFileNames()
+        return cleanupDeletedHistoryLzFiles()
+                .flatMap(lzDeleted -> cleanupInactiveUsersLzFiles()
+                        .flatMap(inactiveLzDeleted -> getAllUsedFileNames()
+                                .collectList()
+                                .flatMap(usedFileNamesList -> {
+                                    Set<String> usedFileNames = new HashSet<>(usedFileNamesList);
+                                    return getInactiveUsersFiles()
+                                            .collectList()
+                                            .flatMap(inactiveUsersFiles -> {
+                                                Set<String> filesToKeep = calculateFilesToKeep(usedFileNames, inactiveUsersFiles);
+                                                return deleteUnusedFilesSafely(filesToKeep, daysOld)
+                                                        .map(ordinaryDeleted -> lzDeleted + inactiveLzDeleted + ordinaryDeleted);
+                                            });
+                                })
+                        )
+                );
+    }
+
+    /**
+     * Удалить файлы из директории lz (изображения LaoZhang), привязанные к записям истории с deleted = true.
+     *
+     * @return количество удалённых файлов
+     */
+    public Mono<Integer> cleanupDeletedHistoryLzFiles() {
+        return imageGenerationHistoryRepository.findByDeletedTrue()
+                .flatMap(this::extractLzFilePathsFromHistory)
+                .distinct()
                 .collectList()
-                .flatMap(usedFileNamesList -> {
-                    Set<String> usedFileNames = new HashSet<>(usedFileNamesList);
-                    return getInactiveUsersFiles()
+                .flatMap(paths -> Mono.fromCallable(() -> deleteLzFilesByPaths(paths, "удалённых записей истории"))
+                        .onErrorResume(e -> {
+                            log.error("Ошибка при очистке файлов lz для удалённых записей истории", e);
+                            return Mono.just(0);
+                        }));
+    }
+
+    /**
+     * Удалить файлы lz пользователей, которые никогда не платили и генерировали изображения более месяца назад.
+     *
+     * @return количество удалённых файлов
+     */
+    public Mono<Integer> cleanupInactiveUsersLzFiles() {
+        LocalDateTime oneMonthAgo = LocalDateTime.now().minusMonths(1);
+        return imageGenerationHistoryRepository.findAll()
+                .map(ImageGenerationHistory::getUserId)
+                .distinct()
+                .flatMap(userId -> getLzFilePathsForInactiveUser(userId, oneMonthAgo))
+                .distinct()
+                .collectList()
+                .flatMap(paths -> Mono.fromCallable(() -> deleteLzFilesByPaths(paths, "неактивных пользователей (без оплаты, >1 мес)"))
+                        .onErrorResume(e -> {
+                            log.error("Ошибка при очистке файлов lz неактивных пользователей", e);
+                            return Mono.just(0);
+                        }));
+    }
+
+    /**
+     * Получить пути файлов lz из истории пользователя, если он неактивен (никогда не платил, последняя генерация > 1 мес назад).
+     */
+    private Flux<String> getLzFilePathsForInactiveUser(Long userId, LocalDateTime oneMonthAgo) {
+        return paymentRepository.findByUserId(userId)
+                .filter(payment -> payment.getStatus() == PaymentStatus.PAID)
+                .hasElements()
+                .flatMapMany(hasPayments -> {
+                    if (hasPayments) {
+                        return Flux.empty();
+                    }
+                    return imageGenerationHistoryRepository.findByUserIdOrderByCreatedAtDesc(userId)
                             .collectList()
-                            .flatMap(inactiveUsersFiles -> {
-                                Set<String> filesToKeep = calculateFilesToKeep(usedFileNames, inactiveUsersFiles);
-                                return deleteUnusedFilesSafely(filesToKeep, daysOld);
+                            .flatMapMany(histories -> {
+                                if (histories.isEmpty()) {
+                                    return Flux.empty();
+                                }
+                                ImageGenerationHistory lastHistory = histories.get(0);
+                                if (lastHistory.getCreatedAt().isBefore(oneMonthAgo)) {
+                                    return Flux.fromIterable(histories).flatMap(this::extractLzFilePathsFromHistory);
+                                }
+                                return Flux.empty();
                             });
                 });
+    }
+
+    /**
+     * Извлечь относительные пути файлов lz из записи истории (image_urls — сгенерированные изображения).
+     */
+    private Flux<String> extractLzFilePathsFromHistory(ImageGenerationHistory history) {
+        List<String> urls = history.getImageUrls();
+        if (urls == null || urls.isEmpty()) {
+            return Flux.empty();
+        }
+        return Flux.fromIterable(urls)
+                .flatMap(url -> Mono.justOrEmpty(extractFileName(url)))
+                .filter(path -> path.startsWith("lz/"));
+    }
+
+    /**
+     * Удалить файлы по относительным путям (lz/...) из директории загрузок.
+     *
+     * @param relativePaths список относительных путей
+     * @param logContext контекст для лога (например, "удалённых записей истории" или "неактивных пользователей (без оплаты, >1 мес)")
+     * @return количество удалённых файлов
+     */
+    private int deleteLzFilesByPaths(List<String> relativePaths, String logContext) {
+        if (relativePaths.isEmpty()) {
+            return 0;
+        }
+        Path uploadPath = Paths.get(uploadDir);
+        AtomicInteger deletedCount = new AtomicInteger(0);
+        long totalDeletedBytes = 0L;
+        for (String relativePath : relativePaths) {
+            Path filePath = uploadPath.resolve(relativePath).normalize();
+            if (!filePath.startsWith(uploadPath)) {
+                log.warn("Подозрительный путь, пропускаем: {}", relativePath);
+                continue;
+            }
+            try {
+                if (Files.exists(filePath) && Files.isRegularFile(filePath)) {
+                    long fileSize = Files.size(filePath);
+                    double fileSizeMB = fileSize / (1024.0 * 1024.0);
+                    Files.delete(filePath);
+                    deletedCount.incrementAndGet();
+                    totalDeletedBytes += fileSize;
+                    log.debug("Удалён файл lz ({}): {} ({} МБ)", logContext, relativePath, String.format("%.2f", fileSizeMB));
+                }
+            } catch (IOException e) {
+                log.warn("Не удалось удалить файл {}: {}", relativePath, e.getMessage());
+            }
+        }
+        if (deletedCount.get() > 0) {
+            double totalMB = totalDeletedBytes / (1024.0 * 1024.0);
+            log.info("Очистка файлов lz для {}: удалено {} файлов ({} МБ)", logContext, deletedCount.get(), String.format("%.2f", totalMB));
+        }
+        return deletedCount.get();
     }
 
     /**
